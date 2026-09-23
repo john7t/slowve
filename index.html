@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-006</title>
+<title>緩緩門店 v0.1-007</title>
 <script>
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
@@ -48,7 +48,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-006';
+const VER='v0.1-007';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -66,8 +66,8 @@ const DEFAULT_SETTINGS={
     {id:'bagua',name:'拔罐',price:500,comm:0},
     {id:'xiujiao',name:'修腳皮',price:500,comm:0}
   ],
-  comm:{per30:280,laodian:20},
-  zhiMin:30,                      // 幾分鐘算 1 支（LINE 卡片顯示用）
+  comm:{per30:280,laodian:20},     // per30＝每支費用（沿用舊欄位名）、laodian＝老點每單加給
+  zhiMin:30,                      // 幾分鐘算 1 支
   cutoff:'05:00',
   teachers:[],
   expCats:['耗材','清潔用品','水電瓦斯','房租','餐費','雜支','其他'],
@@ -136,16 +136,19 @@ function mutateDay(date,fn){
 }
 
 /* ========== 計價／統計 ========== */
+/* 支：主項目分鐘數 ÷ 幾分鐘算 1 支（預設 30 分鐘＝1 支）；額外品項不算支 */
+const zhiCalc=(o,S)=>(o.svc&&o.min)?Math.floor(o.min/(Number(S.zhiMin)||30)):0;
+const zhiOf=(o,S)=>o.zh!=null?o.zh:zhiCalc(o,S);   // 訂單存有快照就用快照
 function calcOrder(o,S){
-  let amt=0,cm=0;
+  let amt=0,cm=0;const zh=zhiCalc(o,S);
   if(o.svc&&o.min){
     if(o.promo)amt+=Number(S.promo.price)||0;
     else amt+=Number((S.prices[o.svc]||[])[MINS.indexOf(o.min)])||0;
-    cm+=Math.floor(o.min/30)*(Number(S.comm.per30)||0);
+    cm+=zh*(Number(S.comm.per30)||0);
   }
   (o.ad||[]).forEach(id=>{const a=S.addons.find(x=>x.id===id);if(a){amt+=Number(a.price)||0;cm+=Number(a.comm)||0}});
   if(o.ld)cm+=Number(S.comm.laodian)||0;
-  return {amt,cm};
+  return {amt,cm,zh};
 }
 function orderLabel(o,S){
   const parts=[];
@@ -153,13 +156,13 @@ function orderLabel(o,S){
   (o.ad||[]).forEach(id=>{const a=S.addons.find(x=>x.id===id);parts.push(a?a.name:id)});
   return parts.join(' ＋ ');
 }
-function statsOf(orders){
+function statsOf(orders,S){
   const live=orders.filter(o=>!o.void);
-  const r={n:live.length,amt:0,cm:0,byT:{}};
+  const r={n:live.length,amt:0,cm:0,zh:0,byT:{}};
   live.forEach(o=>{
-    r.amt+=o.amt||0;r.cm+=o.cm||0;
-    const t=r.byT[o.tc]||(r.byT[o.tc]={tc:o.tc,n:0,min:0,ld:0,cm:0,amt:0});
-    t.n++;t.min+=(o.svc&&o.min)?o.min:0;t.ld+=o.ld?1:0;t.cm+=o.cm||0;t.amt+=o.amt||0;
+    const z=zhiOf(o,S);r.amt+=o.amt||0;r.cm+=o.cm||0;r.zh+=z;
+    const t=r.byT[o.tc]||(r.byT[o.tc]={tc:o.tc,n:0,zh:0,ld:0,cm:0,amt:0});
+    t.n++;t.zh+=z;t.ld+=o.ld?1:0;t.cm+=o.cm||0;t.amt+=o.amt||0;
   });
   return r;
 }
@@ -249,6 +252,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
   const calc=calcOrder(f,S);
   const amt=sameItems&&order.amt!=null?order.amt:calc.amt;
   const cm=sameItems&&order.cm!=null?order.cm:calc.cm;
+  const zh=sameItems&&order.zh!=null?order.zh:calc.zh;
 
   const save=async(next)=>{
     if(!f.svc&&!f.ad.length){await ask({title:'尚未選擇品項',msg:'請點選主項目或額外品項。',okOnly:true});return}
@@ -261,7 +265,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
       if(!ok)return;
     }
     const now=Date.now();
-    onSave(Object.assign({},f,{tc,sn,amt,cm,ca:f.ca||now,ua:now}),!!next);
+    onSave(Object.assign({},f,{tc,sn,amt,cm,zh,ca:f.ca||now,ua:now}),!!next);
   };
 
   const cellCls=on=>'h-14 rounded-xl border text-base num transition-colors '+(on?'bg-sage border-sage text-white shadow-inner':'bg-card border-line active:bg-sageL');
@@ -270,7 +274,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
   const footer=(
     <div>
       <div className="flex items-end justify-between mb-3">
-        <div className="text-sm text-mute">老師抽成 <span className="num text-ink">{money(cm)}</span></div>
+        <div className="text-sm text-mute"><span className="num text-ink">{zh}</span> 支・老師抽成 <span className="num text-ink">{money(cm)}</span></div>
         <div className="text-right"><span className="text-sm text-mute mr-1">金額</span><span className="serif text-3xl text-brown num">{money(amt)}</span></div>
       </div>
       {locked?
@@ -445,7 +449,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
   const today=bizToday(S.cutoff);
   const dd=useMemo(()=>getDay(loadMonth(monKey(date)),date),[date,rev]);
   const orders=useMemo(()=>[...dd.orders].sort((a,b)=>snNum(a)-snNum(b)||(a.ca||0)-(b.ca||0)),[dd]);
-  const st=useMemo(()=>statsOf(dd.orders),[dd]);
+  const st=useMemo(()=>statsOf(dd.orders,S),[dd,S]);
   const ex=useMemo(()=>expStatsOf(dd.expenses),[dd]);
   const exps=useMemo(()=>[...(dd.expenses||[])].sort((a,b)=>(a.ca||0)-(b.ca||0)),[dd]);
   const closed=!!dd.close;
@@ -500,7 +504,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
             <div className="flex-1 min-w-0">
               <div className={'truncate '+(o.void?'line-through':'')}>{orderLabel(o,S)}</div>
               <div className="text-xs text-mute num">
-                <span className="text-ink">{o.tc}</span> 老師
+                <span className="text-ink">{o.tc}</span> 老師{zhiOf(o,S)>0&&<span className="ml-1">・{zhiOf(o,S)} 支</span>}
                 {o.ld&&<span className="ml-1 px-1.5 rounded bg-brownL text-brown">老點</span>}
                 {o.t&&<span className="ml-2">{o.t}</span>}
                 {o.void&&<span className="ml-2 text-warn">已作廢</span>}
@@ -533,11 +537,11 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
         <Card className="overflow-hidden">
           <table className="w-full text-sm num">
             <thead className="text-xs text-mute bg-brownL/50"><tr>
-              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">分鐘</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">抽成</th>
+              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">支數</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">抽成</th>
             </tr></thead>
             <tbody>{sortT(st.byT).map(t=>(
               <tr key={t.tc} className="border-t border-line">
-                <td className="px-3 py-2">{t.tc}</td><td className="text-center">{t.n}</td><td className="text-center">{t.min}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
+                <td className="px-3 py-2">{t.tc}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
               </tr>))}</tbody>
           </table>
         </Card>
@@ -551,17 +555,17 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
 }
 
 /* ========== 月報 ========== */
-function monthData(ym){
+function monthData(ym,S){
   const md=loadMonth(ym);const a=ym.split('-').map(Number);const dim=new Date(a[0],a[1],0).getDate();
   const rows=[];const tot={n:0,amt:0,cm:0,exp:0,byT:{},byCat:{}};
   for(let d=1;d<=dim;d++){
     const dd=md.days[pad(d)];
     if(!dd||(!(dd.orders||[]).length&&!(dd.expenses||[]).length&&!dd.close))continue;
-    const st=statsOf(dd.orders||[]);const ex=expStatsOf(dd.expenses);
+    const st=statsOf(dd.orders||[],S);const ex=expStatsOf(dd.expenses);
     rows.push({date:ym+'-'+pad(d),st,ex,closed:!!dd.close});
     tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;
     Object.keys(ex.byCat).forEach(c=>{tot.byCat[c]=(tot.byCat[c]||0)+ex.byCat[c]});
-    Object.values(st.byT).forEach(t=>{const x=tot.byT[t.tc]||(tot.byT[t.tc]={tc:t.tc,n:0,min:0,ld:0,cm:0,amt:0});x.n+=t.n;x.min+=t.min;x.ld+=t.ld;x.cm+=t.cm;x.amt+=t.amt});
+    Object.values(st.byT).forEach(t=>{const x=tot.byT[t.tc]||(tot.byT[t.tc]={tc:t.tc,n:0,zh:0,ld:0,cm:0,amt:0});x.n+=t.n;x.zh+=t.zh;x.ld+=t.ld;x.cm+=t.cm;x.amt+=t.amt});
   }
   return {rows,tot,pay:md.pay||{}};
 }
@@ -578,7 +582,7 @@ function teacherOrders(ym,tc){
 function MonthPage({S,rev,goDay,openPay}){
   const [ym,setYm]=useState(()=>monKey(bizToday(S.cutoff)));
   const shift=n=>{const a=ym.split('-').map(Number);const d=new Date(a[0],a[1]-1+n,1);setYm(d.getFullYear()+'-'+pad(d.getMonth()+1))};
-  const data=useMemo(()=>monthData(ym),[ym,rev]);
+  const data=useMemo(()=>monthData(ym,S),[ym,rev,S]);
   const a=ym.split('-');
   const cats=Object.keys(data.tot.byCat).sort((x,y)=>data.tot.byCat[y]-data.tot.byCat[x]);
   return (
@@ -619,13 +623,13 @@ function MonthPage({S,rev,goDay,openPay}){
         <Card className="overflow-hidden">
           <table className="w-full text-sm num">
             <thead className="text-xs text-mute bg-brownL/50"><tr>
-              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">分鐘</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">應領</th>
+              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">支數</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">應領</th>
             </tr></thead>
             <tbody>{sortT(data.tot.byT).map(t=>{
               const adj=((data.pay[t.tc]||{}).adj||[]).reduce((s,x)=>s+(Number(x.amt)||0),0);
               return (
               <tr key={t.tc} className="border-t border-line active:bg-sageL cursor-pointer" onClick={()=>openPay(ym,t.tc)}>
-                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span></td><td className="text-center">{t.n}</td><td className="text-center">{t.min}</td><td className="text-center">{t.ld}</td>
+                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span></td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
                 <td className="text-right px-3">{money(t.cm+adj)} <span className="text-mute">›</span></td>
               </tr>);})}</tbody>
           </table>
@@ -657,7 +661,7 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
   const a=ym.split('-');const ymText=a[0]+' 年 '+Number(a[1])+' 月';
   const sumFee=orders.reduce((s,o)=>s+(o.cm||0),0);
   const sumAmt=orders.reduce((s,o)=>s+(o.amt||0),0);
-  const sumMin=orders.reduce((s,o)=>s+((o.svc&&o.min)?o.min:0),0);
+  const sumZhi=orders.reduce((s,o)=>s+zhiOf(o,S),0);
   const sumLd=orders.filter(o=>o.ld).length;
   const total=sumFee+adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
   const font=(sz,w,serif)=>(w||'')+' '+f(sz)+'px '+(serif?SERIF:FONT);
@@ -669,14 +673,14 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
   const hline=(ctx,y,col,w)=>rect(ctx,M,y,W-2*M,w||2,col||C.line);
 
   const cols=size==='a4'
-    ?[{k:'date',t:'日期',w:170},{k:'sn',t:'流水號',w:120},{k:'item',t:'項目',w:0},{k:'ld',t:'老點',w:100}]
-    :[{k:'date',t:'日期',w:165},{k:'sn',t:'單號',w:95},{k:'item',t:'項目',w:0},{k:'ld',t:'老點',w:90}];
+    ?[{k:'date',t:'日期',w:185},{k:'sn',t:'流水號',w:115},{k:'item',t:'項目',w:0},{k:'zh',t:'支',w:80,center:true},{k:'ld',t:'老點',w:95,center:true}]
+    :[{k:'date',t:'日期',w:200},{k:'sn',t:'單號',w:85},{k:'item',t:'項目',w:0},{k:'zh',t:'支',w:65,center:true},{k:'ld',t:'老點',w:85,center:true}];
   if(showAmt)cols.push({k:'amt',t:'金額',w:size==='a4'?160:150,right:true});
   cols.push({k:'fee',t:'費用',w:size==='a4'?160:150,right:true});
   const fixedW=cols.reduce((s,c)=>s+c.w,0);cols.forEach(c=>{if(!c.w)c.w=W-2*M-fixedW});
   let x=M;cols.forEach(c=>{c.x=x;x+=c.w});
   const tableHead=(ctx,y)=>{rect(ctx,M,y,W-2*M,ROW,C.brownL);
-    cols.forEach(c=>text(ctx,c.t,c.right?c.x+c.w-14:c.x+14,y+ROW*0.66,{size:24,color:C.mute,align:c.right?'right':'left'}));return y+ROW};
+    cols.forEach(c=>text(ctx,c.t,c.right?c.x+c.w-14:c.center?c.x+c.w/2:c.x+14,y+ROW*0.66,{size:24,color:C.mute,align:c.right?'right':c.center?'center':'left'}));return y+ROW};
 
   const firstHeader=ctx=>{
     let y=M+f(40);
@@ -691,12 +695,12 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
     y+=f(30);hline(ctx,y,C.sage,3);
     y+=f(80);text(ctx,'老師編號',M,y,{size:28,color:C.mute});text(ctx,String(tc),M+f(150),y+f(4),{size:56,weight:'600'});
     y+=f(50);const bw=(W-2*M-3*f(20))/4;
-    [['服務單數',orders.length+' 單'],['服務分鐘',sumMin+' 分'],['老點',sumLd+' 次'],['費用合計',money(sumFee)]].forEach((b,i)=>{
+    [['服務單數',orders.length+' 單'],['服務支數',sumZhi+' 支'],['老點',sumLd+' 次'],['費用合計',money(sumFee)]].forEach((b,i)=>{
       const bx=M+i*(bw+f(20));rect(ctx,bx,y,bw,f(120),C.sageL);
       text(ctx,b[0],bx+f(22),y+f(44),{size:24,color:C.mute});text(ctx,b[1],bx+f(22),y+f(96),{size:36,weight:'600',color:i===3?C.sageD:C.ink,max:bw-f(30)});
     });
     y+=f(160);
-    text(ctx,'服務費用（每 30 分鐘 '+S.comm.per30+'，老點每單 +'+S.comm.laodian+'）',M,y,{size:26,max:W-2*M-f(200)});text(ctx,money(sumFee),W-M,y,{size:28,align:'right'});
+    text(ctx,'服務費用（'+(Number(S.zhiMin)||30)+' 分鐘 1 支，每支 '+S.comm.per30+'，老點每單 +'+S.comm.laodian+'）',M,y,{size:26,max:W-2*M-f(200)});text(ctx,money(sumFee),W-M,y,{size:28,align:'right'});
     adj.forEach(j=>{y+=f(46);const v=Number(j.amt)||0;text(ctx,(v<0?'扣項：':'加項：')+(j.name||''),M,y,{size:28,max:W-2*M-f(260)});text(ctx,smoney(v),W-M,y,{size:28,align:'right',color:v<0?C.warn:C.ink})});
     y+=f(26);hline(ctx,y);y+=f(66);
     text(ctx,TT.total,M,y,{size:34,weight:'600'});text(ctx,money(total),W-M,y+f(6),{size:64,serif:true,color:C.brown,align:'right'});
@@ -726,8 +730,8 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
     rows.forEach((o,i)=>{
       if(i%2===1)rect(ctx,M,y,W-2*M,ROW,'#faf8f4');
       const d=parseYmd(o.date);
-      const v={date:(d.getMonth()+1)+'/'+d.getDate()+'（'+WK[d.getDay()]+'）',sn:o.sn?'#'+o.sn:'-',item:orderLabel(o,S),ld:o.ld?'✓':'',amt:money(o.amt),fee:money(o.cm)};
-      cols.forEach(cl=>text(ctx,v[cl.k],cl.right?cl.x+cl.w-14:cl.x+14,y+ROW*0.67,{size:26,align:cl.right?'right':'left',max:cl.w-28,color:cl.k==='ld'?C.brown:C.ink}));
+      const v={date:(d.getMonth()+1)+'/'+d.getDate()+'（'+WK[d.getDay()]+'）',sn:o.sn?'#'+o.sn:'-',item:orderLabel(o,S),zh:zhiOf(o,S)||'',ld:o.ld?'✓':'',amt:money(o.amt),fee:money(o.cm)};
+      cols.forEach(cl=>text(ctx,v[cl.k],cl.right?cl.x+cl.w-14:cl.center?cl.x+cl.w/2:cl.x+14,y+ROW*0.67,{size:26,align:cl.right?'right':cl.center?'center':'left',max:cl.w-28,color:cl.k==='ld'?C.brown:C.ink}));
       y+=ROW;rect(ctx,M,y-1,W-2*M,1,C.line);
     });
     if(!orders.length)text(ctx,'本月無服務紀錄',W/2,y+f(40),{size:26,color:C.mute,align:'center'});
@@ -745,7 +749,6 @@ const canvasBlob=(c,type,q)=>new Promise(res=>c.toBlob(res,type,q));
    代發頁在 LINE 內建瀏覽器執行，讀不到 Safari 的本機資料，所以卡片需要的數字全部放在網址裡。 */
 const LIFF_ID='2011703958-OP1Os8vL';
 const LIFF_SDK='https://static.line-scdn.net/liff/edge/2/sdk.js';
-const zhiOf=(o,S)=>(o.svc&&o.min)?Math.floor(o.min/(Number(S.zhiMin)||30)):0;
 const yuan=n=>Number(n||0).toLocaleString('en-US')+' 元';
 function b64uEnc(str){return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 function b64uDec(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return decodeURIComponent(escape(atob(s)))}
@@ -903,7 +906,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
       <Card className="p-4 mb-3 num">
         <div className="grid grid-cols-3 gap-2 mb-3">
           <Stat label="單數" value={orders.length}/>
-          <Stat label="分鐘" value={orders.reduce((s,o)=>s+((o.svc&&o.min)?o.min:0),0)}/>
+          <Stat label="支數" value={orders.reduce((s,o)=>s+zhiOf(o,S),0)}/>
           <Stat label="老點" value={orders.filter(o=>o.ld).length}/>
         </div>
         <div className="flex justify-between py-1 border-t border-line pt-2"><span className="text-mute">費用合計</span><span>{money(sumFee)}</span></div>
@@ -946,7 +949,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
         {orders.map((o,i)=>(
           <div key={o.id} className={'flex items-center gap-2 px-3 py-2 text-sm num '+(i?'border-t border-line':'')}>
             <div className="w-20 text-mute">{fmtDate(o.date).replace(/（.）/,'')}<span className="ml-1">#{o.sn||'-'}</span></div>
-            <div className="flex-1 min-w-0 truncate">{orderLabel(o,S)}{o.ld&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-xs">老點</span>}</div>
+            <div className="flex-1 min-w-0 truncate">{orderLabel(o,S)}{zhiOf(o,S)>0&&<span className="ml-1 text-xs text-mute">{zhiOf(o,S)}支</span>}{o.ld&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-xs">老點</span>}</div>
             <div>{money(o.cm)}</div>
           </div>))}
       </Card>
@@ -1029,10 +1032,11 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
 
       <div className={sec}>老師抽成</div>
       <Card className="p-3 space-y-2 text-sm">
-        <div className="flex items-center gap-2"><div className="flex-1">主項目每 30 分鐘</div><NumIn className="w-24" value={String(dr.comm.per30)} onChange={v=>up(n=>{n.comm.per30=num(v)})}/></div>
+        <div className="flex items-center gap-2"><div className="flex-1">幾分鐘算 1 支</div><NumIn className="w-24" value={String(dr.zhiMin)} onChange={v=>up(n=>{n.zhiMin=num(v)||30})}/></div>
+        <div className="flex items-center gap-2"><div className="flex-1">每支費用</div><NumIn className="w-24" value={String(dr.comm.per30)} onChange={v=>up(n=>{n.comm.per30=num(v)})}/></div>
         <div className="flex items-center gap-2"><div className="flex-1">老點每單加給</div><NumIn className="w-24" value={String(dr.comm.laodian)} onChange={v=>up(n=>{n.comm.laodian=num(v)})}/></div>
-        <div className="flex items-center gap-2"><div className="flex-1">幾分鐘算 1 支<div className="text-xs text-mute">LINE 卡片顯示「支數」用</div></div><NumIn className="w-24" value={String(dr.zhiMin)} onChange={v=>up(n=>{n.zhiMin=num(v)||30})}/></div>
-        <div className="text-xs text-mute">例：120 分老點 = {dr.comm.per30}×4＋{dr.comm.laodian} = {money(num(dr.comm.per30)*4+num(dr.comm.laodian))}</div>
+        <div className="text-xs text-mute">{num(dr.zhiMin)||30} 分鐘 1 支、每支 {dr.comm.per30}。例：120 分鐘 = {Math.floor(120/(num(dr.zhiMin)||30))} 支，老點 = {Math.floor(120/(num(dr.zhiMin)||30))}×{dr.comm.per30}＋{dr.comm.laodian} = {money(Math.floor(120/(num(dr.zhiMin)||30))*num(dr.comm.per30)+num(dr.comm.laodian))}</div>
+        <div className="text-xs text-mute">修改後只影響之後新增或改品項的訂單，已存的訂單維持原本的支數與費用。</div>
       </Card>
 
       <div className={sec}>營業日</div>
