@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-003</title>
+<title>緩緩門店 v0.1-004</title>
 <script>
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
@@ -48,7 +48,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-003';
+const VER='v0.1-004';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -323,7 +323,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
 
         <div className="text-xs text-mute mb-1">老師編號</div>
         <div className="flex gap-2 mb-2">
-          <input className="flex-1 h-12 px-3 rounded-xl border border-line bg-card text-lg num" inputMode="numeric" placeholder="例：58" value={f.tc} onChange={e=>set('tc',e.target.value)}/>
+          <input className="flex-1 h-12 px-3 rounded-xl border border-line bg-card text-lg num" inputMode="numeric" placeholder="例：122" value={f.tc} onChange={e=>set('tc',e.target.value)}/>
           <button type="button" className={'px-4 h-12 rounded-xl border '+(f.ld?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('ld',!f.ld)}>
             {f.ld?'✓ ':''}老點
           </button>
@@ -647,7 +647,7 @@ function MonthPage({S,rev,goDay,openPay}){
 /* ========== 薪資條（給老師看：一律寫「費用」，不出現「抽成」） ========== */
 const SERIF='"Noto Serif TC","Songti TC","PMingLiU",serif';
 const SLIP_TITLES={salary:{title:'薪資明細',total:'應領薪資'},fee:{title:'費用明細',total:'應領費用'}};
-function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind}){
+function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
   const L=size==='a4'?{W:1240,H:1754,M:90,k:1,fixed:true}:{W:1080,H:3840,M:60,k:1.12,fixed:false};
   const {W,M}=L;const f=n=>Math.round(n*L.k);
   const ROW=f(52),FOOT=f(110);
@@ -679,9 +679,13 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind}){
 
   const firstHeader=ctx=>{
     let y=M+f(40);
-    text(ctx,'緩 緩',M,y+f(10),{size:64,serif:true,color:C.sageD});
-    text(ctx,'S L O W V E   B O D Y  S P A',M+f(190),y,{size:size==='a4'?22:18,color:C.brown});
-    text(ctx,TT.title.split('').join(' '),W-M,y,{size:40,serif:true,align:'right'});
+    if(showBrand!==false){
+      text(ctx,'緩 緩',M,y+f(10),{size:64,serif:true,color:C.sageD});
+      text(ctx,'S L O W V E   B O D Y  S P A',M+f(190),y,{size:size==='a4'?22:18,color:C.brown});
+      text(ctx,TT.title.split('').join(' '),W-M,y,{size:40,serif:true,align:'right'});
+    }else{
+      text(ctx,TT.title.split('').join(' '),M,y+f(10),{size:56,serif:true,color:C.sageD});
+    }
     y+=f(50);text(ctx,ymText,W-M,y,{size:28,color:C.mute,align:'right'});
     y+=f(30);hline(ctx,y,C.sage,3);
     y+=f(80);text(ctx,'老師編號',M,y,{size:28,color:C.mute});text(ctx,String(tc),M+f(150),y+f(4),{size:56,weight:'600'});
@@ -701,7 +705,7 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind}){
   };
   const contHeader=ctx=>{
     let y=M+f(30);
-    text(ctx,'緩緩 '+TT.title+'（續）',M,y,{size:28,serif:true,color:C.sageD});text(ctx,'老師 '+tc+'・'+ymText,W-M,y,{size:26,color:C.mute,align:'right'});
+    text(ctx,(showBrand!==false?'緩緩 ':'')+TT.title+'（續）',M,y,{size:28,serif:true,color:C.sageD});text(ctx,'老師 '+tc+'・'+ymText,W-M,y,{size:26,color:C.mute,align:'right'});
     y+=f(30);return tableHead(ctx,y);
   };
 
@@ -742,6 +746,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
   const [showAmt,setShowAmt]=useState(false);
   const [kind,setKind]=useState('salary');     // salary 薪資明細 / fee 費用明細
   const [size,setSize]=useState('mobile');     // mobile 手機（預設）/ a4 列印
+  const [showBrand,setShowBrand]=useState(true);
   const [busy,setBusy]=useState('');
   const sumFee=orders.reduce((s,o)=>s+(o.cm||0),0);
   const adjSum=adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
@@ -754,7 +759,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
   const gen=async type=>{
     if(busy)return;setBusy(type);
     try{
-      const {canvases}=drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind});
+      const {canvases}=drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand});
       let r;
       if(type==='pdf'){
         if(!window.jspdf)await loadScript(JSPDF_URL);
@@ -816,6 +821,9 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
           <div className="flex-1 flex rounded-xl border border-line overflow-hidden">{seg('salary',kind,setKind,'薪資明細')}{seg('fee',kind,setKind,'費用明細')}</div></div>
         <div className="flex items-center gap-3"><div className="w-12 text-sm text-mute">尺寸</div>
           <div className="flex-1 flex rounded-xl border border-line overflow-hidden">{seg('mobile',size,setSize,'手機')}{seg('a4',size,setSize,'A4 列印')}</div></div>
+        <button className={'w-full h-10 rounded-xl border text-left px-3 text-sm '+(showBrand?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setShowBrand(!showBrand)}>
+          {showBrand?'☑':'☐'} 顯示店名（緩緩 SLOWVE BODY SPA）
+        </button>
         <button className={'w-full h-10 rounded-xl border text-left px-3 text-sm '+(showAmt?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setShowAmt(!showAmt)}>
           {showAmt?'☑':'☐'} 顯示每單客人付的金額<span className="text-xs text-mute ml-2">（預設不顯示）</span>
         </button>
@@ -1098,4 +1106,3 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
-9
