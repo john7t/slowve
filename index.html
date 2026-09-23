@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<link rel="icon" href="data:,">
+<meta name="theme-color" content="#f4efe7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="緩緩門店">
+<title>緩緩門店 v0.1-001</title>
+<script>
+/* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
+window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
+window.onerror=function(m,s,l,c,e){window.__fb((m||'')+' @'+(l||0)+':'+(c||0));};
+window.addEventListener('unhandledrejection',function(e){try{console.warn('unhandledrejection:',e&&e.reason);if(e&&e.preventDefault)e.preventDefault()}catch(_e){}});
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{colors:{
+  bg:'#f4efe7',card:'#fbf8f3',line:'#e4dccf',ink:'#3b3a36',mute:'#8b8478',
+  sage:'#6f7d62',sageD:'#56624b',sageL:'#e7ebe1',brown:'#a0784f',brownL:'#f1e7da',warn:'#b5543c',warnL:'#f6e3dd'
+}}}};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<style>
+html,body{background:#f4efe7;color:#3b3a36;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+.serif{font-family:"Noto Serif TC","Songti TC","PMingLiU",serif}
+input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
+.num{font-variant-numeric:tabular-nums}
+.pb-safe{padding-bottom:calc(env(safe-area-inset-bottom) + 0px)}
+.sheet-in{animation:sheetIn .18s ease-out}
+@keyframes sheetIn{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="fb" style="display:none;position:fixed;inset:0;z-index:99;background:#f4efe7;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:12px">
+  <div style="font-size:20px;font-weight:600">系統發生錯誤</div>
+  <div style="color:#8b8478">本機資料仍保留，請重新整理頁面。<br>若持續發生，請把下方訊息截圖回報。</div>
+  <pre style="white-space:pre-wrap;font-size:12px;color:#b5543c;max-width:100%"></pre>
+  <button onclick="location.reload()" style="padding:10px 20px;border-radius:10px;background:#6f7d62;color:#fff">重新整理</button>
+</div>
+
+<script type="text/babel" data-presets="react">
+const {useState,useEffect,useMemo,useRef}=React;
+
+/* ========== 常數 ========== */
+const VER='v0.1-001';
+const P='slowve-';
+const SVCS=[{id:'dry',name:'全身指壓',short:'指壓'},{id:'oil',name:'深層油壓',short:'油壓'},{id:'foot',name:'腳底按摩',short:'腳底'}];
+const SVC_SHORT={dry:'指壓',oil:'油壓',foot:'腳底'};
+const MINS=[60,90,120];
+const WK='日一二三四五六';
+const STORAGE_LIMIT=5*1024*1024;
+const DEFAULT_SETTINGS={
+  prices:{dry:[1000,1400,1800],oil:[1200,1600,2000],foot:[1000,1400,1800]},
+  promo:{svc:'dry',min:90,price:1300},
+  addons:[
+    {id:'eoil',name:'特殊精油',price:300,comm:0},
+    {id:'guasha',name:'刮痧',price:500,comm:0},
+    {id:'bagua',name:'拔罐',price:500,comm:0},
+    {id:'xiujiao',name:'修腳皮',price:500,comm:0}
+  ],
+  comm:{per30:280,laodian:20},
+  cutoff:'05:00',
+  teachers:[],
+  device:'',
+  lastBackupAt:null,
+  backupPwd:''
+};
+
+/* ========== 儲存 ========== */
+const ls={
+  get(k,d){try{const v=localStorage.getItem(P+k);return v==null?d:JSON.parse(v)}catch(_e){return d}},
+  set(k,v){try{localStorage.setItem(P+k,JSON.stringify(v));return true}catch(_e){return false}}
+};
+const clone=o=>JSON.parse(JSON.stringify(o));
+function mergeSettings(s){
+  s=s||{};const d=clone(DEFAULT_SETTINGS);
+  const r=Object.assign({},d,s);
+  r.prices=Object.assign({},d.prices,s.prices||{});
+  r.promo=Object.assign({},d.promo,s.promo||{});
+  r.comm=Object.assign({},d.comm,s.comm||{});
+  r.addons=(s.addons&&s.addons.length)?s.addons:d.addons;
+  r.teachers=Array.isArray(s.teachers)?s.teachers:[];
+  if(!r.device)r.device=Math.random().toString(36).slice(2,6).toUpperCase();
+  return r;
+}
+function loadSettings(){return mergeSettings(ls.get('settings',null))}
+function slowveKeys(){const a=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.indexOf(P)===0)a.push(k)}}catch(_e){}return a}
+function storageBytes(){let n=0;slowveKeys().forEach(k=>{try{n+=(k.length+(localStorage.getItem(k)||'').length)*2}catch(_e){}});return n}
+
+/* ========== 日期 ========== */
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const parseYmd=s=>{const a=s.split('-').map(Number);return new Date(a[0],a[1]-1,a[2],12)};
+const addDays=(s,n)=>{const d=parseYmd(s);d.setDate(d.getDate()+n);return ymd(d)};
+const monKey=s=>s.slice(0,7);
+function bizToday(cutoff){
+  const now=new Date();const c=(cutoff||'05:00').split(':').map(Number);
+  const d=new Date(now);if(now.getHours()*60+now.getMinutes()<c[0]*60+(c[1]||0))d.setDate(d.getDate()-1);
+  return ymd(d);
+}
+const fmtDate=s=>{const d=parseYmd(s);return (d.getMonth()+1)+'/'+d.getDate()+'（'+WK[d.getDay()]+'）'};
+const money=n=>'$'+Number(n||0).toLocaleString('en-US');
+const smoney=n=>(n>0?'+':n<0?'-':'')+money(Math.abs(n||0));
+function agoText(ts){
+  if(!ts)return '尚未備份';
+  const m=Math.floor((Date.now()-ts)/60000);
+  if(m<60)return m<1?'剛剛備份':m+' 分鐘前備份';
+  const h=Math.floor(m/60);if(h<24)return h+' 小時前備份';
+  return Math.floor(h/24)+' 天前備份';
+}
+
+/* ========== 月／日資料 ========== */
+function loadMonth(mk){const m=ls.get('m-'+mk,null);return (m&&m.days)?m:{days:{}}}
+function emptyDay(){return {orders:[],close:null,log:[]}}
+function getDay(md,date){const d=md.days[date.slice(8)];return d?Object.assign(emptyDay(),d):emptyDay()}
+function mutateDay(date,fn){
+  const mk=monKey(date);const md=loadMonth(mk);
+  md.days[date.slice(8)]=fn(clone(getDay(md,date)));
+  return ls.set('m-'+mk,md);
+}
+
+/* ========== 計價／統計 ========== */
+function calcOrder(o,S){
+  let amt=0,cm=0;
+  if(o.svc&&o.min){
+    if(o.promo)amt+=Number(S.promo.price)||0;
+    else amt+=Number((S.prices[o.svc]||[])[MINS.indexOf(o.min)])||0;
+    cm+=Math.floor(o.min/30)*(Number(S.comm.per30)||0);
+  }
+  (o.ad||[]).forEach(id=>{const a=S.addons.find(x=>x.id===id);if(a){amt+=Number(a.price)||0;cm+=Number(a.comm)||0}});
+  if(o.ld)cm+=Number(S.comm.laodian)||0;
+  return {amt,cm};
+}
+function orderLabel(o,S){
+  const parts=[];
+  if(o.svc)parts.push(SVC_SHORT[o.svc]+o.min+(o.promo?'・平日':''));
+  (o.ad||[]).forEach(id=>{const a=S.addons.find(x=>x.id===id);parts.push(a?a.name:id)});
+  return parts.join(' ＋ ');
+}
+function statsOf(orders){
+  const live=orders.filter(o=>!o.void);
+  const r={n:live.length,amt:0,cm:0,byT:{}};
+  live.forEach(o=>{
+    r.amt+=o.amt||0;r.cm+=o.cm||0;
+    const t=r.byT[o.tc]||(r.byT[o.tc]={tc:o.tc,n:0,min:0,ld:0,cm:0,amt:0});
+    t.n++;t.min+=(o.svc&&o.min)?o.min:0;t.ld+=o.ld?1:0;t.cm+=o.cm||0;t.amt+=o.amt||0;
+  });
+  return r;
+}
+const sortT=byT=>Object.values(byT).sort((a,b)=>String(a.tc).localeCompare(String(b.tc),'zh-Hant',{numeric:true}));
+const snNum=o=>{const n=parseInt(o.sn,10);return isNaN(n)?1e9:n};
+const newId=dev=>Date.now().toString(36)+dev+Math.random().toString(36).slice(2,5);
+
+/* ========== 匯出／匯入 ========== */
+async function exportJson(S){
+  const now=new Date();
+  const name='slowve-backup-'+ymd(now).replace(/-/g,'')+'-'+pad(now.getHours())+pad(now.getMinutes())+'.json';
+  const data={};slowveKeys().forEach(k=>{data[k]=localStorage.getItem(k)});
+  const text=JSON.stringify({app:'slowve',ver:VER,exportedAt:now.toISOString(),device:S.device,data});
+  const blob=new Blob([text],{type:'application/json'});
+  try{
+    const file=new File([blob],name,{type:'application/json'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return 'shared'}
+  }catch(e){if(e&&e.name==='AbortError')return 'abort'}
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},1500);
+  return 'download';
+}
+function readFileText(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result||''));r.onerror=rej;r.readAsText(file)})}
+
+/* ========== 共用 UI ========== */
+function Sheet({onClose,children,title,footer}){
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div className="sheet-in w-full max-w-md bg-bg rounded-t-2xl max-h-[92vh] flex flex-col" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-line">
+          <div className="serif text-lg">{title}</div>
+          <button className="w-9 h-9 rounded-full text-mute text-xl" onClick={onClose} aria-label="關閉">×</button>
+        </div>
+        <div className="overflow-y-auto px-4 py-3 flex-1">{children}</div>
+        {footer&&<div className="border-t border-line px-4 py-3 pb-safe bg-card rounded-b-none">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+function Dialog({dlg,onDone}){
+  if(!dlg)return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+      <div className="w-full max-w-sm bg-card rounded-2xl p-5 shadow-xl">
+        <div className="text-lg font-semibold mb-2">{dlg.title}</div>
+        {dlg.msg&&<div className="text-mute whitespace-pre-line mb-4">{dlg.msg}</div>}
+        <div className="flex gap-2 justify-end">
+          {!dlg.okOnly&&<button className="px-4 py-2 rounded-xl border border-line" onClick={()=>onDone(false)}>取消</button>}
+          <button className={'px-4 py-2 rounded-xl text-white '+(dlg.danger?'bg-warn':'bg-sage')} onClick={()=>onDone(true)}>{dlg.okText||'確定'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const Card=({children,className})=><div className={'bg-card rounded-2xl border border-line '+(className||'')}>{children}</div>;
+function Stat({label,value,big,tone}){
+  return (
+    <div>
+      <div className="text-xs text-mute">{label}</div>
+      <div className={'num '+(big?'text-3xl serif ':'text-lg ')+(tone==='brown'?'text-brown':tone==='sage'?'text-sageD':'')}>{value}</div>
+    </div>
+  );
+}
+
+/* ========== 訂單編輯 ========== */
+function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask}){
+  const isNew=!order;
+  const nextSn=()=>{let mx=0;dayOrders.forEach(o=>{const n=parseInt(o.sn,10);if(!isNaN(n)&&n>mx)mx=n});return String(mx+1)};
+  const [f,setF]=useState(()=>order?Object.assign({},order,{ad:[...(order.ad||[])]}):
+    {id:newId(S.device),sn:nextSn(),t:'',svc:null,min:null,promo:false,ad:[],tc:'',ld:false,note:'',void:false});
+  const set=(k,v)=>setF(p=>Object.assign({},p,{[k]:v}));
+  const pickCell=(svc,min)=>setF(p=>(p.svc===svc&&p.min===min&&!p.promo)?Object.assign({},p,{svc:null,min:null}):Object.assign({},p,{svc,min,promo:false}));
+  const pickPromo=()=>setF(p=>p.promo?Object.assign({},p,{svc:null,min:null,promo:false}):Object.assign({},p,{svc:S.promo.svc,min:S.promo.min,promo:true}));
+  const togAd=id=>setF(p=>Object.assign({},p,{ad:p.ad.includes(id)?p.ad.filter(x=>x!==id):[...p.ad,id]}));
+
+  const sameItems=!isNew&&order.svc===f.svc&&order.min===f.min&&!!order.promo===!!f.promo&&!!order.ld===!!f.ld
+    &&[...(order.ad||[])].sort().join()===[...f.ad].sort().join();
+  const calc=calcOrder(f,S);
+  const amt=sameItems&&order.amt!=null?order.amt:calc.amt;
+  const cm=sameItems&&order.cm!=null?order.cm:calc.cm;
+
+  const save=async()=>{
+    if(!f.svc&&!f.ad.length){await ask({title:'尚未選擇品項',msg:'請點選主項目或額外品項。',okOnly:true});return}
+    const tc=String(f.tc||'').trim();
+    if(!tc){await ask({title:'請輸入老師編號',okOnly:true});return}
+    const sn=String(f.sn||'').trim();
+    const dup=sn&&dayOrders.find(o=>o.id!==f.id&&!o.void&&String(o.sn)===sn);
+    if(dup){
+      const ok=await ask({title:'流水號重複',msg:'#'+sn+' 已有一筆（老師 '+dup.tc+'）。\n兩位老師同一張單可以共用流水號，確定要儲存嗎？',okText:'仍要儲存'});
+      if(!ok)return;
+    }
+    const now=Date.now();
+    onSave(Object.assign({},f,{tc,sn,amt,cm,ca:f.ca||now,ua:now}));
+  };
+
+  const cellCls=on=>'h-14 rounded-xl border text-base num transition-colors '+(on?'bg-sage border-sage text-white shadow-inner':'bg-card border-line active:bg-sageL');
+  const recent=S.teachers.slice(0,12);
+
+  const footer=(
+    <div>
+      <div className="flex items-end justify-between mb-3">
+        <div className="text-sm text-mute">老師抽成 <span className="num text-ink">{money(cm)}</span></div>
+        <div className="text-right"><span className="text-sm text-mute mr-1">金額</span><span className="serif text-3xl text-brown num">{money(amt)}</span></div>
+      </div>
+      {locked?
+        <div className="text-center text-mute text-sm py-2">此日已日結，需先解除日結才能修改</div>:
+        <div className="flex gap-2">
+          {!isNew&&<button className={'px-4 h-12 rounded-xl border '+(f.void?'border-sage text-sageD':'border-warn text-warn')} onClick={()=>onToggleVoid(f)}>{f.void?'恢復':'作廢'}</button>}
+          <button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={save}>儲存</button>
+        </div>}
+    </div>
+  );
+
+  return (
+    <Sheet onClose={onClose} title={isNew?'新增訂單':(f.void?'訂單（已作廢）':'編輯訂單')} footer={footer}>
+      <fieldset disabled={locked} className={locked?'opacity-70':''}>
+        <div className="flex gap-3 mb-4">
+          <label className="flex-1">
+            <div className="text-xs text-mute mb-1">流水號</div>
+            <input className="w-full h-11 px-3 rounded-xl border border-line bg-card num" inputMode="numeric" value={f.sn} onChange={e=>set('sn',e.target.value)}/>
+          </label>
+          <label className="flex-1">
+            <div className="text-xs text-mute mb-1">時間（選填）</div>
+            <input type="time" className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={f.t||''} onChange={e=>set('t',e.target.value)}/>
+          </label>
+        </div>
+
+        <div className="text-xs text-mute mb-1">主項目</div>
+        <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-2 items-center mb-2">
+          <div></div>
+          {MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}
+          {SVCS.map(s=>(
+            <React.Fragment key={s.id}>
+              <div className="text-sm leading-tight">{s.short}</div>
+              {MINS.map((m,i)=>(
+                <button key={m} type="button" className={cellCls(f.svc===s.id&&f.min===m&&!f.promo)} onClick={()=>pickCell(s.id,m)}>
+                  {(S.prices[s.id]||[])[i]}
+                </button>
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+        <button type="button" className={'w-full h-12 rounded-xl border mb-4 '+(f.promo?'bg-brown border-brown text-white':'bg-brownL border-line text-brown')} onClick={pickPromo}>
+          平日限定　{S.promo.min} 分{SVC_SHORT[S.promo.svc]}　<span className="num font-semibold">{money(S.promo.price)}</span>
+        </button>
+
+        <div className="text-xs text-mute mb-1">老師編號</div>
+        <div className="flex gap-2 mb-2">
+          <input className="flex-1 h-12 px-3 rounded-xl border border-line bg-card text-lg num" inputMode="numeric" placeholder="例：58" value={f.tc} onChange={e=>set('tc',e.target.value)}/>
+          <button type="button" className={'px-4 h-12 rounded-xl border '+(f.ld?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('ld',!f.ld)}>
+            {f.ld?'✓ ':''}老點
+          </button>
+        </div>
+        {recent.length>0&&<div className="flex flex-wrap gap-2 mb-4">
+          {recent.map(t=><button key={t} type="button" className={'min-w-[2.75rem] h-9 px-3 rounded-full border text-sm num '+(String(f.tc)===t?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>set('tc',t)}>{t}</button>)}
+        </div>}
+        {recent.length===0&&<div className="mb-4"></div>}
+
+        <div className="text-xs text-mute mb-1">額外品項</div>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {S.addons.map(a=>{const on=f.ad.includes(a.id);return (
+            <button key={a.id} type="button" className={'h-12 rounded-xl border flex items-center justify-between px-3 '+(on?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>togAd(a.id)}>
+              <span>{on?'☑':'☐'} {a.name}</span><span className="num text-sm">{a.id==='eoil'?'+':''}{a.price}</span>
+            </button>);})}
+        </div>
+
+        <label className="block mb-2">
+          <div className="text-xs text-mute mb-1">備註</div>
+          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={f.note||''} onChange={e=>set('note',e.target.value)}/>
+        </label>
+        {!isNew&&!sameItems&&order.amt!=null&&<div className="text-xs text-brown">品項已變更，金額依目前價目表重新計算（原 {money(order.amt)}）</div>}
+      </fieldset>
+    </Sheet>
+  );
+}
+
+/* ========== 日結 ========== */
+function CloseSheet({st,onSave,onClose}){
+  const [cash,setCash]=useState('');
+  const [note,setNote]=useState('');
+  const c=cash===''?null:Number(cash);
+  const diff=c==null||isNaN(c)?null:c-st.amt;
+  const footer=(
+    <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-40" disabled={diff==null}
+      onClick={()=>onSave({expected:st.amt,cash:c,diff,note:note.trim(),at:Date.now()})}>確認日結</button>
+  );
+  return (
+    <Sheet onClose={onClose} title="日結" footer={footer}>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <Card className="p-3"><Stat label="系統應收" value={money(st.amt)} tone="brown"/></Card>
+        <Card className="p-3"><Stat label="單數" value={st.n+' 單'}/></Card>
+      </div>
+      <label className="block mb-3">
+        <div className="text-xs text-mute mb-1">實收現金</div>
+        <input className="w-full h-14 px-3 rounded-xl border border-line bg-card text-2xl num" inputMode="numeric" value={cash} onChange={e=>setCash(e.target.value.replace(/[^\d-]/g,''))} placeholder="盤點後輸入"/>
+      </label>
+      {diff!=null&&<div className={'mb-3 text-lg num '+(diff===0?'text-sageD':'text-warn')}>差額 {smoney(diff)}{diff===0?'　✓ 相符':''}</div>}
+      <label className="block">
+        <div className="text-xs text-mute mb-1">備註</div>
+        <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={note} onChange={e=>setNote(e.target.value)} placeholder="例：找錯錢、借零錢"/>
+      </label>
+      <div className="text-xs text-mute mt-3">日結後當日訂單會鎖定，需要修改時可解除日結。</div>
+    </Sheet>
+  );
+}
+
+/* ========== 日頁 ========== */
+function DayPage({S,date,setDate,rev,openEditor,openClose,onUnlock}){
+  const today=bizToday(S.cutoff);
+  const dd=useMemo(()=>getDay(loadMonth(monKey(date)),date),[date,rev]);
+  const orders=useMemo(()=>[...dd.orders].sort((a,b)=>snNum(a)-snNum(b)||(a.ca||0)-(b.ca||0)),[dd]);
+  const st=useMemo(()=>statsOf(dd.orders),[dd]);
+  const closed=!!dd.close;
+  const dateRef=useRef(null);
+
+  return (
+    <div className="pb-28">
+      <div className="flex items-center justify-between mb-3">
+        <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>setDate(addDays(date,-1))} aria-label="前一天">◀</button>
+        <label className="relative flex flex-col items-center">
+          <span className="text-xs text-mute num">{date.slice(0,4)}</span>
+          <span className="serif text-2xl num">{fmtDate(date)}</span>
+          <input ref={dateRef} type="date" className="absolute inset-0 opacity-0" value={date} onChange={e=>e.target.value&&setDate(e.target.value)}/>
+        </label>
+        <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>setDate(addDays(date,1))} aria-label="後一天">▶</button>
+      </div>
+      <div className="h-7 mb-2 text-center">
+        {date!==today?<button className="px-3 h-7 rounded-full bg-sageL text-sageD text-sm" onClick={()=>setDate(today)}>回到今天</button>:
+          <span className="text-xs text-mute">今天的營業日</span>}
+      </div>
+
+      <Card className="p-4 mb-3">
+        <div className="flex items-end justify-between">
+          <Stat label="營業額" value={money(st.amt)} big tone="brown"/>
+          <div className="text-right text-sm text-mute">{st.n} 單{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-line">
+          <Stat label="老師抽成" value={money(st.cm)}/>
+          <Stat label="店家淨額" value={money(st.amt-st.cm)} tone="sage"/>
+        </div>
+      </Card>
+
+      {closed&&<Card className="p-4 mb-3 bg-sageL/60">
+        <div className="flex items-center justify-between mb-2"><div className="font-semibold text-sageD">日結</div>
+          <button className="text-sm text-warn" onClick={onUnlock}>解除日結</button></div>
+        <div className="grid grid-cols-3 gap-2 text-sm num">
+          <div><div className="text-xs text-mute">應收</div>{money(dd.close.expected)}</div>
+          <div><div className="text-xs text-mute">實收</div>{money(dd.close.cash)}</div>
+          <div><div className="text-xs text-mute">差額</div><span className={dd.close.diff===0?'text-sageD':'text-warn'}>{smoney(dd.close.diff)}</span></div>
+        </div>
+        {dd.close.expected!==st.amt&&<div className="text-xs text-warn mt-2">注意：目前營業額與日結時的應收不同</div>}
+        {dd.close.note&&<div className="text-xs text-mute mt-2">備註：{dd.close.note}</div>}
+      </Card>}
+
+      <div className="text-sm text-mute mb-2 px-1">訂單</div>
+      {orders.length===0&&<Card className="p-6 text-center text-mute">這天還沒有訂單{!closed&&'，按右下「＋」新增'}</Card>}
+      <div className="space-y-2">
+        {orders.map(o=>(
+          <button key={o.id} className={'w-full text-left bg-card rounded-xl border border-line px-3 py-3 flex items-center gap-3 active:bg-sageL '+(o.void?'opacity-50':'')} onClick={()=>openEditor(o)}>
+            <div className="w-10 text-center text-mute num text-sm">#{o.sn||'-'}</div>
+            <div className="flex-1 min-w-0">
+              <div className={'truncate '+(o.void?'line-through':'')}>{orderLabel(o,S)}</div>
+              <div className="text-xs text-mute num">
+                師 <span className="text-ink">{o.tc}</span>
+                {o.ld&&<span className="ml-1 px-1.5 rounded bg-brownL text-brown">老點</span>}
+                {o.t&&<span className="ml-2">{o.t}</span>}
+                {o.void&&<span className="ml-2 text-warn">已作廢</span>}
+                {o.note&&<span className="ml-2">・{o.note}</span>}
+              </div>
+            </div>
+            <div className={'num text-right '+(o.void?'line-through':'')}>{money(o.amt)}</div>
+          </button>
+        ))}
+      </div>
+
+      {st.n>0&&<>
+        <div className="text-sm text-mute mt-5 mb-2 px-1">老師統計</div>
+        <Card className="overflow-hidden">
+          <table className="w-full text-sm num">
+            <thead className="text-xs text-mute bg-brownL/50"><tr>
+              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">分鐘</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">抽成</th>
+            </tr></thead>
+            <tbody>{sortT(st.byT).map(t=>(
+              <tr key={t.tc} className="border-t border-line">
+                <td className="px-3 py-2">{t.tc}</td><td className="text-center">{t.n}</td><td className="text-center">{t.min}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
+              </tr>))}</tbody>
+          </table>
+        </Card>
+      </>}
+
+      {!closed&&st.n>0&&<button className="w-full h-12 mt-5 rounded-xl border border-sage text-sageD bg-card" onClick={()=>openClose(st)}>日結</button>}
+
+      {!closed&&<button className="fixed z-30 right-5 bottom-24 w-16 h-16 rounded-full bg-sage text-white text-4xl shadow-lg active:bg-sageD" style={{marginBottom:'env(safe-area-inset-bottom)'}} onClick={()=>openEditor(null)} aria-label="新增訂單">＋</button>}
+    </div>
+  );
+}
+
+/* ========== 月報 ========== */
+function MonthPage({S,rev,goDay}){
+  const [ym,setYm]=useState(()=>monKey(bizToday(S.cutoff)));
+  const shift=n=>{const a=ym.split('-').map(Number);const d=new Date(a[0],a[1]-1+n,1);setYm(d.getFullYear()+'-'+pad(d.getMonth()+1))};
+  const data=useMemo(()=>{
+    const md=loadMonth(ym);const a=ym.split('-').map(Number);const dim=new Date(a[0],a[1],0).getDate();
+    const rows=[];const tot={n:0,amt:0,cm:0,byT:{}};
+    for(let d=1;d<=dim;d++){
+      const dd=md.days[pad(d)];if(!dd||(!(dd.orders||[]).length&&!dd.close))continue;
+      const st=statsOf(dd.orders||[]);
+      rows.push({date:ym+'-'+pad(d),st,closed:!!dd.close});
+      tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;
+      Object.values(st.byT).forEach(t=>{const x=tot.byT[t.tc]||(tot.byT[t.tc]={tc:t.tc,n:0,min:0,ld:0,cm:0,amt:0});x.n+=t.n;x.min+=t.min;x.ld+=t.ld;x.cm+=t.cm;x.amt+=t.amt});
+    }
+    return {rows,tot};
+  },[ym,rev]);
+  const a=ym.split('-');
+  return (
+    <div className="pb-24">
+      <div className="flex items-center justify-between mb-3">
+        <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>shift(-1)}>◀</button>
+        <div className="serif text-2xl num">{a[0]} 年 {Number(a[1])} 月</div>
+        <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>shift(1)}>▶</button>
+      </div>
+      <Card className="p-4 mb-3">
+        <Stat label="本月營業額" value={money(data.tot.amt)} big tone="brown"/>
+        <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
+          <Stat label="單數" value={data.tot.n}/>
+          <Stat label="老師抽成" value={money(data.tot.cm)}/>
+          <Stat label="店家淨額" value={money(data.tot.amt-data.tot.cm)} tone="sage"/>
+        </div>
+      </Card>
+
+      <div className="text-sm text-mute mb-2 px-1">每日</div>
+      {data.rows.length===0&&<Card className="p-6 text-center text-mute">本月沒有資料</Card>}
+      <Card className="overflow-hidden">
+        {data.rows.map((r,i)=>(
+          <button key={r.date} className={'w-full flex items-center px-3 py-3 text-left num active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>goDay(r.date)}>
+            <div className="w-24">{fmtDate(r.date)}</div>
+            <div className="flex-1 text-sm text-mute">{r.st.n} 單{r.closed?<span className="ml-2 text-sageD">✓ 日結</span>:<span className="ml-2 text-warn/80">未日結</span>}</div>
+            <div>{money(r.st.amt)}</div>
+          </button>
+        ))}
+      </Card>
+
+      {data.tot.n>0&&<>
+        <div className="text-sm text-mute mt-5 mb-2 px-1">老師月統計</div>
+        <Card className="overflow-hidden">
+          <table className="w-full text-sm num">
+            <thead className="text-xs text-mute bg-brownL/50"><tr>
+              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">分鐘</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">抽成</th>
+            </tr></thead>
+            <tbody>{sortT(data.tot.byT).map(t=>(
+              <tr key={t.tc} className="border-t border-line">
+                <td className="px-3 py-2">{t.tc}</td><td className="text-center">{t.n}</td><td className="text-center">{t.min}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
+              </tr>))}</tbody>
+          </table>
+        </Card>
+      </>}
+    </div>
+  );
+}
+
+/* ========== 設定 ========== */
+function NumIn({value,onChange,className}){
+  return <input className={'h-10 px-2 rounded-lg border border-line bg-card num text-center '+(className||'w-full')} inputMode="numeric" value={value} onChange={e=>onChange(e.target.value.replace(/[^\d]/g,''))}/>;
+}
+function SettingsPage({S,saveS,ask,toast,onImported}){
+  const [dr,setDr]=useState(()=>clone(S));
+  const [newT,setNewT]=useState('');
+  const [used,setUsed]=useState(storageBytes());
+  const fileRef=useRef(null);
+  useEffect(()=>{setDr(clone(S))},[S]);
+  const dirty=JSON.stringify(dr)!==JSON.stringify(S);
+  const up=fn=>setDr(p=>{const n=clone(p);fn(n);return n});
+  const num=v=>v===''?0:Number(v);
+
+  const doSave=()=>{saveS(mergeSettings(dr));toast('設定已儲存');setUsed(storageBytes())};
+  const addT=()=>{const t=newT.trim();if(!t)return;up(n=>{n.teachers=[t,...n.teachers.filter(x=>x!==t)]});setNewT('')};
+  const doExport=async()=>{
+    const r=await exportJson(S);
+    if(r==='abort')return;
+    saveS(Object.assign({},S,{lastBackupAt:Date.now()}));
+    toast(r==='shared'?'已開啟分享':'已下載備份檔');
+  };
+  const doImport=async e=>{
+    const file=e.target.files&&e.target.files[0];e.target.value='';if(!file)return;
+    let obj=null;
+    try{obj=JSON.parse(await readFileText(file))}catch(_e){}
+    if(!obj||obj.app!=='slowve'||!obj.data){await ask({title:'無法匯入',msg:'這不是緩緩門店的備份檔。',okOnly:true});return}
+    const months=Object.keys(obj.data).filter(k=>k.indexOf(P+'m-')===0).length;
+    const ok=await ask({title:'匯入備份',msg:'備份時間：'+new Date(obj.exportedAt).toLocaleString('zh-TW')+'\n包含 '+months+' 個月份的資料。\n\n匯入後會覆蓋本機所有資料，確定嗎？',okText:'覆蓋匯入',danger:true});
+    if(!ok)return;
+    slowveKeys().forEach(k=>{try{localStorage.removeItem(k)}catch(_e){}});
+    let fail=false;
+    Object.keys(obj.data).forEach(k=>{if(k.indexOf(P)!==0)return;try{localStorage.setItem(k,obj.data[k])}catch(_e){fail=true}});
+    onImported();setUsed(storageBytes());
+    toast(fail?'部分資料寫入失敗（空間不足）':'匯入完成');
+  };
+
+  const pct=Math.min(100,used/STORAGE_LIMIT*100);
+  const sec='text-sm text-mute mt-5 mb-2 px-1';
+
+  return (
+    <div className="pb-40">
+      <div className={sec.replace('mt-5','mt-0')}>價目表</div>
+      <Card className="p-3">
+        <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-2 items-center">
+          <div></div>{MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}
+          {SVCS.map(s=>(<React.Fragment key={s.id}>
+            <div className="text-sm">{s.short}</div>
+            {MINS.map((m,i)=><NumIn key={m} value={String(dr.prices[s.id][i])} onChange={v=>up(n=>{n.prices[s.id][i]=num(v)})}/>)}
+          </React.Fragment>))}
+        </div>
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-line">
+          <div className="flex-1 text-sm">平日限定 {dr.promo.min} 分{SVC_SHORT[dr.promo.svc]}</div>
+          <NumIn className="w-24" value={String(dr.promo.price)} onChange={v=>up(n=>{n.promo.price=num(v)})}/>
+        </div>
+      </Card>
+
+      <div className={sec}>額外品項</div>
+      <Card className="p-3">
+        <div className="grid grid-cols-[1fr_5rem_5rem] gap-2 items-center text-sm">
+          <div></div><div className="text-center text-xs text-mute">價格</div><div className="text-center text-xs text-mute">老師抽成</div>
+          {dr.addons.map((a,i)=>(<React.Fragment key={a.id}>
+            <div>{a.name}</div>
+            <NumIn value={String(a.price)} onChange={v=>up(n=>{n.addons[i].price=num(v)})}/>
+            <NumIn value={String(a.comm)} onChange={v=>up(n=>{n.addons[i].comm=num(v)})}/>
+          </React.Fragment>))}
+        </div>
+      </Card>
+
+      <div className={sec}>老師抽成</div>
+      <Card className="p-3 space-y-2 text-sm">
+        <div className="flex items-center gap-2"><div className="flex-1">主項目每 30 分鐘</div><NumIn className="w-24" value={String(dr.comm.per30)} onChange={v=>up(n=>{n.comm.per30=num(v)})}/></div>
+        <div className="flex items-center gap-2"><div className="flex-1">老點每單加給</div><NumIn className="w-24" value={String(dr.comm.laodian)} onChange={v=>up(n=>{n.comm.laodian=num(v)})}/></div>
+        <div className="text-xs text-mute">例：120 分老點 = {dr.comm.per30}×4＋{dr.comm.laodian} = {money(num(dr.comm.per30)*4+num(dr.comm.laodian))}</div>
+      </Card>
+
+      <div className={sec}>營業日</div>
+      <Card className="p-3 text-sm">
+        <div className="flex items-center gap-2"><div className="flex-1">營業日切點<div className="text-xs text-mute">此時間之前開啟，「今天」算前一天</div></div>
+          <input type="time" className="h-10 px-2 rounded-lg border border-line bg-card" value={dr.cutoff} onChange={e=>up(n=>{n.cutoff=e.target.value||'05:00'})}/></div>
+      </Card>
+
+      <div className={sec}>老師編號</div>
+      <Card className="p-3">
+        <div className="flex gap-2 mb-3">
+          <input className="flex-1 h-10 px-3 rounded-lg border border-line bg-card num" inputMode="numeric" placeholder="新增編號" value={newT} onChange={e=>setNewT(e.target.value)}/>
+          <button className="px-4 h-10 rounded-lg bg-sage text-white" onClick={addT}>加入</button>
+        </div>
+        {dr.teachers.length===0&&<div className="text-xs text-mute">尚無編號；登打訂單時輸入的編號也會自動加入</div>}
+        <div className="flex flex-wrap gap-2">
+          {dr.teachers.map(t=><span key={t} className="inline-flex items-center h-8 pl-3 pr-1 rounded-full bg-sageL text-sageD num text-sm">{t}
+            <button className="w-6 h-6 ml-1 rounded-full text-mute" onClick={()=>up(n=>{n.teachers=n.teachers.filter(x=>x!==t)})} aria-label={'移除 '+t}>×</button></span>)}
+        </div>
+      </Card>
+
+      <div className={sec}>備份與還原</div>
+      <Card className="p-3 text-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div>上次備份</div><div className={S.lastBackupAt&&Date.now()-S.lastBackupAt<3*864e5?'text-sageD':'text-warn'}>{agoText(S.lastBackupAt)}</div>
+        </div>
+        <div className="opacity-50">
+          <div className="text-xs text-mute mb-1">雲端備份（Google Drive）</div>
+          <input disabled className="w-full h-10 px-3 rounded-lg border border-line bg-card mb-2" placeholder="連線密碼"/>
+          <div className="grid grid-cols-2 gap-2">
+            <button disabled className="h-10 rounded-lg border border-line">備份到雲端</button>
+            <button disabled className="h-10 rounded-lg border border-line">從雲端還原</button>
+          </div>
+          <div className="text-xs text-mute mt-1">雲端備份尚未開放（下一版接上 GAS）</div>
+        </div>
+        <div className="text-xs text-mute mt-4 mb-1">本機檔案</div>
+        <div className="grid grid-cols-2 gap-2">
+          <button className="h-10 rounded-lg bg-sage text-white" onClick={doExport}>匯出備份檔</button>
+          <button className="h-10 rounded-lg border border-sage text-sageD" onClick={()=>fileRef.current&&fileRef.current.click()}>匯入備份檔</button>
+        </div>
+        <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={doImport}/>
+      </Card>
+
+      <div className={sec}>本機儲存空間</div>
+      <Card className="p-3 text-sm">
+        <div className="flex justify-between mb-2 num"><span>{(used/1024).toFixed(1)} KB</span><span className="text-mute">約 5 MB 上限</span></div>
+        <div className="h-2 rounded-full bg-line overflow-hidden"><div className={'h-full '+(pct>80?'bg-warn':'bg-sage')} style={{width:Math.max(1,pct)+'%'}}></div></div>
+        {pct>80&&<div className="text-xs text-warn mt-2">空間快滿了，請先匯出備份</div>}
+      </Card>
+
+      <div className="text-center text-xs text-mute mt-6 num">緩緩門店 {VER}　裝置 {S.device}</div>
+
+      {dirty&&<div className="fixed left-0 right-0 bottom-[4.5rem] z-30 px-4" style={{marginBottom:'env(safe-area-inset-bottom)'}}>
+        <div className="max-w-md mx-auto flex gap-2">
+          <button className="flex-1 h-12 rounded-xl border border-line bg-card" onClick={()=>setDr(clone(S))}>取消變更</button>
+          <button className="flex-[2] h-12 rounded-xl bg-sage text-white shadow-lg" onClick={doSave}>儲存設定</button>
+        </div>
+      </div>}
+    </div>
+  );
+}
+
+/* ========== App ========== */
+function App(){
+  const [S,setS]=useState(()=>{const s=loadSettings();ls.set('settings',s);return s});
+  const [date,setDate]=useState(()=>bizToday(loadSettings().cutoff));
+  const [tab,setTab]=useState('day');
+  const [rev,setRev]=useState(0);
+  const [ed,setEd]=useState(null);        // {order} 開啟編輯
+  const [closeSt,setCloseSt]=useState(null);
+  const [dlg,setDlg]=useState(null);
+  const [toastMsg,setToastMsg]=useState('');
+  const bump=()=>setRev(r=>r+1);
+  const toast=m=>{setToastMsg(m);clearTimeout(window.__tt);window.__tt=setTimeout(()=>setToastMsg(''),2200)};
+  const ask=o=>new Promise(res=>setDlg(Object.assign({},o,{res})));
+  const saveS=ns=>{setS(ns);if(!ls.set('settings',ns))toast('設定儲存失敗：空間不足')};
+
+  const dayData=()=>getDay(loadMonth(monKey(date)),date);
+
+  const onSaveOrder=o=>{
+    if(!mutateDay(date,d=>{const i=d.orders.findIndex(x=>x.id===o.id);if(i>=0)d.orders[i]=o;else d.orders.push(o);return d})){
+      ask({title:'儲存失敗',msg:'本機儲存空間可能已滿，請先匯出備份。',okOnly:true});return;
+    }
+    saveS(Object.assign({},S,{teachers:[o.tc,...S.teachers.filter(x=>x!==o.tc)].slice(0,40)}));
+    setEd(null);bump();toast('已儲存 #'+(o.sn||'')+'　'+money(o.amt));
+  };
+  const onToggleVoid=async o=>{
+    const toVoid=!o.void;
+    const ok=await ask(toVoid?{title:'作廢這筆訂單？',msg:'作廢後不計入營業額，之後仍可恢復。',okText:'作廢',danger:true}:{title:'恢復這筆訂單？',okText:'恢復'});
+    if(!ok)return;
+    mutateDay(date,d=>{const x=d.orders.find(y=>y.id===o.id);if(x){x.void=toVoid;x.ua=Date.now()}return d});
+    setEd(null);bump();toast(toVoid?'已作廢':'已恢復');
+  };
+  const onClose=c=>{
+    mutateDay(date,d=>{d.close=c;d.log=(d.log||[]).concat([{act:'close',at:c.at,expected:c.expected,cash:c.cash,diff:c.diff}]);return d});
+    setCloseSt(null);bump();toast('日結完成');
+  };
+  const onUnlock=async()=>{
+    const ok=await ask({title:'解除日結？',msg:'解除後可以修改當日訂單，修改完請重新日結。',okText:'解除',danger:true});
+    if(!ok)return;
+    mutateDay(date,d=>{d.log=(d.log||[]).concat([{act:'unlock',at:Date.now(),prev:d.close}]);d.close=null;return d});
+    bump();toast('已解除日結');
+  };
+
+  const backupOld=!S.lastBackupAt||Date.now()-S.lastBackupAt>3*864e5;
+  const NAV=[{id:'day',label:'每日',icon:'◷'},{id:'month',label:'月報',icon:'▤'},{id:'set',label:'設定',icon:'⚙'}];
+  const TITLE={day:'每日訂單',month:'月報',set:'設定'};
+
+  return (
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-line" style={{paddingTop:'env(safe-area-inset-top)'}}>
+        <div className="max-w-md mx-auto flex items-center justify-between px-4 h-14">
+          <div className="flex items-baseline gap-2">
+            <span className="serif text-2xl tracking-widest text-sageD">緩緩</span>
+            <span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span>
+            <span className="text-sm text-mute ml-1">{TITLE[tab]}</span>
+          </div>
+          <button className={'text-xs px-2.5 h-7 rounded-full '+(backupOld?'bg-warnL text-warn':'bg-sageL text-sageD')} onClick={()=>setTab('set')}>{agoText(S.lastBackupAt)}</button>
+        </div>
+      </header>
+
+      <main className="max-w-md mx-auto px-4 pt-4">
+        {tab==='day'&&<DayPage S={S} date={date} setDate={setDate} rev={rev}
+          openEditor={o=>setEd({order:o})} openClose={st=>setCloseSt(st)} onUnlock={onUnlock}/>}
+        {tab==='month'&&<MonthPage S={S} rev={rev} goDay={d=>{setDate(d);setTab('day')}}/>}
+        {tab==='set'&&<SettingsPage S={S} saveS={saveS} ask={ask} toast={toast} onImported={()=>{setS(loadSettings());bump()}}/>}
+      </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 z-20 bg-card border-t border-line pb-safe">
+        <div className="max-w-md mx-auto grid grid-cols-3">
+          {NAV.map(n=><button key={n.id} className={'h-16 flex flex-col items-center justify-center gap-0.5 '+(tab===n.id?'text-sageD':'text-mute')} onClick={()=>setTab(n.id)}>
+            <span className="text-xl leading-none">{n.icon}</span><span className="text-xs">{n.label}</span>
+            {tab===n.id&&<span className="w-6 h-0.5 rounded bg-sage mt-0.5"></span>}
+          </button>)}
+        </div>
+      </nav>
+
+      {ed&&<OrderEditor S={S} order={ed.order} dayOrders={dayData().orders} locked={!!dayData().close}
+        onSave={onSaveOrder} onToggleVoid={onToggleVoid} onClose={()=>setEd(null)} ask={ask}/>}
+      {closeSt&&<CloseSheet st={closeSt} onSave={onClose} onClose={()=>setCloseSt(null)}/>}
+      <Dialog dlg={dlg} onDone={v=>{const r=dlg.res;setDlg(null);r(v)}}/>
+      {toastMsg&&<div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 px-4 py-2 rounded-full bg-ink/90 text-white text-sm shadow-lg">{toastMsg}</div>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
