@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-004</title>
+<title>緩緩門店 v0.1-005</title>
 <script>
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
@@ -48,7 +48,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-004';
+const VER='v0.1-005';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -67,6 +67,7 @@ const DEFAULT_SETTINGS={
     {id:'xiujiao',name:'修腳皮',price:500,comm:0}
   ],
   comm:{per30:280,laodian:20},
+  zhiMin:30,                      // 幾分鐘算 1 支（LINE 卡片顯示用）
   cutoff:'05:00',
   teachers:[],
   expCats:['耗材','清潔用品','水電瓦斯','房租','餐費','雜支','其他'],
@@ -738,15 +739,77 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
   return {canvases,total};
 }
 const canvasBlob=(c,type,q)=>new Promise(res=>c.toBlob(res,type,q));
+/* ========== LINE 分享（LIFF shareTargetPicker＋Flex 卡片） ========== */
+const LIFF_ID='2011703958-OP1Os8vL';
+const LIFF_SDK='https://static.line-scdn.net/liff/edge/2/sdk.js';
+const PENDING_SHARE_KEY=P+'pending-share';
+const zhiOf=(o,S)=>(o.svc&&o.min)?Math.floor(o.min/(Number(S.zhiMin)||30)):0;
+async function liffReady(){
+  if(!window.liff)await loadScript(LIFF_SDK);
+  if(!window.__liffInited){await window.liff.init({liffId:LIFF_ID});window.__liffInited=true}
+  return window.liff;
+}
+const yuan=n=>Number(n||0).toLocaleString('en-US')+' 元';
+function buildPayFlex({S,ym,tc,orders,adj,kind,showBrand}){
+  const TT=SLIP_TITLES[kind]||SLIP_TITLES.salary;
+  const a=ym.split('-');const y=Number(a[0]),m=Number(a[1]);const dim=new Date(y,m,0).getDate();
+  const G={sage:'#6f7d62',sageD:'#56624b',brown:'#a0784f',mute:'#8b8478',ink:'#3b3a36',warn:'#b5543c',bg:'#f4efe7'};
+  const sumFee=orders.reduce((s,o)=>s+(o.cm||0),0);
+  const sumZhi=orders.reduce((s,o)=>s+zhiOf(o,S),0);
+  const sumLd=orders.filter(o=>o.ld).length;
+  const net=sumFee+adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
+  const T=(text,o)=>Object.assign({type:'text',text:String(text)||' ',wrap:true},o||{});
+  const row=(l,r,o)=>{o=o||{};return {type:'box',layout:'horizontal',margin:o.margin||'md',contents:[
+    T(l,{size:o.size||'sm',color:o.lc||G.mute,flex:5}),T(r,{size:o.rsize||o.size||'sm',color:o.rc||G.ink,align:'end',flex:5,weight:o.bold?'bold':'regular'})]}};
+  const header=sub=>({type:'box',layout:'vertical',backgroundColor:G.sage,paddingAll:'16px',contents:[
+    ...(showBrand!==false?[T('緩緩 SLOWVE',{size:'xs',color:'#e7ebe1'})]:[]),
+    T(TT.title+(sub?'｜'+sub:''),{size:'md',color:'#ffffff',weight:'bold'}),
+    T(y+'年'+m+'月・'+tc+' 老師',{size:'xs',color:'#e7ebe1'})]});
+  // 第 1 頁：摘要
+  const b1={type:'bubble',size:'mega',header:header(''),body:{type:'box',layout:'vertical',contents:[
+    T(y+'年'+m+'月',{size:'sm',color:G.mute}),
+    T(tc+' 老師',{size:'xl',weight:'bold',color:G.ink,margin:'sm'}),
+    row('應領金額',yuan(sumFee),{margin:'lg',size:'md',lc:G.ink,bold:true}),
+    row('服務',sumZhi+' 支　'+sumLd+' 老點'),
+    ...(adj.length?[{type:'separator',margin:'lg'}]:[]),
+    ...adj.map(j=>{const v=Number(j.amt)||0;return row(j.name||(v<0?'扣項':'加項'),(v<0?'－':'＋')+yuan(Math.abs(v)),{rc:v<0?G.warn:G.ink})}),
+    {type:'separator',margin:'lg'},
+    {type:'box',layout:'horizontal',margin:'lg',contents:[
+      T('實領',{size:'md',weight:'bold',color:G.ink,flex:3,gravity:'bottom'}),
+      T(yuan(net),{size:'xl',weight:'bold',color:G.brown,align:'end',flex:7})]}
+  ]}};
+  // 第 2~4 頁：每日小計
+  const byDay={};
+  orders.forEach(o=>{const d=Number(o.date.slice(8));const x=byDay[d]||(byDay[d]={zhi:0,ld:0,fee:0,n:0});x.zhi+=zhiOf(o,S);x.ld+=o.ld?1:0;x.fee+=o.cm||0;x.n++});
+  const ranges=[[1,10],[11,20],[21,dim]];
+  const pages=ranges.map(([from,to])=>{
+    const rows=[];let tz=0,tl=0,tf=0;
+    for(let d=from;d<=to;d++){const x=byDay[d];if(!x)continue;tz+=x.zhi;tl+=x.ld;tf+=x.fee;
+      const w=WK[new Date(y,m-1,d).getDay()];
+      rows.push({type:'box',layout:'horizontal',margin:'md',contents:[
+        T(m+'/'+d+'（'+w+'）',{size:'sm',color:G.ink,flex:4}),
+        T(x.zhi+'支'+(x.ld?' '+x.ld+'老點':''),{size:'sm',color:G.mute,flex:4}),
+        T('$'+x.fee.toLocaleString('en-US'),{size:'sm',color:G.ink,align:'end',flex:3})]});
+    }
+    if(!rows.length)rows.push(T('本期無服務紀錄',{size:'sm',color:G.mute,align:'center',margin:'lg'}));
+    return {type:'bubble',size:'mega',header:header('服務小計 '+from+'～'+to+' 號'),
+      body:{type:'box',layout:'vertical',contents:rows},
+      footer:{type:'box',layout:'vertical',contents:[{type:'separator'},
+        row('小計',tz+' 支　'+tl+' 老點　$'+tf.toLocaleString('en-US'),{margin:'md',lc:G.ink,bold:true})]}};
+  });
+  return {type:'flex',altText:(showBrand!==false?'緩緩 ':'')+y+'年'+m+'月 '+tc+'老師 '+TT.title+'，實領 '+yuan(net),
+    contents:{type:'carousel',contents:[b1].concat(pages)}};
+}
 
-function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
+
+function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask,autoLine}){
   const orders=useMemo(()=>teacherOrders(ym,tc),[ym,tc,rev]);
   const adj=useMemo(()=>((loadMonth(ym).pay||{})[tc]||{}).adj||[],[ym,tc,rev]);
   const [nm,setNm]=useState('');const [am,setAm]=useState('');const [neg,setNeg]=useState(false);
   const [showAmt,setShowAmt]=useState(false);
-  const [kind,setKind]=useState('salary');     // salary 薪資明細 / fee 費用明細
+  const [kind,setKind]=useState((autoLine&&autoLine.kind)||'salary');     // salary 薪資明細 / fee 費用明細
   const [size,setSize]=useState('mobile');     // mobile 手機（預設）/ a4 列印
-  const [showBrand,setShowBrand]=useState(true);
+  const [showBrand,setShowBrand]=useState(autoLine&&autoLine.showBrand===false?false:true);
   const [busy,setBusy]=useState('');
   const sumFee=orders.reduce((s,o)=>s+(o.cm||0),0);
   const adjSum=adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
@@ -779,12 +842,31 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
     }catch(e){await ask({title:'產生失敗',msg:String(e&&e.message||e)+'\n（PDF 需要網路載入元件，可改用「分享圖片」）',okOnly:true})}
     setBusy('');
   };
+  const shareLine=async()=>{
+    if(busy)return;setBusy('line');
+    try{
+      const liff=await liffReady();
+      if(!liff.isLoggedIn()){
+        try{sessionStorage.setItem(PENDING_SHARE_KEY,JSON.stringify({ym,tc,kind,showBrand}))}catch(_e){}
+        liff.login({redirectUri:location.origin+location.pathname});return;
+      }
+      if(!liff.isApiAvailable('shareTargetPicker')){await ask({title:'無法使用 LINE 分享',msg:'這個環境不支援選擇好友分享，請改用「分享圖片」或「分享 PDF」。',okOnly:true});setBusy('');return}
+      const msg=buildPayFlex({S,ym,tc,orders,adj,kind,showBrand});
+      const r=await liff.shareTargetPicker([msg],{isMultiple:false});
+      if(r&&r.status==='success')toast('已用 LINE 傳送給老師');
+    }catch(e){await ask({title:'LINE 分享失敗',msg:String(e&&e.message||e)+'\n\n可改用「分享圖片」或「分享 PDF」。',okOnly:true})}
+    setBusy('');
+  };
+  useEffect(()=>{if(autoLine)toast('已登入 LINE，請再按一次「用 LINE 傳給老師」')},[]);
   const seg=(val,cur,set,label)=><button key={val} className={'flex-1 h-10 text-sm '+(cur===val?'bg-sage text-white':'bg-card text-ink')} onClick={()=>set(val)}>{label}</button>;
 
   const footer=(
+    <div>
+    <button className="w-full h-12 mb-2 rounded-xl text-white text-lg disabled:opacity-50" style={{background:'#06c755'}} disabled={!!busy} onClick={shareLine}>{busy==='line'?'連線 LINE 中…':'用 LINE 傳給老師（卡片）'}</button>
     <div className="flex gap-2">
       <button className="flex-1 h-12 rounded-xl border border-sage text-sageD disabled:opacity-50" disabled={!!busy} onClick={()=>gen('img')}>{busy==='img'?'產生中…':'分享圖片'}</button>
       <button className="flex-[1.4] h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={!!busy} onClick={()=>gen('pdf')}>{busy==='pdf'?'產生中…':'分享 PDF'}</button>
+    </div>
     </div>
   );
   return (
@@ -920,6 +1002,7 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
       <Card className="p-3 space-y-2 text-sm">
         <div className="flex items-center gap-2"><div className="flex-1">主項目每 30 分鐘</div><NumIn className="w-24" value={String(dr.comm.per30)} onChange={v=>up(n=>{n.comm.per30=num(v)})}/></div>
         <div className="flex items-center gap-2"><div className="flex-1">老點每單加給</div><NumIn className="w-24" value={String(dr.comm.laodian)} onChange={v=>up(n=>{n.comm.laodian=num(v)})}/></div>
+        <div className="flex items-center gap-2"><div className="flex-1">幾分鐘算 1 支<div className="text-xs text-mute">LINE 卡片顯示「支數」用</div></div><NumIn className="w-24" value={String(dr.zhiMin)} onChange={v=>up(n=>{n.zhiMin=num(v)||30})}/></div>
         <div className="text-xs text-mute">例：120 分老點 = {dr.comm.per30}×4＋{dr.comm.laodian} = {money(num(dr.comm.per30)*4+num(dr.comm.laodian))}</div>
       </Card>
 
@@ -1012,6 +1095,15 @@ function App(){
   const [closeSt,setCloseSt]=useState(null);
   const [dlg,setDlg]=useState(null);
   const [toastMsg,setToastMsg]=useState('');
+  useEffect(()=>{ // LINE 登入導回後：完成 LIFF 初始化、重新打開原本的老師明細
+    let pend=null;try{pend=JSON.parse(sessionStorage.getItem(PENDING_SHARE_KEY)||'null')}catch(_e){}
+    const q=location.search;
+    if(!pend&&q.indexOf('liff.state')<0&&q.indexOf('code=')<0)return;
+    liffReady().then(()=>{
+      try{if(location.search)history.replaceState(null,'',location.pathname+location.hash)}catch(_e){}
+      if(pend){try{sessionStorage.removeItem(PENDING_SHARE_KEY)}catch(_e){}setTab('month');setPay({ym:pend.ym,tc:pend.tc,auto:pend})}
+    }).catch(e=>console.warn('liff init',e));
+  },[]);
   const bump=()=>setRev(r=>r+1);
   const toast=m=>{setToastMsg(m);clearTimeout(window.__tt);window.__tt=setTimeout(()=>setToastMsg(''),2200)};
   const ask=o=>new Promise(res=>setDlg(Object.assign({},o,{res})));
@@ -1094,7 +1186,7 @@ function App(){
         onSave={onSaveOrder} onToggleVoid={onToggleVoid} onClose={()=>{if(ed.count)toast('已連續新增 '+ed.count+' 筆');setEd(null)}} ask={ask}/>}
       {xe&&<ExpenseEditor key={'x'+xe.k} S={S} exp={xe.exp} locked={!!dayData().close} prev={xe.prev} count={xe.count}
         onSave={onSaveExp} onDelete={onDeleteExp} onClose={()=>{if(xe.count)toast('已連續新增 '+xe.count+' 筆支出');setXe(null)}} ask={ask}/>}
-      {pay&&<TeacherPaySheet S={S} ym={pay.ym} tc={pay.tc} rev={rev} bump={bump} onClose={()=>setPay(null)} toast={toast} ask={ask}/>}
+      {pay&&<TeacherPaySheet S={S} ym={pay.ym} tc={pay.tc} autoLine={pay.auto} rev={rev} bump={bump} onClose={()=>setPay(null)} toast={toast} ask={ask}/>}
       {closeSt&&<CloseSheet st={closeSt.st} ex={closeSt.ex} onSave={onClose} onClose={()=>setCloseSt(null)}/>}
       <Dialog dlg={dlg} onDone={v=>{const r=dlg.res;setDlg(null);r(v)}}/>
       {toastMsg&&<div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 px-4 py-2 rounded-full bg-ink/90 text-white text-sm shadow-lg">{toastMsg}</div>}
