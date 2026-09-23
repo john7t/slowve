@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-001</title>
+<title>緩緩門店 v0.1-002</title>
 <script>
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
@@ -48,7 +48,9 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-001';
+const VER='v0.1-002';
+const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
 const SVCS=[{id:'dry',name:'全身指壓',short:'指壓'},{id:'oil',name:'深層油壓',short:'油壓'},{id:'foot',name:'腳底按摩',short:'腳底'}];
 const SVC_SHORT={dry:'指壓',oil:'油壓',foot:'腳底'};
@@ -67,6 +69,8 @@ const DEFAULT_SETTINGS={
   comm:{per30:280,laodian:20},
   cutoff:'05:00',
   teachers:[],
+  expCats:['耗材','清潔用品','水電瓦斯','房租','餐費','雜支','其他'],
+  expNames:[],
   device:'',
   lastBackupAt:null,
   backupPwd:''
@@ -86,12 +90,16 @@ function mergeSettings(s){
   r.comm=Object.assign({},d.comm,s.comm||{});
   r.addons=(s.addons&&s.addons.length)?s.addons:d.addons;
   r.teachers=Array.isArray(s.teachers)?s.teachers:[];
+  r.expCats=(Array.isArray(s.expCats)&&s.expCats.length)?s.expCats:d.expCats;
+  r.expNames=Array.isArray(s.expNames)?s.expNames:[];
   if(!r.device)r.device=Math.random().toString(36).slice(2,6).toUpperCase();
   return r;
 }
 function loadSettings(){return mergeSettings(ls.get('settings',null))}
 function slowveKeys(){const a=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.indexOf(P)===0)a.push(k)}}catch(_e){}return a}
 function storageBytes(){let n=0;slowveKeys().forEach(k=>{try{n+=(k.length+(localStorage.getItem(k)||'').length)*2}catch(_e){}});return n}
+/* 同網域（john7t.github.io）的其他系統（如 massage-pay）共用同一個 localStorage 上限 */
+function originBytes(){let n=0;try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i)||'';n+=(k.length+(localStorage.getItem(k)||'').length)*2}}catch(_e){}return n}
 
 /* ========== 日期 ========== */
 const pad=n=>String(n).padStart(2,'0');
@@ -117,7 +125,8 @@ function agoText(ts){
 
 /* ========== 月／日資料 ========== */
 function loadMonth(mk){const m=ls.get('m-'+mk,null);return (m&&m.days)?m:{days:{}}}
-function emptyDay(){return {orders:[],close:null,log:[]}}
+function emptyDay(){return {orders:[],expenses:[],close:null,log:[]}}
+function mutateMonth(mk,fn){const md=loadMonth(mk);fn(md);return ls.set('m-'+mk,md)}
 function getDay(md,date){const d=md.days[date.slice(8)];return d?Object.assign(emptyDay(),d):emptyDay()}
 function mutateDay(date,fn){
   const mk=monKey(date);const md=loadMonth(mk);
@@ -153,25 +162,33 @@ function statsOf(orders){
   });
   return r;
 }
+function expStatsOf(expenses){
+  const r={total:0,cash:0,byCat:{}};
+  (expenses||[]).forEach(e=>{const a=Number(e.amt)||0;r.total+=a;if(e.cash!==false)r.cash+=a;r.byCat[e.cat]=(r.byCat[e.cat]||0)+a});
+  return r;
+}
 const sortT=byT=>Object.values(byT).sort((a,b)=>String(a.tc).localeCompare(String(b.tc),'zh-Hant',{numeric:true}));
 const snNum=o=>{const n=parseInt(o.sn,10);return isNaN(n)?1e9:n};
 const newId=dev=>Date.now().toString(36)+dev+Math.random().toString(36).slice(2,5);
 
 /* ========== 匯出／匯入 ========== */
-async function exportJson(S){
-  const now=new Date();
-  const name='slowve-backup-'+ymd(now).replace(/-/g,'')+'-'+pad(now.getHours())+pad(now.getMinutes())+'.json';
-  const data={};slowveKeys().forEach(k=>{data[k]=localStorage.getItem(k)});
-  const text=JSON.stringify({app:'slowve',ver:VER,exportedAt:now.toISOString(),device:S.device,data});
-  const blob=new Blob([text],{type:'application/json'});
+async function shareOrDownload(blob,name,title){
   try{
-    const file=new File([blob],name,{type:'application/json'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return 'shared'}
+    const file=new File([blob],name,{type:blob.type});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:title||name});return 'shared'}
   }catch(e){if(e&&e.name==='AbortError')return 'abort'}
   const url=URL.createObjectURL(blob);const a=document.createElement('a');
   a.href=url;a.download=name;document.body.appendChild(a);a.click();
   setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},1500);
   return 'download';
+}
+function loadScript(src){return new Promise((res,rej)=>{const el=document.createElement('script');el.src=src;el.onload=res;el.onerror=()=>rej(new Error('載入失敗：'+src));document.head.appendChild(el)})}
+async function exportJson(S){
+  const now=new Date();
+  const name='slowve-backup-'+ymd(now).replace(/-/g,'')+'-'+pad(now.getHours())+pad(now.getMinutes())+'.json';
+  const data={};slowveKeys().forEach(k=>{data[k]=localStorage.getItem(k)});
+  const text=JSON.stringify({app:'slowve',ver:VER,exportedAt:now.toISOString(),device:S.device,data});
+  return shareOrDownload(new Blob([text],{type:'application/json'}),name);
 }
 function readFileText(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result||''));r.onerror=rej;r.readAsText(file)})}
 
@@ -216,7 +233,7 @@ function Stat({label,value,big,tone}){
 }
 
 /* ========== 訂單編輯 ========== */
-function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask}){
+function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,prev,count}){
   const isNew=!order;
   const nextSn=()=>{let mx=0;dayOrders.forEach(o=>{const n=parseInt(o.sn,10);if(!isNaN(n)&&n>mx)mx=n});return String(mx+1)};
   const [f,setF]=useState(()=>order?Object.assign({},order,{ad:[...(order.ad||[])]}):
@@ -232,7 +249,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask})
   const amt=sameItems&&order.amt!=null?order.amt:calc.amt;
   const cm=sameItems&&order.cm!=null?order.cm:calc.cm;
 
-  const save=async()=>{
+  const save=async(next)=>{
     if(!f.svc&&!f.ad.length){await ask({title:'尚未選擇品項',msg:'請點選主項目或額外品項。',okOnly:true});return}
     const tc=String(f.tc||'').trim();
     if(!tc){await ask({title:'請輸入老師編號',okOnly:true});return}
@@ -243,7 +260,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask})
       if(!ok)return;
     }
     const now=Date.now();
-    onSave(Object.assign({},f,{tc,sn,amt,cm,ca:f.ca||now,ua:now}));
+    onSave(Object.assign({},f,{tc,sn,amt,cm,ca:f.ca||now,ua:now}),!!next);
   };
 
   const cellCls=on=>'h-14 rounded-xl border text-base num transition-colors '+(on?'bg-sage border-sage text-white shadow-inner':'bg-card border-line active:bg-sageL');
@@ -259,13 +276,20 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask})
         <div className="text-center text-mute text-sm py-2">此日已日結，需先解除日結才能修改</div>:
         <div className="flex gap-2">
           {!isNew&&<button className={'px-4 h-12 rounded-xl border '+(f.void?'border-sage text-sageD':'border-warn text-warn')} onClick={()=>onToggleVoid(f)}>{f.void?'恢復':'作廢'}</button>}
-          <button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={save}>儲存</button>
+          {isNew?<>
+            <button className="px-4 h-12 rounded-xl border border-sage text-sageD" onClick={()=>save(false)}>存檔關閉</button>
+            <button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(true)}>儲存，下一筆 ›</button>
+          </>:<button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(false)}>儲存</button>}
         </div>}
     </div>
   );
 
   return (
     <Sheet onClose={onClose} title={isNew?'新增訂單':(f.void?'訂單（已作廢）':'編輯訂單')} footer={footer}>
+      {prev&&<div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm num">
+        ✓ 已存 #{prev.sn||'-'}　{orderLabel(prev,S)}　師 {prev.tc}　{money(prev.amt)}
+        <span className="float-right text-xs text-mute">連續第 {count} 筆</span>
+      </div>}
       <fieldset disabled={locked} className={locked?'opacity-70':''}>
         <div className="flex gap-3 mb-4">
           <label className="flex-1">
@@ -328,23 +352,25 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask})
 }
 
 /* ========== 日結 ========== */
-function CloseSheet({st,onSave,onClose}){
+function CloseSheet({st,ex,onSave,onClose}){
   const [cash,setCash]=useState('');
   const [note,setNote]=useState('');
+  const expected=st.amt-ex.cash;
   const c=cash===''?null:Number(cash);
-  const diff=c==null||isNaN(c)?null:c-st.amt;
+  const diff=c==null||isNaN(c)?null:c-expected;
   const footer=(
     <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-40" disabled={diff==null}
-      onClick={()=>onSave({expected:st.amt,cash:c,diff,note:note.trim(),at:Date.now()})}>確認日結</button>
+      onClick={()=>onSave({revenue:st.amt,cashExp:ex.cash,expected,cash:c,diff,note:note.trim(),at:Date.now()})}>確認日結</button>
   );
   return (
     <Sheet onClose={onClose} title="日結" footer={footer}>
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <Card className="p-3"><Stat label="系統應收" value={money(st.amt)} tone="brown"/></Card>
-        <Card className="p-3"><Stat label="單數" value={st.n+' 單'}/></Card>
-      </div>
+      <Card className="p-3 mb-4 num">
+        <div className="flex justify-between py-1"><span className="text-mute">營業額（{st.n} 單）</span><span>{money(st.amt)}</span></div>
+        <div className="flex justify-between py-1"><span className="text-mute">－ 現金支出</span><span>{money(ex.cash)}</span></div>
+        <div className="flex justify-between pt-2 mt-1 border-t border-line"><span>應有現金</span><span className="serif text-2xl text-brown">{money(expected)}</span></div>
+      </Card>
       <label className="block mb-3">
-        <div className="text-xs text-mute mb-1">實收現金</div>
+        <div className="text-xs text-mute mb-1">實收現金（盤點）</div>
         <input className="w-full h-14 px-3 rounded-xl border border-line bg-card text-2xl num" inputMode="numeric" value={cash} onChange={e=>setCash(e.target.value.replace(/[^\d-]/g,''))} placeholder="盤點後輸入"/>
       </label>
       {diff!=null&&<div className={'mb-3 text-lg num '+(diff===0?'text-sageD':'text-warn')}>差額 {smoney(diff)}{diff===0?'　✓ 相符':''}</div>}
@@ -352,17 +378,75 @@ function CloseSheet({st,onSave,onClose}){
         <div className="text-xs text-mute mb-1">備註</div>
         <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={note} onChange={e=>setNote(e.target.value)} placeholder="例：找錯錢、借零錢"/>
       </label>
-      <div className="text-xs text-mute mt-3">日結後當日訂單會鎖定，需要修改時可解除日結。</div>
+      <div className="text-xs text-mute mt-3">日結後當日訂單與支出會鎖定，需要修改時可解除日結。</div>
+    </Sheet>
+  );
+}
+
+/* ========== 支出編輯 ========== */
+function ExpenseEditor({S,exp,locked,onSave,onDelete,onClose,ask,prev,count}){
+  const isNew=!exp;
+  const [f,setF]=useState(()=>exp?Object.assign({},exp):{id:newId(S.device),cat:S.expCats[0]||'其他',name:'',amt:'',cash:true,note:''});
+  const set=(k,v)=>setF(p=>Object.assign({},p,{[k]:v}));
+  const save=async next=>{
+    const amt=Number(f.amt);
+    if(!f.amt||!amt||amt<0){await ask({title:'請輸入金額',okOnly:true});return}
+    const name=String(f.name||'').trim();
+    const now=Date.now();
+    onSave(Object.assign({},f,{name,amt,ca:f.ca||now,ua:now}),!!next);
+  };
+  const names=S.expNames.slice(0,10);
+  const footer=locked?<div className="text-center text-mute text-sm py-2">此日已日結，需先解除日結才能修改</div>:(
+    <div className="flex gap-2">
+      {!isNew&&<button className="px-4 h-12 rounded-xl border border-warn text-warn" onClick={()=>onDelete(f)}>刪除</button>}
+      {isNew?<>
+        <button className="px-4 h-12 rounded-xl border border-sage text-sageD" onClick={()=>save(false)}>存檔關閉</button>
+        <button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(true)}>儲存，下一筆 ›</button>
+      </>:<button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(false)}>儲存</button>}
+    </div>
+  );
+  return (
+    <Sheet onClose={onClose} title={isNew?'新增支出':'編輯支出'} footer={footer}>
+      {prev&&<div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm num">
+        ✓ 已存 {prev.cat}{prev.name?'・'+prev.name:''}　{money(prev.amt)}
+        <span className="float-right text-xs text-mute">連續第 {count} 筆</span>
+      </div>}
+      <fieldset disabled={locked} className={locked?'opacity-70':''}>
+        <div className="text-xs text-mute mb-1">類別</div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {S.expCats.map(c=><button key={c} type="button" className={'h-10 px-4 rounded-full border '+(f.cat===c?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('cat',c)}>{c}</button>)}
+        </div>
+        <label className="block mb-2">
+          <div className="text-xs text-mute mb-1">項目名稱（選填）</div>
+          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={f.name} onChange={e=>set('name',e.target.value)} placeholder="例：毛巾送洗、精油補貨"/>
+        </label>
+        {names.length>0&&<div className="flex flex-wrap gap-2 mb-4">
+          {names.map(n=><button key={n} type="button" className="h-8 px-3 rounded-full border border-line bg-card text-sm" onClick={()=>set('name',n)}>{n}</button>)}
+        </div>}
+        <label className="block mb-3">
+          <div className="text-xs text-mute mb-1">金額</div>
+          <input className="w-full h-14 px-3 rounded-xl border border-line bg-card text-2xl num" inputMode="numeric" value={f.amt} onChange={e=>set('amt',e.target.value.replace(/[^\d]/g,''))} placeholder="0"/>
+        </label>
+        <button type="button" className={'w-full h-12 rounded-xl border mb-3 text-left px-3 '+(f.cash!==false?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>set('cash',f.cash===false)}>
+          {f.cash!==false?'☑':'☐'} 從店內現金支付<span className="text-xs text-mute ml-2">（勾選時日結會扣除）</span>
+        </button>
+        <label className="block">
+          <div className="text-xs text-mute mb-1">備註</div>
+          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={f.note||''} onChange={e=>set('note',e.target.value)}/>
+        </label>
+      </fieldset>
     </Sheet>
   );
 }
 
 /* ========== 日頁 ========== */
-function DayPage({S,date,setDate,rev,openEditor,openClose,onUnlock}){
+function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
   const today=bizToday(S.cutoff);
   const dd=useMemo(()=>getDay(loadMonth(monKey(date)),date),[date,rev]);
   const orders=useMemo(()=>[...dd.orders].sort((a,b)=>snNum(a)-snNum(b)||(a.ca||0)-(b.ca||0)),[dd]);
   const st=useMemo(()=>statsOf(dd.orders),[dd]);
+  const ex=useMemo(()=>expStatsOf(dd.expenses),[dd]);
+  const exps=useMemo(()=>[...(dd.expenses||[])].sort((a,b)=>(a.ca||0)-(b.ca||0)),[dd]);
   const closed=!!dd.close;
   const dateRef=useRef(null);
 
@@ -387,9 +471,10 @@ function DayPage({S,date,setDate,rev,openEditor,openClose,onUnlock}){
           <Stat label="營業額" value={money(st.amt)} big tone="brown"/>
           <div className="text-right text-sm text-mute">{st.n} 單{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</div>
         </div>
-        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-line">
+        <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
           <Stat label="老師抽成" value={money(st.cm)}/>
-          <Stat label="店家淨額" value={money(st.amt-st.cm)} tone="sage"/>
+          <Stat label="支出" value={money(ex.total)}/>
+          <Stat label="店家淨額" value={money(st.amt-st.cm-ex.total)} tone="sage"/>
         </div>
       </Card>
 
@@ -401,7 +486,7 @@ function DayPage({S,date,setDate,rev,openEditor,openClose,onUnlock}){
           <div><div className="text-xs text-mute">實收</div>{money(dd.close.cash)}</div>
           <div><div className="text-xs text-mute">差額</div><span className={dd.close.diff===0?'text-sageD':'text-warn'}>{smoney(dd.close.diff)}</span></div>
         </div>
-        {dd.close.expected!==st.amt&&<div className="text-xs text-warn mt-2">注意：目前營業額與日結時的應收不同</div>}
+        {dd.close.expected!==st.amt-ex.cash&&<div className="text-xs text-warn mt-2">注意：目前的營業額或現金支出與日結時不同</div>}
         {dd.close.note&&<div className="text-xs text-mute mt-2">備註：{dd.close.note}</div>}
       </Card>}
 
@@ -426,6 +511,22 @@ function DayPage({S,date,setDate,rev,openEditor,openClose,onUnlock}){
         ))}
       </div>
 
+      <div className="flex items-center justify-between mt-5 mb-2 px-1">
+        <div className="text-sm text-mute">支出{ex.total>0&&<span className="ml-2 num">{money(ex.total)}</span>}</div>
+        {!closed&&<button className="h-8 px-3 rounded-full border border-brown text-brown text-sm bg-card" onClick={()=>openExp(null)}>＋ 新增支出</button>}
+      </div>
+      {exps.length===0&&<div className="text-xs text-mute px-1">這天沒有支出</div>}
+      {exps.length>0&&<Card className="overflow-hidden">
+        {exps.map((e,i)=>(
+          <button key={e.id} className={'w-full flex items-center gap-3 px-3 py-3 text-left active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>openExp(e)}>
+            <span className="px-2 py-0.5 rounded bg-brownL text-brown text-xs whitespace-nowrap">{e.cat}</span>
+            <div className="flex-1 min-w-0 truncate">{e.name||<span className="text-mute">（未填名稱）</span>}
+              {e.cash===false&&<span className="ml-2 text-xs text-mute">非現金</span>}
+              {e.note&&<span className="ml-2 text-xs text-mute">・{e.note}</span>}</div>
+            <div className="num text-warn">-{money(e.amt)}</div>
+          </button>))}
+      </Card>}
+
       {st.n>0&&<>
         <div className="text-sm text-mute mt-5 mb-2 px-1">老師統計</div>
         <Card className="overflow-hidden">
@@ -441,7 +542,7 @@ function DayPage({S,date,setDate,rev,openEditor,openClose,onUnlock}){
         </Card>
       </>}
 
-      {!closed&&st.n>0&&<button className="w-full h-12 mt-5 rounded-xl border border-sage text-sageD bg-card" onClick={()=>openClose(st)}>日結</button>}
+      {!closed&&(st.n>0||exps.length>0)&&<button className="w-full h-12 mt-5 rounded-xl border border-sage text-sageD bg-card" onClick={()=>openClose(st,ex)}>日結</button>}
 
       {!closed&&<button className="fixed z-30 right-5 bottom-24 w-16 h-16 rounded-full bg-sage text-white text-4xl shadow-lg active:bg-sageD" style={{marginBottom:'env(safe-area-inset-bottom)'}} onClick={()=>openEditor(null)} aria-label="新增訂單">＋</button>}
     </div>
@@ -449,22 +550,36 @@ function DayPage({S,date,setDate,rev,openEditor,openClose,onUnlock}){
 }
 
 /* ========== 月報 ========== */
-function MonthPage({S,rev,goDay}){
+function monthData(ym){
+  const md=loadMonth(ym);const a=ym.split('-').map(Number);const dim=new Date(a[0],a[1],0).getDate();
+  const rows=[];const tot={n:0,amt:0,cm:0,exp:0,byT:{},byCat:{}};
+  for(let d=1;d<=dim;d++){
+    const dd=md.days[pad(d)];
+    if(!dd||(!(dd.orders||[]).length&&!(dd.expenses||[]).length&&!dd.close))continue;
+    const st=statsOf(dd.orders||[]);const ex=expStatsOf(dd.expenses);
+    rows.push({date:ym+'-'+pad(d),st,ex,closed:!!dd.close});
+    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;
+    Object.keys(ex.byCat).forEach(c=>{tot.byCat[c]=(tot.byCat[c]||0)+ex.byCat[c]});
+    Object.values(st.byT).forEach(t=>{const x=tot.byT[t.tc]||(tot.byT[t.tc]={tc:t.tc,n:0,min:0,ld:0,cm:0,amt:0});x.n+=t.n;x.min+=t.min;x.ld+=t.ld;x.cm+=t.cm;x.amt+=t.amt});
+  }
+  return {rows,tot,pay:md.pay||{}};
+}
+function teacherOrders(ym,tc){
+  const md=loadMonth(ym);const list=[];
+  Object.keys(md.days).sort().forEach(d=>{
+    (md.days[d].orders||[]).filter(o=>!o.void&&String(o.tc)===String(tc))
+      .sort((a,b)=>snNum(a)-snNum(b)||(a.ca||0)-(b.ca||0))
+      .forEach(o=>list.push(Object.assign({date:ym+'-'+d},o)));
+  });
+  return list;
+}
+
+function MonthPage({S,rev,goDay,openPay}){
   const [ym,setYm]=useState(()=>monKey(bizToday(S.cutoff)));
   const shift=n=>{const a=ym.split('-').map(Number);const d=new Date(a[0],a[1]-1+n,1);setYm(d.getFullYear()+'-'+pad(d.getMonth()+1))};
-  const data=useMemo(()=>{
-    const md=loadMonth(ym);const a=ym.split('-').map(Number);const dim=new Date(a[0],a[1],0).getDate();
-    const rows=[];const tot={n:0,amt:0,cm:0,byT:{}};
-    for(let d=1;d<=dim;d++){
-      const dd=md.days[pad(d)];if(!dd||(!(dd.orders||[]).length&&!dd.close))continue;
-      const st=statsOf(dd.orders||[]);
-      rows.push({date:ym+'-'+pad(d),st,closed:!!dd.close});
-      tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;
-      Object.values(st.byT).forEach(t=>{const x=tot.byT[t.tc]||(tot.byT[t.tc]={tc:t.tc,n:0,min:0,ld:0,cm:0,amt:0});x.n+=t.n;x.min+=t.min;x.ld+=t.ld;x.cm+=t.cm;x.amt+=t.amt});
-    }
-    return {rows,tot};
-  },[ym,rev]);
+  const data=useMemo(()=>monthData(ym),[ym,rev]);
   const a=ym.split('-');
+  const cats=Object.keys(data.tot.byCat).sort((x,y)=>data.tot.byCat[y]-data.tot.byCat[x]);
   return (
     <div className="pb-24">
       <div className="flex items-center justify-between mb-3">
@@ -473,41 +588,222 @@ function MonthPage({S,rev,goDay}){
         <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>shift(1)}>▶</button>
       </div>
       <Card className="p-4 mb-3">
-        <Stat label="本月營業額" value={money(data.tot.amt)} big tone="brown"/>
+        <div className="flex items-end justify-between">
+          <Stat label="本月營業額" value={money(data.tot.amt)} big tone="brown"/>
+          <div className="text-sm text-mute">{data.tot.n} 單</div>
+        </div>
         <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
-          <Stat label="單數" value={data.tot.n}/>
           <Stat label="老師抽成" value={money(data.tot.cm)}/>
-          <Stat label="店家淨額" value={money(data.tot.amt-data.tot.cm)} tone="sage"/>
+          <Stat label="支出" value={money(data.tot.exp)}/>
+          <Stat label="店家淨額" value={money(data.tot.amt-data.tot.cm-data.tot.exp)} tone="sage"/>
         </div>
       </Card>
 
       <div className="text-sm text-mute mb-2 px-1">每日</div>
       {data.rows.length===0&&<Card className="p-6 text-center text-mute">本月沒有資料</Card>}
-      <Card className="overflow-hidden">
+      {data.rows.length>0&&<Card className="overflow-hidden">
         {data.rows.map((r,i)=>(
           <button key={r.date} className={'w-full flex items-center px-3 py-3 text-left num active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>goDay(r.date)}>
             <div className="w-24">{fmtDate(r.date)}</div>
             <div className="flex-1 text-sm text-mute">{r.st.n} 單{r.closed?<span className="ml-2 text-sageD">✓ 日結</span>:<span className="ml-2 text-warn/80">未日結</span>}</div>
-            <div>{money(r.st.amt)}</div>
+            <div className="text-right">{money(r.st.amt)}{r.ex.total>0&&<div className="text-xs text-warn">支出 -{money(r.ex.total)}</div>}</div>
           </button>
         ))}
-      </Card>
+      </Card>}
 
       {data.tot.n>0&&<>
-        <div className="text-sm text-mute mt-5 mb-2 px-1">老師月統計</div>
+        <div className="flex items-baseline justify-between mt-5 mb-2 px-1">
+          <div className="text-sm text-mute">老師月統計</div><div className="text-xs text-mute">點老師可產生薪資條</div>
+        </div>
         <Card className="overflow-hidden">
           <table className="w-full text-sm num">
             <thead className="text-xs text-mute bg-brownL/50"><tr>
-              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">分鐘</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">抽成</th>
+              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">分鐘</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">應領</th>
             </tr></thead>
-            <tbody>{sortT(data.tot.byT).map(t=>(
-              <tr key={t.tc} className="border-t border-line">
-                <td className="px-3 py-2">{t.tc}</td><td className="text-center">{t.n}</td><td className="text-center">{t.min}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
-              </tr>))}</tbody>
+            <tbody>{sortT(data.tot.byT).map(t=>{
+              const adj=((data.pay[t.tc]||{}).adj||[]).reduce((s,x)=>s+(Number(x.amt)||0),0);
+              return (
+              <tr key={t.tc} className="border-t border-line active:bg-sageL cursor-pointer" onClick={()=>openPay(ym,t.tc)}>
+                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span></td><td className="text-center">{t.n}</td><td className="text-center">{t.min}</td><td className="text-center">{t.ld}</td>
+                <td className="text-right px-3">{money(t.cm+adj)} <span className="text-mute">›</span></td>
+              </tr>);})}</tbody>
           </table>
         </Card>
       </>}
+
+      {cats.length>0&&<>
+        <div className="text-sm text-mute mt-5 mb-2 px-1">支出分類</div>
+        <Card className="overflow-hidden">
+          {cats.map((c,i)=>(
+            <div key={c} className={'flex items-center px-3 py-2.5 text-sm num '+(i?'border-t border-line':'')}>
+              <div className="flex-1">{c}</div><div className="text-warn">-{money(data.tot.byCat[c])}</div>
+            </div>))}
+        </Card>
+      </>}
     </div>
+  );
+}
+
+/* ========== 薪資條 ========== */
+const SERIF='"Noto Serif TC","Songti TC","PMingLiU",serif';
+function drawPayslipPages({S,ym,tc,orders,adj,showAmt}){
+  const W=1240,H=1754,M=90,ROW=52,FOOT=110;
+  const C={ink:'#3b3a36',mute:'#8b8478',line:'#e4dccf',sage:'#6f7d62',sageD:'#56624b',sageL:'#eef1ea',brown:'#a0784f',brownL:'#f6efe6',warn:'#b5543c'};
+  const a=ym.split('-');const ymText=a[0]+' 年 '+Number(a[1])+' 月';
+  const sumCm=orders.reduce((s,o)=>s+(o.cm||0),0);
+  const sumAmt=orders.reduce((s,o)=>s+(o.amt||0),0);
+  const sumMin=orders.reduce((s,o)=>s+((o.svc&&o.min)?o.min:0),0);
+  const sumLd=orders.filter(o=>o.ld).length;
+  const adjSum=adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
+  const total=sumCm+adjSum;
+  const pages=[];
+  const font=(sz,w,serif)=>(w||'')+' '+sz+'px '+(serif?SERIF:FONT);
+  const text=(ctx,t,x,y,o)=>{o=o||{};ctx.font=font(o.size||28,o.weight,o.serif);ctx.fillStyle=o.color||C.ink;ctx.textAlign=o.align||'left';ctx.textBaseline='alphabetic';
+    let s=String(t);if(o.max){while(s.length>1&&ctx.measureText(s).width>o.max)s=s.slice(0,-1);if(s!==String(t))s=s.slice(0,-1)+'…'}
+    ctx.fillText(s,x,y)};
+  const hline=(ctx,y,col,w)=>{ctx.fillStyle=col||C.line;ctx.fillRect(M,y,W-2*M,w||2)};
+  const newPage=()=>{const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);pages.push({c,ctx});return {c,ctx}};
+
+  // 欄位
+  const cols=[{k:'date',t:'日期',w:170},{k:'sn',t:'流水號',w:120},{k:'item',t:'項目',w:0},{k:'ld',t:'老點',w:100}];
+  if(showAmt)cols.push({k:'amt',t:'金額',w:160,right:true});
+  cols.push({k:'cm',t:'抽成',w:160,right:true});
+  const fixed=cols.reduce((s,c)=>s+c.w,0);cols.forEach(c=>{if(!c.w)c.w=W-2*M-fixed});
+  let x=M;cols.forEach(c=>{c.x=x;x+=c.w});
+  const tableHead=(ctx,y)=>{ctx.fillStyle=C.brownL;ctx.fillRect(M,y,W-2*M,ROW);
+    cols.forEach(c=>text(ctx,c.t,c.right?c.x+c.w-14:c.x+14,y+34,{size:24,color:C.mute,align:c.right?'right':'left'}));return y+ROW};
+
+  // 第一頁
+  let {ctx}=newPage();let y=M+40;
+  text(ctx,'緩 緩',M,y+10,{size:64,serif:true,color:C.sageD});
+  text(ctx,'S L O W V E   B O D Y  S P A',M+190,y,{size:22,color:C.brown});
+  text(ctx,'薪 資 明 細',W-M,y,{size:40,serif:true,align:'right'});
+  y+=50;text(ctx,ymText,W-M,y,{size:28,color:C.mute,align:'right'});
+  y+=30;hline(ctx,y,C.sage,3);
+  y+=80;text(ctx,'老師編號',M,y,{size:28,color:C.mute});text(ctx,String(tc),M+150,y+4,{size:56,weight:'600'});
+  // 摘要
+  y+=50;const bw=(W-2*M-3*24)/4;
+  [['服務單數',orders.length+' 單'],['服務分鐘',sumMin+' 分'],['老點',sumLd+' 次'],['抽成合計',money(sumCm)]].forEach((b,i)=>{
+    const bx=M+i*(bw+24);ctx.fillStyle=C.sageL;ctx.fillRect(bx,y,bw,120);
+    text(ctx,b[0],bx+24,y+44,{size:24,color:C.mute});text(ctx,b[1],bx+24,y+96,{size:38,weight:'600',color:i===3?C.sageD:C.ink});
+  });
+  y+=160;
+  // 計算明細
+  text(ctx,'抽成（每 30 分鐘 '+S.comm.per30+'，老點每單 +'+S.comm.laodian+'）',M,y,{size:28});text(ctx,money(sumCm),W-M,y,{size:28,align:'right'});
+  adj.forEach(j=>{y+=46;const v=Number(j.amt)||0;text(ctx,(v<0?'扣項：':'加項：')+(j.name||''),M,y,{size:28,max:W-2*M-260});text(ctx,smoney(v),W-M,y,{size:28,align:'right',color:v<0?C.warn:C.ink})});
+  y+=26;hline(ctx,y);y+=66;
+  text(ctx,'應領薪資',M,y,{size:34,weight:'600'});text(ctx,money(total),W-M,y+6,{size:64,serif:true,color:C.brown,align:'right'});
+  y+=60;
+  // 明細表
+  text(ctx,'訂單明細',M,y+10,{size:26,color:C.mute});if(showAmt)text(ctx,'訂單金額合計 '+money(sumAmt),W-M,y+10,{size:24,color:C.mute,align:'right'});
+  y+=30;y=tableHead(ctx,y);
+  let pageNo=1;
+  orders.forEach((o,i)=>{
+    if(y+ROW>H-FOOT){
+      ({ctx}=newPage());pageNo++;y=M+30;
+      text(ctx,'緩緩 薪資明細（續）',M,y,{size:28,serif:true,color:C.sageD});text(ctx,'老師 '+tc+'・'+ymText,W-M,y,{size:26,color:C.mute,align:'right'});
+      y+=30;y=tableHead(ctx,y);
+    }
+    if(i%2===1){ctx.fillStyle='#faf8f4';ctx.fillRect(M,y,W-2*M,ROW)}
+    const d=parseYmd(o.date);
+    const v={date:(d.getMonth()+1)+'/'+d.getDate()+'（'+WK[d.getDay()]+'）',sn:o.sn?'#'+o.sn:'-',item:orderLabel(o,S),ld:o.ld?'✓':'',amt:money(o.amt),cm:money(o.cm)};
+    cols.forEach(c=>text(ctx,v[c.k],c.right?c.x+c.w-14:c.x+14,y+35,{size:26,align:c.right?'right':'left',max:c.w-28,color:c.k==='ld'?C.brown:C.ink}));
+    y+=ROW;ctx.fillStyle=C.line;ctx.fillRect(M,y-1,W-2*M,1);
+  });
+  if(!orders.length){text(ctx,'本月無訂單',W/2,y+40,{size:26,color:C.mute,align:'center'})}
+  // 頁尾
+  const now=new Date();const stamp=ymd(now)+' '+pad(now.getHours())+':'+pad(now.getMinutes());
+  pages.forEach((p,i)=>{hline(p.ctx,H-FOOT+20);
+    text(p.ctx,'產出時間 '+stamp+'　如有疑問請洽店長',M,H-FOOT+66,{size:22,color:C.mute});
+    text(p.ctx,'第 '+(i+1)+' / '+pages.length+' 頁',W-M,H-FOOT+66,{size:22,color:C.mute,align:'right'})});
+  return {canvases:pages.map(p=>p.c),total};
+}
+const canvasBlob=(c,type,q)=>new Promise(res=>c.toBlob(res,type,q));
+
+function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
+  const orders=useMemo(()=>teacherOrders(ym,tc),[ym,tc,rev]);
+  const adj=useMemo(()=>((loadMonth(ym).pay||{})[tc]||{}).adj||[],[ym,tc,rev]);
+  const [nm,setNm]=useState('');const [am,setAm]=useState('');const [neg,setNeg]=useState(false);
+  const [showAmt,setShowAmt]=useState(false);
+  const [busy,setBusy]=useState('');
+  const sumCm=orders.reduce((s,o)=>s+(o.cm||0),0);
+  const adjSum=adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
+  const saveAdj=list=>{mutateMonth(ym,md=>{md.pay=md.pay||{};md.pay[tc]=Object.assign({},md.pay[tc]||{},{adj:list})});bump()};
+  const addAdj=()=>{const v=Number(am);if(!v)return;saveAdj(adj.concat([{name:nm.trim()||(neg?'扣款':'獎金'),amt:neg?-v:v}]));setNm('');setAm('')};
+  const a=ym.split('-');const base='slowve-pay-'+tc+'-'+a[0]+a[1];
+
+  const gen=async kind=>{
+    if(busy)return;setBusy(kind);
+    try{
+      const {canvases}=drawPayslipPages({S,ym,tc,orders,adj,showAmt});
+      let r;
+      if(kind==='pdf'){
+        if(!window.jspdf)await loadScript(JSPDF_URL);
+        const doc=new window.jspdf.jsPDF({unit:'pt',format:'a4'});
+        canvases.forEach((c,i)=>{if(i)doc.addPage();doc.addImage(c.toDataURL('image/jpeg',0.92),'JPEG',0,0,595.28,841.89)});
+        r=await shareOrDownload(doc.output('blob'),base+'.pdf','老師 '+tc+' 薪資明細');
+      }else{
+        const blobs=await Promise.all(canvases.map(c=>canvasBlob(c,'image/png')));
+        const files=blobs.map((b,i)=>new File([b],base+(blobs.length>1?'-'+(i+1):'')+'.png',{type:'image/png'}));
+        r='download';
+        try{if(navigator.canShare&&navigator.canShare({files})){await navigator.share({files,title:'老師 '+tc+' 薪資明細'});r='shared'}}
+        catch(e){if(e&&e.name==='AbortError')r='abort'}
+        if(r==='download')for(const f of files)await shareOrDownload(f,f.name);
+      }
+      if(r!=='abort')toast(r==='shared'?'已開啟分享，可選 LINE 傳給老師':'已下載檔案');
+    }catch(e){await ask({title:'產生失敗',msg:String(e&&e.message||e)+'\n（PDF 需要網路載入元件，可改用「分享圖片」）',okOnly:true})}
+    setBusy('');
+  };
+
+  const footer=(
+    <div className="flex gap-2">
+      <button className="flex-1 h-12 rounded-xl border border-sage text-sageD disabled:opacity-50" disabled={!!busy} onClick={()=>gen('img')}>{busy==='img'?'產生中…':'分享圖片'}</button>
+      <button className="flex-[1.4] h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={!!busy} onClick={()=>gen('pdf')}>{busy==='pdf'?'產生中…':'分享 PDF'}</button>
+    </div>
+  );
+  return (
+    <Sheet onClose={onClose} title={'老師 '+tc+'・'+a[0]+'年'+Number(a[1])+'月'} footer={footer}>
+      <Card className="p-4 mb-3 num">
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <Stat label="單數" value={orders.length}/>
+          <Stat label="分鐘" value={orders.reduce((s,o)=>s+((o.svc&&o.min)?o.min:0),0)}/>
+          <Stat label="老點" value={orders.filter(o=>o.ld).length}/>
+        </div>
+        <div className="flex justify-between py-1 border-t border-line pt-2"><span className="text-mute">抽成合計</span><span>{money(sumCm)}</span></div>
+        {adj.map((j,i)=>(
+          <div key={i} className="flex items-center justify-between py-1">
+            <span className="text-mute">{j.amt<0?'扣項':'加項'}：{j.name}</span>
+            <span className={j.amt<0?'text-warn':''}>{smoney(j.amt)}
+              <button className="ml-2 w-6 h-6 rounded-full text-mute" onClick={async()=>{if(await ask({title:'刪除這個項目？',okText:'刪除',danger:true}))saveAdj(adj.filter((_,k)=>k!==i))}}>×</button></span>
+          </div>))}
+        <div className="flex items-end justify-between pt-2 mt-1 border-t border-line">
+          <span>應領薪資</span><span className="serif text-3xl text-brown">{money(sumCm+adjSum)}</span>
+        </div>
+      </Card>
+
+      <div className="text-xs text-mute mb-1">加項／扣項（獎金、預支、借款等）</div>
+      <div className="flex gap-2 mb-3">
+        <button className={'w-12 h-11 rounded-xl border text-lg '+(neg?'border-warn text-warn bg-warnL':'border-sage text-sageD bg-sageL')} onClick={()=>setNeg(!neg)} aria-label="切換加扣">{neg?'－':'＋'}</button>
+        <input className="flex-1 min-w-0 h-11 px-3 rounded-xl border border-line bg-card" placeholder={neg?'扣款名稱':'獎金名稱'} value={nm} onChange={e=>setNm(e.target.value)}/>
+        <input className="w-24 h-11 px-2 rounded-xl border border-line bg-card num text-center" inputMode="numeric" placeholder="金額" value={am} onChange={e=>setAm(e.target.value.replace(/[^\d]/g,''))}/>
+        <button className="px-3 h-11 rounded-xl bg-sage text-white" onClick={addAdj}>加入</button>
+      </div>
+
+      <button className={'w-full h-11 rounded-xl border mb-4 text-left px-3 text-sm '+(showAmt?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setShowAmt(!showAmt)}>
+        {showAmt?'☑':'☐'} 薪資條顯示訂單金額<span className="text-xs text-mute ml-2">（預設不顯示給老師看）</span>
+      </button>
+
+      <div className="text-xs text-mute mb-1">訂單明細（{orders.length} 筆）</div>
+      <Card className="overflow-hidden">
+        {orders.length===0&&<div className="p-4 text-center text-mute text-sm">本月無訂單</div>}
+        {orders.map((o,i)=>(
+          <div key={o.id} className={'flex items-center gap-2 px-3 py-2 text-sm num '+(i?'border-t border-line':'')}>
+            <div className="w-20 text-mute">{fmtDate(o.date).replace(/（.）/,'')}<span className="ml-1">#{o.sn||'-'}</span></div>
+            <div className="flex-1 min-w-0 truncate">{orderLabel(o,S)}{o.ld&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-xs">老點</span>}</div>
+            <div>{money(o.cm)}</div>
+          </div>))}
+      </Card>
+    </Sheet>
   );
 }
 
@@ -518,14 +814,17 @@ function NumIn({value,onChange,className}){
 function SettingsPage({S,saveS,ask,toast,onImported}){
   const [dr,setDr]=useState(()=>clone(S));
   const [newT,setNewT]=useState('');
+  const [newC,setNewC]=useState('');
   const [used,setUsed]=useState(storageBytes());
+  const [allUsed,setAllUsed]=useState(originBytes());
   const fileRef=useRef(null);
   useEffect(()=>{setDr(clone(S))},[S]);
   const dirty=JSON.stringify(dr)!==JSON.stringify(S);
   const up=fn=>setDr(p=>{const n=clone(p);fn(n);return n});
   const num=v=>v===''?0:Number(v);
 
-  const doSave=()=>{saveS(mergeSettings(dr));toast('設定已儲存');setUsed(storageBytes())};
+  const doSave=()=>{saveS(mergeSettings(dr));toast('設定已儲存');setUsed(storageBytes());setAllUsed(originBytes())};
+  const addC=()=>{const c=newC.trim();if(!c)return;up(n=>{if(!n.expCats.includes(c))n.expCats.push(c)});setNewC('')};
   const addT=()=>{const t=newT.trim();if(!t)return;up(n=>{n.teachers=[t,...n.teachers.filter(x=>x!==t)]});setNewT('')};
   const doExport=async()=>{
     const r=await exportJson(S);
@@ -544,11 +843,12 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
     slowveKeys().forEach(k=>{try{localStorage.removeItem(k)}catch(_e){}});
     let fail=false;
     Object.keys(obj.data).forEach(k=>{if(k.indexOf(P)!==0)return;try{localStorage.setItem(k,obj.data[k])}catch(_e){fail=true}});
-    onImported();setUsed(storageBytes());
+    onImported();setUsed(storageBytes());setAllUsed(originBytes());
     toast(fail?'部分資料寫入失敗（空間不足）':'匯入完成');
   };
 
-  const pct=Math.min(100,used/STORAGE_LIMIT*100);
+  const pct=Math.min(100,allUsed/STORAGE_LIMIT*100);
+  const pctMine=Math.min(100,used/STORAGE_LIMIT*100);
   const sec='text-sm text-mute mt-5 mb-2 px-1';
 
   return (
@@ -606,6 +906,19 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
         </div>
       </Card>
 
+      <div className={sec}>支出類別</div>
+      <Card className="p-3">
+        <div className="flex gap-2 mb-3">
+          <input className="flex-1 h-10 px-3 rounded-lg border border-line bg-card" placeholder="新增類別" value={newC} onChange={e=>setNewC(e.target.value)}/>
+          <button className="px-4 h-10 rounded-lg bg-sage text-white" onClick={addC}>加入</button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {dr.expCats.map(c=><span key={c} className="inline-flex items-center h-8 pl-3 pr-1 rounded-full bg-brownL text-brown text-sm">{c}
+            {dr.expCats.length>1&&<button className="w-6 h-6 ml-1 rounded-full text-mute" onClick={()=>up(n=>{n.expCats=n.expCats.filter(x=>x!==c)})} aria-label={'移除 '+c}>×</button>}</span>)}
+        </div>
+        <div className="text-xs text-mute mt-2">移除類別不影響已記錄的支出</div>
+      </Card>
+
       <div className={sec}>備份與還原</div>
       <Card className="p-3 text-sm">
         <div className="flex items-center justify-between mb-3">
@@ -630,8 +943,12 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
 
       <div className={sec}>本機儲存空間</div>
       <Card className="p-3 text-sm">
-        <div className="flex justify-between mb-2 num"><span>{(used/1024).toFixed(1)} KB</span><span className="text-mute">約 5 MB 上限</span></div>
-        <div className="h-2 rounded-full bg-line overflow-hidden"><div className={'h-full '+(pct>80?'bg-warn':'bg-sage')} style={{width:Math.max(1,pct)+'%'}}></div></div>
+        <div className="flex justify-between mb-1 num"><span>本系統 {(used/1024).toFixed(1)} KB</span><span className="text-mute">整個網域 {(allUsed/1024).toFixed(1)} KB／約 5 MB</span></div>
+        <div className="h-2 rounded-full bg-line overflow-hidden flex">
+          <div className="h-full bg-sage" style={{width:Math.max(1,pctMine)+'%'}}></div>
+          <div className={'h-full '+(pct>80?'bg-warn':'bg-brown/50')} style={{width:Math.max(0,pct-pctMine)+'%'}}></div>
+        </div>
+        <div className="text-xs text-mute mt-2">同網域的其他系統（如 massage-pay）共用同一個空間上限</div>
         {pct>80&&<div className="text-xs text-warn mt-2">空間快滿了，請先匯出備份</div>}
       </Card>
 
@@ -653,7 +970,9 @@ function App(){
   const [date,setDate]=useState(()=>bizToday(loadSettings().cutoff));
   const [tab,setTab]=useState('day');
   const [rev,setRev]=useState(0);
-  const [ed,setEd]=useState(null);        // {order} 開啟編輯
+  const [ed,setEd]=useState(null);        // 訂單編輯 {order,k,prev,count}
+  const [xe,setXe]=useState(null);        // 支出編輯 {exp,k,prev,count}
+  const [pay,setPay]=useState(null);      // 薪資條 {ym,tc}
   const [closeSt,setCloseSt]=useState(null);
   const [dlg,setDlg]=useState(null);
   const [toastMsg,setToastMsg]=useState('');
@@ -664,12 +983,25 @@ function App(){
 
   const dayData=()=>getDay(loadMonth(monKey(date)),date);
 
-  const onSaveOrder=o=>{
-    if(!mutateDay(date,d=>{const i=d.orders.findIndex(x=>x.id===o.id);if(i>=0)d.orders[i]=o;else d.orders.push(o);return d})){
-      ask({title:'儲存失敗',msg:'本機儲存空間可能已滿，請先匯出備份。',okOnly:true});return;
-    }
+  const saveFail=()=>ask({title:'儲存失敗',msg:'本機儲存空間可能已滿，請先匯出備份。',okOnly:true});
+  const onSaveOrder=(o,next)=>{
+    if(!mutateDay(date,d=>{const i=d.orders.findIndex(x=>x.id===o.id);if(i>=0)d.orders[i]=o;else d.orders.push(o);return d})){saveFail();return}
     saveS(Object.assign({},S,{teachers:[o.tc,...S.teachers.filter(x=>x!==o.tc)].slice(0,40)}));
-    setEd(null);bump();toast('已儲存 #'+(o.sn||'')+'　'+money(o.amt));
+    bump();
+    if(next){setEd(p=>({order:null,k:((p&&p.k)||0)+1,prev:o,count:((p&&p.count)||0)+1}))}
+    else{setEd(null);toast('已儲存 #'+(o.sn||'')+'　'+money(o.amt))}
+  };
+  const onSaveExp=(e,next)=>{
+    if(!mutateDay(date,d=>{d.expenses=d.expenses||[];const i=d.expenses.findIndex(x=>x.id===e.id);if(i>=0)d.expenses[i]=e;else d.expenses.push(e);return d})){saveFail();return}
+    if(e.name)saveS(Object.assign({},S,{expNames:[e.name,...S.expNames.filter(x=>x!==e.name)].slice(0,30)}));
+    bump();
+    if(next){setXe(p=>({exp:null,k:((p&&p.k)||0)+1,prev:e,count:((p&&p.count)||0)+1}))}
+    else{setXe(null);toast('已儲存支出 '+money(e.amt))}
+  };
+  const onDeleteExp=async e=>{
+    if(!await ask({title:'刪除這筆支出？',msg:e.cat+(e.name?'・'+e.name:'')+'　'+money(e.amt),okText:'刪除',danger:true}))return;
+    mutateDay(date,d=>{d.expenses=(d.expenses||[]).filter(x=>x.id!==e.id);d.log=(d.log||[]).concat([{act:'delExp',at:Date.now(),exp:e}]);return d});
+    setXe(null);bump();toast('已刪除支出');
   };
   const onToggleVoid=async o=>{
     const toVoid=!o.void;
@@ -679,11 +1011,11 @@ function App(){
     setEd(null);bump();toast(toVoid?'已作廢':'已恢復');
   };
   const onClose=c=>{
-    mutateDay(date,d=>{d.close=c;d.log=(d.log||[]).concat([{act:'close',at:c.at,expected:c.expected,cash:c.cash,diff:c.diff}]);return d});
+    mutateDay(date,d=>{d.close=c;d.log=(d.log||[]).concat([{act:'close',at:c.at,revenue:c.revenue,cashExp:c.cashExp,expected:c.expected,cash:c.cash,diff:c.diff}]);return d});
     setCloseSt(null);bump();toast('日結完成');
   };
   const onUnlock=async()=>{
-    const ok=await ask({title:'解除日結？',msg:'解除後可以修改當日訂單，修改完請重新日結。',okText:'解除',danger:true});
+    const ok=await ask({title:'解除日結？',msg:'解除後可以修改當日訂單與支出，修改完請重新日結。',okText:'解除',danger:true});
     if(!ok)return;
     mutateDay(date,d=>{d.log=(d.log||[]).concat([{act:'unlock',at:Date.now(),prev:d.close}]);d.close=null;return d});
     bump();toast('已解除日結');
@@ -708,8 +1040,8 @@ function App(){
 
       <main className="max-w-md mx-auto px-4 pt-4">
         {tab==='day'&&<DayPage S={S} date={date} setDate={setDate} rev={rev}
-          openEditor={o=>setEd({order:o})} openClose={st=>setCloseSt(st)} onUnlock={onUnlock}/>}
-        {tab==='month'&&<MonthPage S={S} rev={rev} goDay={d=>{setDate(d);setTab('day')}}/>}
+          openEditor={o=>setEd({order:o,k:0})} openExp={e=>setXe({exp:e,k:0})} openClose={(st,ex)=>setCloseSt({st,ex})} onUnlock={onUnlock}/>}
+        {tab==='month'&&<MonthPage S={S} rev={rev} goDay={d=>{setDate(d);setTab('day')}} openPay={(ym,tc)=>setPay({ym,tc})}/>}
         {tab==='set'&&<SettingsPage S={S} saveS={saveS} ask={ask} toast={toast} onImported={()=>{setS(loadSettings());bump()}}/>}
       </main>
 
@@ -722,9 +1054,12 @@ function App(){
         </div>
       </nav>
 
-      {ed&&<OrderEditor S={S} order={ed.order} dayOrders={dayData().orders} locked={!!dayData().close}
-        onSave={onSaveOrder} onToggleVoid={onToggleVoid} onClose={()=>setEd(null)} ask={ask}/>}
-      {closeSt&&<CloseSheet st={closeSt} onSave={onClose} onClose={()=>setCloseSt(null)}/>}
+      {ed&&<OrderEditor key={'o'+ed.k} S={S} order={ed.order} dayOrders={dayData().orders} locked={!!dayData().close} prev={ed.prev} count={ed.count}
+        onSave={onSaveOrder} onToggleVoid={onToggleVoid} onClose={()=>{if(ed.count)toast('已連續新增 '+ed.count+' 筆');setEd(null)}} ask={ask}/>}
+      {xe&&<ExpenseEditor key={'x'+xe.k} S={S} exp={xe.exp} locked={!!dayData().close} prev={xe.prev} count={xe.count}
+        onSave={onSaveExp} onDelete={onDeleteExp} onClose={()=>{if(xe.count)toast('已連續新增 '+xe.count+' 筆支出');setXe(null)}} ask={ask}/>}
+      {pay&&<TeacherPaySheet S={S} ym={pay.ym} tc={pay.tc} rev={rev} bump={bump} onClose={()=>setPay(null)} toast={toast} ask={ask}/>}
+      {closeSt&&<CloseSheet st={closeSt.st} ex={closeSt.ex} onSave={onClose} onClose={()=>setCloseSt(null)}/>}
       <Dialog dlg={dlg} onDone={v=>{const r=dlg.res;setDlg(null);r(v)}}/>
       {toastMsg&&<div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 px-4 py-2 rounded-full bg-ink/90 text-white text-sm shadow-lg">{toastMsg}</div>}
     </div>
