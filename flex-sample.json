@@ -1,0 +1,1250 @@
+{
+ "type": "carousel",
+ "contents": [
+  {
+   "type": "bubble",
+   "size": "mega",
+   "header": {
+    "type": "box",
+    "layout": "vertical",
+    "backgroundColor": "#6f7d62",
+    "paddingAll": "16px",
+    "contents": [
+     {
+      "type": "text",
+      "text": "緩緩 SLOWVE",
+      "wrap": true,
+      "size": "xs",
+      "color": "#e7ebe1"
+     },
+     {
+      "type": "text",
+      "text": "薪資明細",
+      "wrap": true,
+      "size": "md",
+      "color": "#ffffff",
+      "weight": "bold"
+     },
+     {
+      "type": "text",
+      "text": "2026年9月・122 老師",
+      "wrap": true,
+      "size": "xs",
+      "color": "#e7ebe1"
+     }
+    ]
+   },
+   "body": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+     {
+      "type": "text",
+      "text": "2026年9月",
+      "wrap": true,
+      "size": "sm",
+      "color": "#8b8478"
+     },
+     {
+      "type": "text",
+      "text": "122 老師",
+      "wrap": true,
+      "size": "xl",
+      "weight": "bold",
+      "color": "#3b3a36",
+      "margin": "sm"
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "lg",
+      "contents": [
+       {
+        "type": "text",
+        "text": "應領金額",
+        "wrap": true,
+        "size": "md",
+        "color": "#3b3a36",
+        "flex": 5
+       },
+       {
+        "type": "text",
+        "text": "73,040 元",
+        "wrap": true,
+        "size": "md",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 5,
+        "weight": "bold"
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "服務",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 5
+       },
+       {
+        "type": "text",
+        "text": "259 支　26 老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 5,
+        "weight": "regular"
+       }
+      ]
+     },
+     {
+      "type": "separator",
+      "margin": "lg"
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "預支",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 5
+       },
+       {
+        "type": "text",
+        "text": "－10,000 元",
+        "wrap": true,
+        "size": "sm",
+        "color": "#b5543c",
+        "align": "end",
+        "flex": 5,
+        "weight": "regular"
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "全勤",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 5
+       },
+       {
+        "type": "text",
+        "text": "＋2,000 元",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 5,
+        "weight": "regular"
+       }
+      ]
+     },
+     {
+      "type": "separator",
+      "margin": "lg"
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "lg",
+      "contents": [
+       {
+        "type": "text",
+        "text": "實領",
+        "wrap": true,
+        "size": "md",
+        "weight": "bold",
+        "color": "#3b3a36",
+        "flex": 3,
+        "gravity": "bottom"
+       },
+       {
+        "type": "text",
+        "text": "65,040 元",
+        "wrap": true,
+        "size": "xl",
+        "weight": "bold",
+        "color": "#a0784f",
+        "align": "end",
+        "flex": 7
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "bubble",
+   "size": "mega",
+   "header": {
+    "type": "box",
+    "layout": "vertical",
+    "backgroundColor": "#6f7d62",
+    "paddingAll": "16px",
+    "contents": [
+     {
+      "type": "text",
+      "text": "緩緩 SLOWVE",
+      "wrap": true,
+      "size": "xs",
+      "color": "#e7ebe1"
+     },
+     {
+      "type": "text",
+      "text": "薪資明細｜服務小計 1～10 號",
+      "wrap": true,
+      "size": "md",
+      "color": "#ffffff",
+      "weight": "bold"
+     },
+     {
+      "type": "text",
+      "text": "2026年9月・122 老師",
+      "wrap": true,
+      "size": "xs",
+      "color": "#e7ebe1"
+     }
+    ]
+   },
+   "body": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/1（二）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/2（三）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/3（四）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/4（五）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/5（六）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/6（日）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/8（二）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/9（三）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/10（四）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     }
+    ]
+   },
+   "footer": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+     {
+      "type": "separator"
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "小計",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 5
+       },
+       {
+        "type": "text",
+        "text": "90 支　9 老點　$25,380",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 5,
+        "weight": "bold"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "bubble",
+   "size": "mega",
+   "header": {
+    "type": "box",
+    "layout": "vertical",
+    "backgroundColor": "#6f7d62",
+    "paddingAll": "16px",
+    "contents": [
+     {
+      "type": "text",
+      "text": "緩緩 SLOWVE",
+      "wrap": true,
+      "size": "xs",
+      "color": "#e7ebe1"
+     },
+     {
+      "type": "text",
+      "text": "薪資明細｜服務小計 11～20 號",
+      "wrap": true,
+      "size": "md",
+      "color": "#ffffff",
+      "weight": "bold"
+     },
+     {
+      "type": "text",
+      "text": "2026年9月・122 老師",
+      "wrap": true,
+      "size": "xs",
+      "color": "#e7ebe1"
+     }
+    ]
+   },
+   "body": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/11（五）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/12（六）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/13（日）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/15（二）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/16（三）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/17（四）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/18（五）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/19（六）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/20（日）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     }
+    ]
+   },
+   "footer": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+     {
+      "type": "separator"
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "小計",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 5
+       },
+       {
+        "type": "text",
+        "text": "90 支　9 老點　$25,380",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 5,
+        "weight": "bold"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "bubble",
+   "size": "mega",
+   "header": {
+    "type": "box",
+    "layout": "vertical",
+    "backgroundColor": "#6f7d62",
+    "paddingAll": "16px",
+    "contents": [
+     {
+      "type": "text",
+      "text": "緩緩 SLOWVE",
+      "wrap": true,
+      "size": "xs",
+      "color": "#e7ebe1"
+     },
+     {
+      "type": "text",
+      "text": "薪資明細｜服務小計 21～30 號",
+      "wrap": true,
+      "size": "md",
+      "color": "#ffffff",
+      "weight": "bold"
+     },
+     {
+      "type": "text",
+      "text": "2026年9月・122 老師",
+      "wrap": true,
+      "size": "xs",
+      "color": "#e7ebe1"
+     }
+    ]
+   },
+   "body": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/22（二）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/23（三）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/24（四）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/25（五）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/26（六）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/27（日）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/29（二）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "11支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$3,100",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "9/30（三）",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "8支 1老點",
+        "wrap": true,
+        "size": "sm",
+        "color": "#8b8478",
+        "flex": 4
+       },
+       {
+        "type": "text",
+        "text": "$2,260",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 3
+       }
+      ]
+     }
+    ]
+   },
+   "footer": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+     {
+      "type": "separator"
+     },
+     {
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "md",
+      "contents": [
+       {
+        "type": "text",
+        "text": "小計",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "flex": 5
+       },
+       {
+        "type": "text",
+        "text": "79 支　8 老點　$22,280",
+        "wrap": true,
+        "size": "sm",
+        "color": "#3b3a36",
+        "align": "end",
+        "flex": 5,
+        "weight": "bold"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}
