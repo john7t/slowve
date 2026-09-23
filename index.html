@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-002</title>
+<title>緩緩門店 v0.1-003</title>
 <script>
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
@@ -48,7 +48,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-002';
+const VER='v0.1-003';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -287,7 +287,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
   return (
     <Sheet onClose={onClose} title={isNew?'新增訂單':(f.void?'訂單（已作廢）':'編輯訂單')} footer={footer}>
       {prev&&<div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm num">
-        ✓ 已存 #{prev.sn||'-'}　{orderLabel(prev,S)}　師 {prev.tc}　{money(prev.amt)}
+        ✓ 已存 #{prev.sn||'-'}　{orderLabel(prev,S)}　{prev.tc} 老師　{money(prev.amt)}
         <span className="float-right text-xs text-mute">連續第 {count} 筆</span>
       </div>}
       <fieldset disabled={locked} className={locked?'opacity-70':''}>
@@ -499,7 +499,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
             <div className="flex-1 min-w-0">
               <div className={'truncate '+(o.void?'line-through':'')}>{orderLabel(o,S)}</div>
               <div className="text-xs text-mute num">
-                師 <span className="text-ink">{o.tc}</span>
+                <span className="text-ink">{o.tc}</span> 老師
                 {o.ld&&<span className="ml-1 px-1.5 rounded bg-brownL text-brown">老點</span>}
                 {o.t&&<span className="ml-2">{o.t}</span>}
                 {o.void&&<span className="ml-2 text-warn">已作廢</span>}
@@ -644,79 +644,94 @@ function MonthPage({S,rev,goDay,openPay}){
   );
 }
 
-/* ========== 薪資條 ========== */
+/* ========== 薪資條（給老師看：一律寫「費用」，不出現「抽成」） ========== */
 const SERIF='"Noto Serif TC","Songti TC","PMingLiU",serif';
-function drawPayslipPages({S,ym,tc,orders,adj,showAmt}){
-  const W=1240,H=1754,M=90,ROW=52,FOOT=110;
+const SLIP_TITLES={salary:{title:'薪資明細',total:'應領薪資'},fee:{title:'費用明細',total:'應領費用'}};
+function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind}){
+  const L=size==='a4'?{W:1240,H:1754,M:90,k:1,fixed:true}:{W:1080,H:3840,M:60,k:1.12,fixed:false};
+  const {W,M}=L;const f=n=>Math.round(n*L.k);
+  const ROW=f(52),FOOT=f(110);
+  const TT=SLIP_TITLES[kind]||SLIP_TITLES.salary;
   const C={ink:'#3b3a36',mute:'#8b8478',line:'#e4dccf',sage:'#6f7d62',sageD:'#56624b',sageL:'#eef1ea',brown:'#a0784f',brownL:'#f6efe6',warn:'#b5543c'};
   const a=ym.split('-');const ymText=a[0]+' 年 '+Number(a[1])+' 月';
-  const sumCm=orders.reduce((s,o)=>s+(o.cm||0),0);
+  const sumFee=orders.reduce((s,o)=>s+(o.cm||0),0);
   const sumAmt=orders.reduce((s,o)=>s+(o.amt||0),0);
   const sumMin=orders.reduce((s,o)=>s+((o.svc&&o.min)?o.min:0),0);
   const sumLd=orders.filter(o=>o.ld).length;
-  const adjSum=adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
-  const total=sumCm+adjSum;
-  const pages=[];
-  const font=(sz,w,serif)=>(w||'')+' '+sz+'px '+(serif?SERIF:FONT);
-  const text=(ctx,t,x,y,o)=>{o=o||{};ctx.font=font(o.size||28,o.weight,o.serif);ctx.fillStyle=o.color||C.ink;ctx.textAlign=o.align||'left';ctx.textBaseline='alphabetic';
-    let s=String(t);if(o.max){while(s.length>1&&ctx.measureText(s).width>o.max)s=s.slice(0,-1);if(s!==String(t))s=s.slice(0,-1)+'…'}
+  const total=sumFee+adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
+  const font=(sz,w,serif)=>(w||'')+' '+f(sz)+'px '+(serif?SERIF:FONT);
+  // ctx 為 null 時只計算高度不畫
+  const text=(ctx,t,x,y,o)=>{if(!ctx)return;o=o||{};ctx.font=font(o.size||28,o.weight,o.serif);ctx.fillStyle=o.color||C.ink;ctx.textAlign=o.align||'left';ctx.textBaseline='alphabetic';
+    let s=String(t);if(o.max){const full=s;while(s.length>1&&ctx.measureText(s).width>o.max)s=s.slice(0,-1);if(s!==full)s=s.slice(0,-1)+'…'}
     ctx.fillText(s,x,y)};
-  const hline=(ctx,y,col,w)=>{ctx.fillStyle=col||C.line;ctx.fillRect(M,y,W-2*M,w||2)};
-  const newPage=()=>{const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);pages.push({c,ctx});return {c,ctx}};
+  const rect=(ctx,x,y,w,h,col)=>{if(!ctx)return;ctx.fillStyle=col;ctx.fillRect(x,y,w,h)};
+  const hline=(ctx,y,col,w)=>rect(ctx,M,y,W-2*M,w||2,col||C.line);
 
-  // 欄位
-  const cols=[{k:'date',t:'日期',w:170},{k:'sn',t:'流水號',w:120},{k:'item',t:'項目',w:0},{k:'ld',t:'老點',w:100}];
-  if(showAmt)cols.push({k:'amt',t:'金額',w:160,right:true});
-  cols.push({k:'cm',t:'抽成',w:160,right:true});
-  const fixed=cols.reduce((s,c)=>s+c.w,0);cols.forEach(c=>{if(!c.w)c.w=W-2*M-fixed});
+  const cols=size==='a4'
+    ?[{k:'date',t:'日期',w:170},{k:'sn',t:'流水號',w:120},{k:'item',t:'項目',w:0},{k:'ld',t:'老點',w:100}]
+    :[{k:'date',t:'日期',w:165},{k:'sn',t:'單號',w:95},{k:'item',t:'項目',w:0},{k:'ld',t:'老點',w:90}];
+  if(showAmt)cols.push({k:'amt',t:'金額',w:size==='a4'?160:150,right:true});
+  cols.push({k:'fee',t:'費用',w:size==='a4'?160:150,right:true});
+  const fixedW=cols.reduce((s,c)=>s+c.w,0);cols.forEach(c=>{if(!c.w)c.w=W-2*M-fixedW});
   let x=M;cols.forEach(c=>{c.x=x;x+=c.w});
-  const tableHead=(ctx,y)=>{ctx.fillStyle=C.brownL;ctx.fillRect(M,y,W-2*M,ROW);
-    cols.forEach(c=>text(ctx,c.t,c.right?c.x+c.w-14:c.x+14,y+34,{size:24,color:C.mute,align:c.right?'right':'left'}));return y+ROW};
+  const tableHead=(ctx,y)=>{rect(ctx,M,y,W-2*M,ROW,C.brownL);
+    cols.forEach(c=>text(ctx,c.t,c.right?c.x+c.w-14:c.x+14,y+ROW*0.66,{size:24,color:C.mute,align:c.right?'right':'left'}));return y+ROW};
 
-  // 第一頁
-  let {ctx}=newPage();let y=M+40;
-  text(ctx,'緩 緩',M,y+10,{size:64,serif:true,color:C.sageD});
-  text(ctx,'S L O W V E   B O D Y  S P A',M+190,y,{size:22,color:C.brown});
-  text(ctx,'薪 資 明 細',W-M,y,{size:40,serif:true,align:'right'});
-  y+=50;text(ctx,ymText,W-M,y,{size:28,color:C.mute,align:'right'});
-  y+=30;hline(ctx,y,C.sage,3);
-  y+=80;text(ctx,'老師編號',M,y,{size:28,color:C.mute});text(ctx,String(tc),M+150,y+4,{size:56,weight:'600'});
-  // 摘要
-  y+=50;const bw=(W-2*M-3*24)/4;
-  [['服務單數',orders.length+' 單'],['服務分鐘',sumMin+' 分'],['老點',sumLd+' 次'],['抽成合計',money(sumCm)]].forEach((b,i)=>{
-    const bx=M+i*(bw+24);ctx.fillStyle=C.sageL;ctx.fillRect(bx,y,bw,120);
-    text(ctx,b[0],bx+24,y+44,{size:24,color:C.mute});text(ctx,b[1],bx+24,y+96,{size:38,weight:'600',color:i===3?C.sageD:C.ink});
-  });
-  y+=160;
-  // 計算明細
-  text(ctx,'抽成（每 30 分鐘 '+S.comm.per30+'，老點每單 +'+S.comm.laodian+'）',M,y,{size:28});text(ctx,money(sumCm),W-M,y,{size:28,align:'right'});
-  adj.forEach(j=>{y+=46;const v=Number(j.amt)||0;text(ctx,(v<0?'扣項：':'加項：')+(j.name||''),M,y,{size:28,max:W-2*M-260});text(ctx,smoney(v),W-M,y,{size:28,align:'right',color:v<0?C.warn:C.ink})});
-  y+=26;hline(ctx,y);y+=66;
-  text(ctx,'應領薪資',M,y,{size:34,weight:'600'});text(ctx,money(total),W-M,y+6,{size:64,serif:true,color:C.brown,align:'right'});
-  y+=60;
-  // 明細表
-  text(ctx,'訂單明細',M,y+10,{size:26,color:C.mute});if(showAmt)text(ctx,'訂單金額合計 '+money(sumAmt),W-M,y+10,{size:24,color:C.mute,align:'right'});
-  y+=30;y=tableHead(ctx,y);
-  let pageNo=1;
-  orders.forEach((o,i)=>{
-    if(y+ROW>H-FOOT){
-      ({ctx}=newPage());pageNo++;y=M+30;
-      text(ctx,'緩緩 薪資明細（續）',M,y,{size:28,serif:true,color:C.sageD});text(ctx,'老師 '+tc+'・'+ymText,W-M,y,{size:26,color:C.mute,align:'right'});
-      y+=30;y=tableHead(ctx,y);
-    }
-    if(i%2===1){ctx.fillStyle='#faf8f4';ctx.fillRect(M,y,W-2*M,ROW)}
-    const d=parseYmd(o.date);
-    const v={date:(d.getMonth()+1)+'/'+d.getDate()+'（'+WK[d.getDay()]+'）',sn:o.sn?'#'+o.sn:'-',item:orderLabel(o,S),ld:o.ld?'✓':'',amt:money(o.amt),cm:money(o.cm)};
-    cols.forEach(c=>text(ctx,v[c.k],c.right?c.x+c.w-14:c.x+14,y+35,{size:26,align:c.right?'right':'left',max:c.w-28,color:c.k==='ld'?C.brown:C.ink}));
-    y+=ROW;ctx.fillStyle=C.line;ctx.fillRect(M,y-1,W-2*M,1);
-  });
-  if(!orders.length){text(ctx,'本月無訂單',W/2,y+40,{size:26,color:C.mute,align:'center'})}
-  // 頁尾
+  const firstHeader=ctx=>{
+    let y=M+f(40);
+    text(ctx,'緩 緩',M,y+f(10),{size:64,serif:true,color:C.sageD});
+    text(ctx,'S L O W V E   B O D Y  S P A',M+f(190),y,{size:size==='a4'?22:18,color:C.brown});
+    text(ctx,TT.title.split('').join(' '),W-M,y,{size:40,serif:true,align:'right'});
+    y+=f(50);text(ctx,ymText,W-M,y,{size:28,color:C.mute,align:'right'});
+    y+=f(30);hline(ctx,y,C.sage,3);
+    y+=f(80);text(ctx,'老師編號',M,y,{size:28,color:C.mute});text(ctx,String(tc),M+f(150),y+f(4),{size:56,weight:'600'});
+    y+=f(50);const bw=(W-2*M-3*f(20))/4;
+    [['服務單數',orders.length+' 單'],['服務分鐘',sumMin+' 分'],['老點',sumLd+' 次'],['費用合計',money(sumFee)]].forEach((b,i)=>{
+      const bx=M+i*(bw+f(20));rect(ctx,bx,y,bw,f(120),C.sageL);
+      text(ctx,b[0],bx+f(22),y+f(44),{size:24,color:C.mute});text(ctx,b[1],bx+f(22),y+f(96),{size:36,weight:'600',color:i===3?C.sageD:C.ink,max:bw-f(30)});
+    });
+    y+=f(160);
+    text(ctx,'服務費用（每 30 分鐘 '+S.comm.per30+'，老點每單 +'+S.comm.laodian+'）',M,y,{size:26,max:W-2*M-f(200)});text(ctx,money(sumFee),W-M,y,{size:28,align:'right'});
+    adj.forEach(j=>{y+=f(46);const v=Number(j.amt)||0;text(ctx,(v<0?'扣項：':'加項：')+(j.name||''),M,y,{size:28,max:W-2*M-f(260)});text(ctx,smoney(v),W-M,y,{size:28,align:'right',color:v<0?C.warn:C.ink})});
+    y+=f(26);hline(ctx,y);y+=f(66);
+    text(ctx,TT.total,M,y,{size:34,weight:'600'});text(ctx,money(total),W-M,y+f(6),{size:64,serif:true,color:C.brown,align:'right'});
+    y+=f(60);
+    text(ctx,'服務明細',M,y+f(10),{size:26,color:C.mute});if(showAmt)text(ctx,'訂單金額合計 '+money(sumAmt),W-M,y+f(10),{size:24,color:C.mute,align:'right'});
+    y+=f(30);return tableHead(ctx,y);
+  };
+  const contHeader=ctx=>{
+    let y=M+f(30);
+    text(ctx,'緩緩 '+TT.title+'（續）',M,y,{size:28,serif:true,color:C.sageD});text(ctx,'老師 '+tc+'・'+ymText,W-M,y,{size:26,color:C.mute,align:'right'});
+    y+=f(30);return tableHead(ctx,y);
+  };
+
+  // 分頁：先算每頁放幾列
+  const firstStart=firstHeader(null),contStart=contHeader(null);
+  const firstCap=Math.max(1,Math.floor((L.H-FOOT-firstStart)/ROW)),contCap=Math.max(1,Math.floor((L.H-FOOT-contStart)/ROW));
+  const chunks=[orders.slice(0,firstCap)];
+  for(let i=firstCap;i<orders.length;i+=contCap)chunks.push(orders.slice(i,i+contCap));
+
   const now=new Date();const stamp=ymd(now)+' '+pad(now.getHours())+':'+pad(now.getMinutes());
-  pages.forEach((p,i)=>{hline(p.ctx,H-FOOT+20);
-    text(p.ctx,'產出時間 '+stamp+'　如有疑問請洽店長',M,H-FOOT+66,{size:22,color:C.mute});
-    text(p.ctx,'第 '+(i+1)+' / '+pages.length+' 頁',W-M,H-FOOT+66,{size:22,color:C.mute,align:'right'})});
-  return {canvases:pages.map(p=>p.c),total};
+  const canvases=chunks.map((rows,pi)=>{
+    const start=pi===0?firstStart:contStart;
+    const H=L.fixed?L.H:Math.min(L.H,start+Math.max(rows.length,1)*ROW+FOOT+f(20));
+    const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');
+    rect(ctx,0,0,W,H,'#ffffff');
+    let y=pi===0?firstHeader(ctx):contHeader(ctx);
+    rows.forEach((o,i)=>{
+      if(i%2===1)rect(ctx,M,y,W-2*M,ROW,'#faf8f4');
+      const d=parseYmd(o.date);
+      const v={date:(d.getMonth()+1)+'/'+d.getDate()+'（'+WK[d.getDay()]+'）',sn:o.sn?'#'+o.sn:'-',item:orderLabel(o,S),ld:o.ld?'✓':'',amt:money(o.amt),fee:money(o.cm)};
+      cols.forEach(cl=>text(ctx,v[cl.k],cl.right?cl.x+cl.w-14:cl.x+14,y+ROW*0.67,{size:26,align:cl.right?'right':'left',max:cl.w-28,color:cl.k==='ld'?C.brown:C.ink}));
+      y+=ROW;rect(ctx,M,y-1,W-2*M,1,C.line);
+    });
+    if(!orders.length)text(ctx,'本月無服務紀錄',W/2,y+f(40),{size:26,color:C.mute,align:'center'});
+    hline(ctx,H-FOOT+f(20));
+    text(ctx,'產出時間 '+stamp+'　如有疑問請洽店長',M,H-FOOT+f(66),{size:22,color:C.mute});
+    text(ctx,'第 '+(pi+1)+' / '+chunks.length+' 頁',W-M,H-FOOT+f(66),{size:22,color:C.mute,align:'right'});
+    return c;
+  });
+  return {canvases,total};
 }
 const canvasBlob=(c,type,q)=>new Promise(res=>c.toBlob(res,type,q));
 
@@ -725,35 +740,41 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
   const adj=useMemo(()=>((loadMonth(ym).pay||{})[tc]||{}).adj||[],[ym,tc,rev]);
   const [nm,setNm]=useState('');const [am,setAm]=useState('');const [neg,setNeg]=useState(false);
   const [showAmt,setShowAmt]=useState(false);
+  const [kind,setKind]=useState('salary');     // salary 薪資明細 / fee 費用明細
+  const [size,setSize]=useState('mobile');     // mobile 手機（預設）/ a4 列印
   const [busy,setBusy]=useState('');
-  const sumCm=orders.reduce((s,o)=>s+(o.cm||0),0);
+  const sumFee=orders.reduce((s,o)=>s+(o.cm||0),0);
   const adjSum=adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
+  const TT=SLIP_TITLES[kind];
   const saveAdj=list=>{mutateMonth(ym,md=>{md.pay=md.pay||{};md.pay[tc]=Object.assign({},md.pay[tc]||{},{adj:list})});bump()};
   const addAdj=()=>{const v=Number(am);if(!v)return;saveAdj(adj.concat([{name:nm.trim()||(neg?'扣款':'獎金'),amt:neg?-v:v}]));setNm('');setAm('')};
-  const a=ym.split('-');const base='slowve-pay-'+tc+'-'+a[0]+a[1];
+  const a=ym.split('-');const base='slowve-'+(kind==='fee'?'fee':'pay')+'-'+tc+'-'+a[0]+a[1]+(size==='a4'?'-a4':'');
+  const shareTitle='老師 '+tc+' '+TT.title;
 
-  const gen=async kind=>{
-    if(busy)return;setBusy(kind);
+  const gen=async type=>{
+    if(busy)return;setBusy(type);
     try{
-      const {canvases}=drawPayslipPages({S,ym,tc,orders,adj,showAmt});
+      const {canvases}=drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind});
       let r;
-      if(kind==='pdf'){
+      if(type==='pdf'){
         if(!window.jspdf)await loadScript(JSPDF_URL);
-        const doc=new window.jspdf.jsPDF({unit:'pt',format:'a4'});
-        canvases.forEach((c,i)=>{if(i)doc.addPage();doc.addImage(c.toDataURL('image/jpeg',0.92),'JPEG',0,0,595.28,841.89)});
-        r=await shareOrDownload(doc.output('blob'),base+'.pdf','老師 '+tc+' 薪資明細');
+        const pt=c=>size==='a4'?[595.28,841.89]:[c.width*0.5,c.height*0.5];
+        const doc=new window.jspdf.jsPDF({unit:'pt',format:pt(canvases[0]),orientation:'portrait'});
+        canvases.forEach((c,i)=>{const d=pt(c);if(i)doc.addPage(d,'portrait');doc.addImage(c.toDataURL('image/jpeg',0.92),'JPEG',0,0,d[0],d[1])});
+        r=await shareOrDownload(doc.output('blob'),base+'.pdf',shareTitle);
       }else{
         const blobs=await Promise.all(canvases.map(c=>canvasBlob(c,'image/png')));
         const files=blobs.map((b,i)=>new File([b],base+(blobs.length>1?'-'+(i+1):'')+'.png',{type:'image/png'}));
         r='download';
-        try{if(navigator.canShare&&navigator.canShare({files})){await navigator.share({files,title:'老師 '+tc+' 薪資明細'});r='shared'}}
+        try{if(navigator.canShare&&navigator.canShare({files})){await navigator.share({files,title:shareTitle});r='shared'}}
         catch(e){if(e&&e.name==='AbortError')r='abort'}
-        if(r==='download')for(const f of files)await shareOrDownload(f,f.name);
+        if(r==='download')for(const fl of files)await shareOrDownload(fl,fl.name);
       }
       if(r!=='abort')toast(r==='shared'?'已開啟分享，可選 LINE 傳給老師':'已下載檔案');
     }catch(e){await ask({title:'產生失敗',msg:String(e&&e.message||e)+'\n（PDF 需要網路載入元件，可改用「分享圖片」）',okOnly:true})}
     setBusy('');
   };
+  const seg=(val,cur,set,label)=><button key={val} className={'flex-1 h-10 text-sm '+(cur===val?'bg-sage text-white':'bg-card text-ink')} onClick={()=>set(val)}>{label}</button>;
 
   const footer=(
     <div className="flex gap-2">
@@ -769,7 +790,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
           <Stat label="分鐘" value={orders.reduce((s,o)=>s+((o.svc&&o.min)?o.min:0),0)}/>
           <Stat label="老點" value={orders.filter(o=>o.ld).length}/>
         </div>
-        <div className="flex justify-between py-1 border-t border-line pt-2"><span className="text-mute">抽成合計</span><span>{money(sumCm)}</span></div>
+        <div className="flex justify-between py-1 border-t border-line pt-2"><span className="text-mute">費用合計</span><span>{money(sumFee)}</span></div>
         {adj.map((j,i)=>(
           <div key={i} className="flex items-center justify-between py-1">
             <span className="text-mute">{j.amt<0?'扣項':'加項'}：{j.name}</span>
@@ -777,25 +798,32 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
               <button className="ml-2 w-6 h-6 rounded-full text-mute" onClick={async()=>{if(await ask({title:'刪除這個項目？',okText:'刪除',danger:true}))saveAdj(adj.filter((_,k)=>k!==i))}}>×</button></span>
           </div>))}
         <div className="flex items-end justify-between pt-2 mt-1 border-t border-line">
-          <span>應領薪資</span><span className="serif text-3xl text-brown">{money(sumCm+adjSum)}</span>
+          <span>{TT.total}</span><span className="serif text-3xl text-brown">{money(sumFee+adjSum)}</span>
         </div>
       </Card>
 
       <div className="text-xs text-mute mb-1">加項／扣項（獎金、預支、借款等）</div>
-      <div className="flex gap-2 mb-3">
+      <div className="flex gap-2 mb-4">
         <button className={'w-12 h-11 rounded-xl border text-lg '+(neg?'border-warn text-warn bg-warnL':'border-sage text-sageD bg-sageL')} onClick={()=>setNeg(!neg)} aria-label="切換加扣">{neg?'－':'＋'}</button>
         <input className="flex-1 min-w-0 h-11 px-3 rounded-xl border border-line bg-card" placeholder={neg?'扣款名稱':'獎金名稱'} value={nm} onChange={e=>setNm(e.target.value)}/>
         <input className="w-24 h-11 px-2 rounded-xl border border-line bg-card num text-center" inputMode="numeric" placeholder="金額" value={am} onChange={e=>setAm(e.target.value.replace(/[^\d]/g,''))}/>
         <button className="px-3 h-11 rounded-xl bg-sage text-white" onClick={addAdj}>加入</button>
       </div>
 
-      <button className={'w-full h-11 rounded-xl border mb-4 text-left px-3 text-sm '+(showAmt?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setShowAmt(!showAmt)}>
-        {showAmt?'☑':'☐'} 薪資條顯示訂單金額<span className="text-xs text-mute ml-2">（預設不顯示給老師看）</span>
-      </button>
+      <div className="text-xs text-mute mb-1">給老師的檔案</div>
+      <Card className="p-3 mb-4 space-y-3">
+        <div className="flex items-center gap-3"><div className="w-12 text-sm text-mute">標題</div>
+          <div className="flex-1 flex rounded-xl border border-line overflow-hidden">{seg('salary',kind,setKind,'薪資明細')}{seg('fee',kind,setKind,'費用明細')}</div></div>
+        <div className="flex items-center gap-3"><div className="w-12 text-sm text-mute">尺寸</div>
+          <div className="flex-1 flex rounded-xl border border-line overflow-hidden">{seg('mobile',size,setSize,'手機')}{seg('a4',size,setSize,'A4 列印')}</div></div>
+        <button className={'w-full h-10 rounded-xl border text-left px-3 text-sm '+(showAmt?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setShowAmt(!showAmt)}>
+          {showAmt?'☑':'☐'} 顯示每單客人付的金額<span className="text-xs text-mute ml-2">（預設不顯示）</span>
+        </button>
+      </Card>
 
-      <div className="text-xs text-mute mb-1">訂單明細（{orders.length} 筆）</div>
+      <div className="text-xs text-mute mb-1">服務明細（{orders.length} 筆）</div>
       <Card className="overflow-hidden">
-        {orders.length===0&&<div className="p-4 text-center text-mute text-sm">本月無訂單</div>}
+        {orders.length===0&&<div className="p-4 text-center text-mute text-sm">本月無服務紀錄</div>}
         {orders.map((o,i)=>(
           <div key={o.id} className={'flex items-center gap-2 px-3 py-2 text-sm num '+(i?'border-t border-line':'')}>
             <div className="w-20 text-mute">{fmtDate(o.date).replace(/（.）/,'')}<span className="ml-1">#{o.sn||'-'}</span></div>
@@ -1070,3 +1098,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
+9
