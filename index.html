@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-011</title>
+<title>緩緩門店 v0.1-012</title>
 <script>
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
@@ -48,7 +48,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-011';
+const VER='v0.1-012';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -990,6 +990,11 @@ function buildPayFlex(D){
   return {type:'flex',altText:(showBrand?'緩緩 ':'')+y+'年'+m+'月'+perLabel+' '+tc+'老師 '+TT.title+'，實領 '+yuan(net),
     contents:{type:'carousel',contents:[b1].concat(pages)}};
 }
+async function liffReady(){
+  if(!window.liff)await loadScript(LIFF_SDK);
+  if(!window.__liffInited){await window.liff.init({liffId:LIFF_ID});window.__liffInited=true}
+  return window.liff;
+}
 const liffShareUrl=D=>'https://liff.line.me/'+LIFF_ID+'?share='+b64uEnc(JSON.stringify(D));
 
 /* 代發頁：網址帶 ?share=（或 LIFF 導轉中的 liff.state）時，不載入門店資料，只負責發卡片 */
@@ -1165,6 +1170,122 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask,per:per0}){
   );
 }
 
+/* ========== LINE 登入測試（目前只測能不能正常登入，不做任何資料綁定） ==========
+   沿用 massage-pay 1.12～1.13 的經驗：
+   - 由按鈕觸發登入（使用者手勢），外部瀏覽器才不會擋導轉
+   - 先 logout 再 login，清掉瀏覽器快取的舊 token
+   - redirectUri 用乾淨網址（不帶上次殘留的 query）
+   - 導回後若網址帶 code=，要再 liff.init 一次才算完成登入 */
+const LINE_TEST_KEY=P+'linetest-pending';
+function uaInfo(){
+  const ua=navigator.userAgent||'';
+  const os=/iPhone|iPad|iPod/.test(ua)?'iOS':/Android/.test(ua)?'Android':/Mac/.test(ua)?'Mac':/Windows/.test(ua)?'Windows':'其他';
+  const br=/Line\//i.test(ua)?'LINE 內建瀏覽器':/CriOS|Chrome/.test(ua)&&!/Edg/.test(ua)?'Chrome':/Safari/.test(ua)?'Safari':/Edg/.test(ua)?'Edge':'其他';
+  const standalone=(window.navigator.standalone===true)||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
+  return {os,br,standalone};
+}
+function LineLoginTest({standalone}){
+  const [st,setSt]=useState('idle');   // idle / working / done / error
+  const [info,setInfo]=useState(null);
+  const [err,setErr]=useState('');
+  const ui=uaInfo();
+  const selfUrl=()=>location.origin+location.pathname+(standalone?'?linetest=1':'');
+  const collect=async()=>{
+    const L=await liffReady();
+    const r={inClient:L.isInClient(),loggedIn:L.isLoggedIn(),os:L.getOS&&L.getOS(),sdk:L.getVersion&&L.getVersion(),lineVer:L.getLineVersion&&L.getLineVersion(),
+      share:L.isApiAvailable&&L.isApiAvailable('shareTargetPicker'),at:Date.now()};
+    if(r.loggedIn){
+      try{const p=await L.getProfile();r.name=p.displayName;r.uid=p.userId;r.pic=p.pictureUrl}catch(e){r.profileErr=String(e&&e.message||e)}
+      try{r.idToken=!!L.getIDToken()}catch(_e){r.idToken=false}
+    }
+    setInfo(r);setSt(r.loggedIn?'done':'idle');
+    try{if(/[?&](code|liffClientId|liffRedirectUri)=/.test(location.search))history.replaceState(null,'',location.pathname+(standalone?'?linetest=1':'')+location.hash)}catch(_e){}
+    return r;
+  };
+  const login=async()=>{
+    setSt('working');setErr('');
+    try{
+      const L=await liffReady();
+      if(L.isInClient()){await collect();return}          // LINE App 內一定是登入狀態
+      try{if(L.isLoggedIn())L.logout()}catch(_e){}
+      try{sessionStorage.setItem(LINE_TEST_KEY,'1')}catch(_e){}
+      L.login({redirectUri:selfUrl()});
+    }catch(e){setSt('error');setErr(String(e&&e.message||e))}
+  };
+  const logout=async()=>{try{const L=await liffReady();L.logout()}catch(_e){}setInfo(null);setSt('idle')};
+  useEffect(()=>{
+    let pend=false;try{pend=sessionStorage.getItem(LINE_TEST_KEY)==='1';sessionStorage.removeItem(LINE_TEST_KEY)}catch(_e){}
+    if(pend||standalone||/[?&]code=/.test(location.search)){
+      setSt('working');collect().catch(e=>{setSt('error');setErr(String(e&&e.message||e))});
+    }
+  },[]);
+  const Row=({k,v,ok})=><div className="flex justify-between py-1 border-t border-line text-sm"><span className="text-mute">{k}</span><span className={'num text-right '+(ok===false?'text-warn':ok?'text-sageD':'')}>{v}</span></div>;
+  return (
+    <div>
+      <div className="text-xs text-mute mb-2">環境：{ui.os}・{ui.br}{ui.standalone?'・主畫面 App':''}</div>
+      {info&&<div className="mb-3">
+        {info.loggedIn&&info.name&&<div className="flex items-center gap-3 mb-2">
+          {info.pic&&<img src={info.pic} alt="" className="w-10 h-10 rounded-full"/>}
+          <div><div className="font-semibold">{info.name}</div><div className="text-xs text-mute num">{info.uid?info.uid.slice(0,6)+'…'+info.uid.slice(-4):''}</div></div>
+        </div>}
+        <Row k="登入狀態" v={info.loggedIn?'✓ 已登入':'未登入'} ok={info.loggedIn}/>
+        <Row k="執行環境" v={info.inClient?'LINE App 內':'外部瀏覽器'}/>
+        <Row k="選好友分享" v={info.share?'可用':'不可用'} ok={!!info.share}/>
+        {info.loggedIn&&<Row k="ID Token" v={info.idToken?'有':'無'} ok={!!info.idToken}/>}
+        {info.profileErr&&<Row k="讀取個人資料" v={info.profileErr} ok={false}/>}
+        <Row k="LIFF SDK" v={(info.sdk||'-')+(info.lineVer?'・LINE '+info.lineVer:'')}/>
+      </div>}
+      {st==='error'&&<div className="text-sm text-warn mb-2 whitespace-pre-line">登入失敗：{err}</div>}
+      <div className="flex gap-2">
+        <button className="flex-1 h-10 rounded-lg text-white disabled:opacity-50" style={{background:'#06c755'}} disabled={st==='working'} onClick={login}>{st==='working'?'連線中…':info&&info.loggedIn?'重新登入測試':'LINE 登入測試'}</button>
+        {info&&info.loggedIn&&<button className="px-4 h-10 rounded-lg border border-line" onClick={logout}>登出</button>}
+      </div>
+      {!standalone&&<a className="block text-center text-sm text-sageD underline mt-2" href={'https://liff.line.me/'+LIFF_ID+'?linetest=1'}>改用 LINE App 開啟測試頁</a>}
+    </div>
+  );
+}
+function LineTestPage(){
+  const close=()=>{try{window.liff&&window.liff.closeWindow()}catch(_e){location.href=location.pathname}};
+  return (
+    <div className="min-h-screen max-w-md mx-auto p-6">
+      <div className="serif text-3xl tracking-widest text-sageD text-center mb-1">緩緩</div>
+      <div className="text-center text-mute mb-6">LINE 登入測試（不會讀取或修改門店資料）</div>
+      <Card className="p-4"><LineLoginTest standalone/></Card>
+      <button className="w-full h-11 mt-4 rounded-xl border border-line bg-card" onClick={close}>關閉</button>
+    </div>
+  );
+}
+
+/* ========== 版本紀錄 ========== */
+const CHANGELOG=[
+  ['v0.1-012','09-24','設定頁新增 LINE 登入測試（本瀏覽器／LINE App 兩種開法）、設定頁最下方新增版本紀錄'],
+  ['v0.1-011','09-24','一筆流水可登記多位同行客人，每位各自選方案、老師、老點、額外品項、打槍老師；跳單／時間／備註整筆共用'],
+  ['v0.1-010','09-23','跳單可選是否計入營業額、責任歸屬（店家／櫃台／老師）、說明；日結列出跳單明細；月報跳單紀錄；老師明細一鍵加入跳單扣項'],
+  ['v0.1-009','09-23','刮痧／拔罐／修腳皮各算 1 支；主項目必選；打槍老師與月報打槍統計；跳單'],
+  ['v0.1-008','09-23','發薪週期：上期 1～15 號（20 號發薪）、下期 16 號～月底（次月 5 號發薪）；月報與薪資明細可切換整月／上期／下期；加扣項分期'],
+  ['v0.1-007','09-23','「支」全面套用：設定改為幾分鐘算 1 支＋每支費用；列表、統計、薪資條都顯示支數'],
+  ['v0.1-006','09-23','LINE 卡片改為導到 liff.line.me 代發（修正 about:blank）'],
+  ['v0.1-005','09-23','用 LINE 傳 Flex 卡片給老師（摘要＋每日服務小計）'],
+  ['v0.1-004','09-23','老師編號提示改「例：122」；薪資條可選是否顯示店名'],
+  ['v0.1-003','09-23','列表顯示「N 老師」；給老師的檔案一律寫「費用」；薪資明細／費用明細標題；手機／A4 尺寸'],
+  ['v0.1-002','09-23','每日支出、連續輸入、老師薪資條（加扣項、PDF／圖片分享）、網域容量顯示'],
+  ['v0.1-001','09-23','初版：每日訂單（3×3 價格按鈕＋平日限定）、日結、月報、設定、本機 JSON 匯出匯入'],
+];
+function ChangelogList(){
+  const [all,setAll]=useState(false);
+  const list=all?CHANGELOG:CHANGELOG.slice(0,5);
+  return (
+    <div>
+      {list.map(([v,d,t],i)=>(
+        <div key={v} className={'py-2 text-sm '+(i?'border-t border-line':'')}>
+          <div className="flex justify-between num"><span className={i===0?'text-sageD font-semibold':''}>{v}</span><span className="text-xs text-mute">{d}</span></div>
+          <div className="text-mute text-xs mt-0.5 leading-relaxed">{t}</div>
+        </div>))}
+      {CHANGELOG.length>5&&<button className="w-full h-9 mt-1 text-sm text-sageD" onClick={()=>setAll(!all)}>{all?'收合':'顯示全部 '+CHANGELOG.length+' 筆'}</button>}
+    </div>
+  );
+}
+
 /* ========== 設定 ========== */
 function NumIn({value,onChange,className}){
   return <input className={'h-10 px-2 rounded-lg border border-line bg-card num text-center '+(className||'w-full')} inputMode="numeric" value={value} onChange={e=>onChange(e.target.value.replace(/[^\d]/g,''))}/>;
@@ -1312,6 +1433,15 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
         {pct>80&&<div className="text-xs text-warn mt-2">空間快滿了，請先匯出備份</div>}
       </Card>
 
+      <div className={sec}>LINE 登入（測試）</div>
+      <Card className="p-3">
+        <div className="text-xs text-mute mb-2">目前只測試能不能正常登入，不會綁定或上傳任何資料。</div>
+        <LineLoginTest/>
+      </Card>
+
+      <div className={sec}>版本紀錄</div>
+      <Card className="px-3 py-1"><ChangelogList/></Card>
+
       <div className="text-center text-xs text-mute mt-6 num">緩緩門店 {VER}　裝置 {S.device}</div>
 
       {dirty&&<div className="fixed left-0 right-0 bottom-[4.5rem] z-30 px-4" style={{marginBottom:'env(safe-area-inset-bottom)'}}>
@@ -1328,7 +1458,10 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
 function App(){
   const [S,setS]=useState(()=>{const s=loadSettings();ls.set('settings',s);return s});
   const [date,setDate]=useState(()=>bizToday(loadSettings().cutoff));
-  const [tab,setTab]=useState('day');
+  const [tab,setTab]=useState(()=>{   // LINE 登入測試導回時，直接回到設定頁顯示結果
+    try{if(sessionStorage.getItem(LINE_TEST_KEY)==='1'||/[?&]code=/.test(location.search))return 'set'}catch(_e){}
+    return 'day';
+  });
   const [rev,setRev]=useState(0);
   const [ed,setEd]=useState(null);        // 訂單編輯 {order,k,prev,count}
   const [xe,setXe]=useState(null);        // 支出編輯 {exp,k,prev,count}
@@ -1427,9 +1560,10 @@ function App(){
   );
 }
 
-const __q=new URLSearchParams(location.search);
-const IS_SHARE_RELAY=__q.has('share')||__q.has('liff.state');
-ReactDOM.createRoot(document.getElementById('root')).render(IS_SHARE_RELAY?<ShareRelay/>:<App/>);
+const __q=new URLSearchParams(location.search);const __ls=__q.get('liff.state')||'';
+const IS_LINE_TEST=__q.has('linetest')||__ls.indexOf('linetest')>=0;
+const IS_SHARE_RELAY=!IS_LINE_TEST&&(__q.has('share')||__ls.indexOf('share')>=0);
+ReactDOM.createRoot(document.getElementById('root')).render(IS_LINE_TEST?<LineTestPage/>:IS_SHARE_RELAY?<ShareRelay/>:<App/>);
 </script>
 </body>
 </html>
