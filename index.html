@@ -7,8 +7,11 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-012</title>
+<title>緩緩門店 v0.1-013</title>
 <script>
+/* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
+window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
+try{var __k='slowve-urllog',__a=JSON.parse(sessionStorage.getItem(__k)||'[]');__a.push({u:location.href,r:document.referrer||'',t:Date.now()});sessionStorage.setItem(__k,JSON.stringify(__a.slice(-8)))}catch(_e){}
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
 window.onerror=function(m,s,l,c,e){window.__fb((m||'')+' @'+(l||0)+':'+(c||0));};
@@ -48,7 +51,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-012';
+const VER='v0.1-013';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1177,6 +1180,20 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask,per:per0}){
    - redirectUri 用乾淨網址（不帶上次殘留的 query）
    - 導回後若網址帶 code=，要再 liff.init 一次才算完成登入 */
 const LINE_TEST_KEY=P+'linetest-pending';
+const LT_SENT_KEY=P+'lt-sent';
+const LT_ZH='緩緩測試';
+const newNonce=()=>Math.random().toString(36).slice(2,8);
+// 從一個網址（含 liff.state 裡包著的網址）取出測試參數
+function ltFromUrl(u){
+  try{
+    const url=new URL(u);const q=url.searchParams;
+    let lt=q.get('lt'),ltz=q.get('ltz');
+    const st=q.get('liff.state');
+    if((!lt||!ltz)&&st){const inner=new URLSearchParams(st.indexOf('?')>=0?st.slice(st.indexOf('?')+1):st);lt=lt||inner.get('lt');ltz=ltz||inner.get('ltz')}
+    return {lt,ltz,liffState:!!st,liffParams:q.has('liffClientId')||q.has('liffRedirectUri'),code:q.has('code')};
+  }catch(_e){return {}}
+}
+function urlLog(){try{return JSON.parse(sessionStorage.getItem('slowve-urllog')||'[]')}catch(_e){return []}}
 function uaInfo(){
   const ua=navigator.userAgent||'';
   const os=/iPhone|iPad|iPod/.test(ua)?'iOS':/Android/.test(ua)?'Android':/Mac/.test(ua)?'Mac':/Windows/.test(ua)?'Windows':'其他';
@@ -1189,17 +1206,30 @@ function LineLoginTest({standalone}){
   const [info,setInfo]=useState(null);
   const [err,setErr]=useState('');
   const ui=uaInfo();
-  const selfUrl=()=>location.origin+location.pathname+(standalone?'?linetest=1':'');
+  const selfUrl=nonce=>location.origin+location.pathname+'?'+(standalone?'linetest=1&':'')+'lt='+nonce+'&ltz='+encodeURIComponent(LT_ZH);
   const collect=async()=>{
     const L=await liffReady();
     const r={inClient:L.isInClient(),loggedIn:L.isLoggedIn(),os:L.getOS&&L.getOS(),sdk:L.getVersion&&L.getVersion(),lineVer:L.getLineVersion&&L.getLineVersion(),
       share:L.isApiAvailable&&L.isApiAvailable('shareTargetPicker'),at:Date.now()};
+    try{const c=L.getContext&&L.getContext();r.ctxType=c&&c.type;r.endpoint=c&&c.endpointUrl}catch(_e){}
+    // 開啟來源：這次（同一分頁）經過的網址裡，有 LIFF 導轉參數就是從 liff.line.me 進來的
+    const log=urlLog();const entry=window.__entryUrl||location.href;
+    const all=log.map(x=>x.u).concat([entry,location.href]);
+    // liff.state＝從 liff.line.me 開啟時 LINE 加的；code／liffClientId＝LINE 登入完導回時加的（兩件事要分開看）
+    const viaLiff=all.some(u=>ltFromUrl(u).liffState);
+    r.source=viaLiff?'LIFF 網址（liff.line.me 導入）':r.inClient?'LINE App 內（LIFF）':'GitHub 網址直接開啟';
+    r.loginBack=all.some(u=>{const x=ltFromUrl(u);return x.code||x.liffParams});
+    r.entry=entry;r.ref=window.__entryRef||'';r.log=log.slice(-6);
+    // 參數傳遞測試
+    let got=null;for(const u of all.slice().reverse()){const x=ltFromUrl(u);if(x.lt){got=x;break}}
+    let sent=null;try{sent=sessionStorage.getItem(LT_SENT_KEY)}catch(_e){}
+    r.ltGot=got?got.lt:null;r.ltzGot=got?got.ltz:null;r.ltSent=sent;
     if(r.loggedIn){
       try{const p=await L.getProfile();r.name=p.displayName;r.uid=p.userId;r.pic=p.pictureUrl}catch(e){r.profileErr=String(e&&e.message||e)}
       try{r.idToken=!!L.getIDToken()}catch(_e){r.idToken=false}
     }
     setInfo(r);setSt(r.loggedIn?'done':'idle');
-    try{if(/[?&](code|liffClientId|liffRedirectUri)=/.test(location.search))history.replaceState(null,'',location.pathname+(standalone?'?linetest=1':'')+location.hash)}catch(_e){}
+    try{if(/[?&](code|liffClientId|liffRedirectUri|lt)=/.test(location.search))history.replaceState(null,'',location.pathname+(standalone?'?linetest=1':'')+location.hash)}catch(_e){}
     return r;
   };
   const login=async()=>{
@@ -1208,14 +1238,15 @@ function LineLoginTest({standalone}){
       const L=await liffReady();
       if(L.isInClient()){await collect();return}          // LINE App 內一定是登入狀態
       try{if(L.isLoggedIn())L.logout()}catch(_e){}
-      try{sessionStorage.setItem(LINE_TEST_KEY,'1')}catch(_e){}
-      L.login({redirectUri:selfUrl()});
+      const nonce=newNonce();
+      try{sessionStorage.setItem(LINE_TEST_KEY,'1');sessionStorage.setItem(LT_SENT_KEY,nonce)}catch(_e){}
+      L.login({redirectUri:selfUrl(nonce)});
     }catch(e){setSt('error');setErr(String(e&&e.message||e))}
   };
   const logout=async()=>{try{const L=await liffReady();L.logout()}catch(_e){}setInfo(null);setSt('idle')};
   useEffect(()=>{
     let pend=false;try{pend=sessionStorage.getItem(LINE_TEST_KEY)==='1';sessionStorage.removeItem(LINE_TEST_KEY)}catch(_e){}
-    if(pend||standalone||/[?&]code=/.test(location.search)){
+    if(pend||standalone||/[?&](code|lt)=/.test(location.search)){
       setSt('working');collect().catch(e=>{setSt('error');setErr(String(e&&e.message||e))});
     }
   },[]);
@@ -1234,13 +1265,27 @@ function LineLoginTest({standalone}){
         {info.loggedIn&&<Row k="ID Token" v={info.idToken?'有':'無'} ok={!!info.idToken}/>}
         {info.profileErr&&<Row k="讀取個人資料" v={info.profileErr} ok={false}/>}
         <Row k="LIFF SDK" v={(info.sdk||'-')+(info.lineVer?'・LINE '+info.lineVer:'')}/>
+        <Row k="開啟來源" v={info.source}/>
+        <Row k="LINE 登入導回" v={info.loginBack?'✓ 有（網址帶 code）':'無（本次沒有經過登入頁）'} ok={info.loginBack?true:undefined}/>
+        {info.ctxType&&<Row k="LIFF context" v={info.ctxType}/>}
+        <Row k="網址參數 lt" v={info.ltGot?(info.ltSent?(info.ltGot===info.ltSent?'✓ 收到 '+info.ltGot+'（與送出一致）':'✗ 收到 '+info.ltGot+'，送出 '+info.ltSent):'✓ 收到 '+info.ltGot):(info.ltSent?'✗ 沒收到（送出 '+info.ltSent+'）':'（本次沒有帶測試參數）')}
+          ok={info.ltGot?(info.ltSent?info.ltGot===info.ltSent:true):(info.ltSent?false:undefined)}/>
+        {(info.ltGot||info.ltSent)&&<Row k="中文參數 ltz" v={info.ltzGot?(info.ltzGot===LT_ZH?'✓ '+info.ltzGot:'✗ '+info.ltzGot):'✗ 沒收到'} ok={info.ltzGot===LT_ZH}/>}
+        <div className="pt-2 border-t border-line text-xs">
+          <div className="text-mute mb-1">本次進入網址</div>
+          <div className="break-all num bg-bg rounded p-2">{decodeURIComponent(info.entry)}</div>
+          {info.ref&&<div className="text-mute mt-1 break-all">來源頁：{info.ref}</div>}
+          {info.log&&info.log.length>1&&<details className="mt-2"><summary className="text-mute">導轉經過的網址（{info.log.length}）</summary>
+            {info.log.map((x,i)=><div key={i} className="break-all num mt-1 bg-bg rounded p-2"><span className="text-mute">{new Date(x.t).toLocaleTimeString('zh-TW',{hour12:false})}　</span>{(()=>{try{return decodeURIComponent(x.u)}catch(_e){return x.u}})()}</div>)}
+          </details>}
+        </div>
       </div>}
       {st==='error'&&<div className="text-sm text-warn mb-2 whitespace-pre-line">登入失敗：{err}</div>}
       <div className="flex gap-2">
         <button className="flex-1 h-10 rounded-lg text-white disabled:opacity-50" style={{background:'#06c755'}} disabled={st==='working'} onClick={login}>{st==='working'?'連線中…':info&&info.loggedIn?'重新登入測試':'LINE 登入測試'}</button>
         {info&&info.loggedIn&&<button className="px-4 h-10 rounded-lg border border-line" onClick={logout}>登出</button>}
       </div>
-      {!standalone&&<a className="block text-center text-sm text-sageD underline mt-2" href={'https://liff.line.me/'+LIFF_ID+'?linetest=1'}>改用 LINE App 開啟測試頁</a>}
+      {!standalone&&<a className="block text-center text-sm text-sageD underline mt-2" href={'https://liff.line.me/'+LIFF_ID+'?linetest=1&lt=app'+newNonce()+'&ltz='+encodeURIComponent(LT_ZH)}>改用 LINE App 開啟測試頁</a>}
     </div>
   );
 }
@@ -1258,6 +1303,7 @@ function LineTestPage(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-013','09-24','LINE 登入測試：加上網址參數傳遞檢查（隨機碼＋中文）、開啟來源判斷（LIFF 網址／LINE App／GitHub 直接開）、進入網址與導轉紀錄；版本紀錄預設只顯示最新一筆'],
   ['v0.1-012','09-24','設定頁新增 LINE 登入測試（本瀏覽器／LINE App 兩種開法）、設定頁最下方新增版本紀錄'],
   ['v0.1-011','09-24','一筆流水可登記多位同行客人，每位各自選方案、老師、老點、額外品項、打槍老師；跳單／時間／備註整筆共用'],
   ['v0.1-010','09-23','跳單可選是否計入營業額、責任歸屬（店家／櫃台／老師）、說明；日結列出跳單明細；月報跳單紀錄；老師明細一鍵加入跳單扣項'],
@@ -1273,7 +1319,7 @@ const CHANGELOG=[
 ];
 function ChangelogList(){
   const [all,setAll]=useState(false);
-  const list=all?CHANGELOG:CHANGELOG.slice(0,5);
+  const list=all?CHANGELOG:CHANGELOG.slice(0,1);
   return (
     <div>
       {list.map(([v,d,t],i)=>(
@@ -1281,7 +1327,7 @@ function ChangelogList(){
           <div className="flex justify-between num"><span className={i===0?'text-sageD font-semibold':''}>{v}</span><span className="text-xs text-mute">{d}</span></div>
           <div className="text-mute text-xs mt-0.5 leading-relaxed">{t}</div>
         </div>))}
-      {CHANGELOG.length>5&&<button className="w-full h-9 mt-1 text-sm text-sageD" onClick={()=>setAll(!all)}>{all?'收合':'顯示全部 '+CHANGELOG.length+' 筆'}</button>}
+      {CHANGELOG.length>1&&<button className="w-full h-9 mt-1 text-sm text-sageD" onClick={()=>setAll(!all)}>{all?'收合':'顯示全部 '+CHANGELOG.length+' 筆'}</button>}
     </div>
   );
 }
