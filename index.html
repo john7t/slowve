@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-007</title>
+<title>緩緩門店 v0.1-010</title>
 <script>
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
@@ -48,7 +48,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-007';
+const VER='v0.1-010';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -61,10 +61,10 @@ const DEFAULT_SETTINGS={
   prices:{dry:[1000,1400,1800],oil:[1200,1600,2000],foot:[1000,1400,1800]},
   promo:{svc:'dry',min:90,price:1300},
   addons:[
-    {id:'eoil',name:'特殊精油',price:300,comm:0},
-    {id:'guasha',name:'刮痧',price:500,comm:0},
-    {id:'bagua',name:'拔罐',price:500,comm:0},
-    {id:'xiujiao',name:'修腳皮',price:500,comm:0}
+    {id:'eoil',name:'特殊精油',price:300,zh:0},    // zh＝老師多算幾支
+    {id:'guasha',name:'刮痧',price:500,zh:1},
+    {id:'bagua',name:'拔罐',price:500,zh:1},
+    {id:'xiujiao',name:'修腳皮',price:500,zh:1}
   ],
   comm:{per30:280,laodian:20},     // per30＝每支費用（沿用舊欄位名）、laodian＝老點每單加給
   zhiMin:30,                      // 幾分鐘算 1 支
@@ -89,7 +89,9 @@ function mergeSettings(s){
   r.prices=Object.assign({},d.prices,s.prices||{});
   r.promo=Object.assign({},d.promo,s.promo||{});
   r.comm=Object.assign({},d.comm,s.comm||{});
-  r.addons=(s.addons&&s.addons.length)?s.addons:d.addons;
+  r.addons=((s.addons&&s.addons.length)?s.addons:d.addons).map(a=>{
+    if(a.zh!=null)return a;const def=d.addons.find(x=>x.id===a.id);   // 舊設定沒有 zh 欄位 → 補預設值
+    const b=Object.assign({},a,{zh:def?def.zh:0});delete b.comm;return b;});
   r.teachers=Array.isArray(s.teachers)?s.teachers:[];
   r.expCats=(Array.isArray(s.expCats)&&s.expCats.length)?s.expCats:d.expCats;
   r.expNames=Array.isArray(s.expNames)?s.expNames:[];
@@ -136,17 +138,21 @@ function mutateDay(date,fn){
 }
 
 /* ========== 計價／統計 ========== */
-/* 支：主項目分鐘數 ÷ 幾分鐘算 1 支（預設 30 分鐘＝1 支）；額外品項不算支 */
-const zhiCalc=(o,S)=>(o.svc&&o.min)?Math.floor(o.min/(Number(S.zhiMin)||30)):0;
+/* 支：主項目分鐘數 ÷ 幾分鐘算 1 支（預設 30 分鐘＝1 支）＋ 額外品項各自設定的支數（刮痧／拔罐／修腳皮各 1 支） */
+const zhiCalc=(o,S)=>{
+  let z=(o.svc&&o.min)?Math.floor(o.min/(Number(S.zhiMin)||30)):0;
+  (o.ad||[]).forEach(id=>{const a=S.addons.find(x=>x.id===id);if(a)z+=Number(a.zh)||0});
+  return z;
+};
 const zhiOf=(o,S)=>o.zh!=null?o.zh:zhiCalc(o,S);   // 訂單存有快照就用快照
 function calcOrder(o,S){
   let amt=0,cm=0;const zh=zhiCalc(o,S);
   if(o.svc&&o.min){
     if(o.promo)amt+=Number(S.promo.price)||0;
     else amt+=Number((S.prices[o.svc]||[])[MINS.indexOf(o.min)])||0;
-    cm+=zh*(Number(S.comm.per30)||0);
   }
-  (o.ad||[]).forEach(id=>{const a=S.addons.find(x=>x.id===id);if(a){amt+=Number(a.price)||0;cm+=Number(a.comm)||0}});
+  (o.ad||[]).forEach(id=>{const a=S.addons.find(x=>x.id===id);if(a)amt+=Number(a.price)||0});
+  cm+=zh*(Number(S.comm.per30)||0);
   if(o.ld)cm+=Number(S.comm.laodian)||0;
   return {amt,cm,zh};
 }
@@ -156,13 +162,21 @@ function orderLabel(o,S){
   (o.ad||[]).forEach(id=>{const a=S.addons.find(x=>x.id===id);parts.push(a?a.name:id)});
   return parts.join(' ＋ ');
 }
+const SKIP_BY={store:'店家',counter:'櫃台',teacher:'老師'};
+/* 跳單（客人未付款）：老闆逐筆決定是否計入營業額（skipRev）；不論是否計入，都不算進應有現金；老師費用照算
+   責任歸屬 skipBy：store 店家／counter 櫃台／teacher 老師；skipNote 說明
+   打槍（被換下的老師）：每筆訂單可記多位，統計被打槍次數 */
 function statsOf(orders,S){
   const live=orders.filter(o=>!o.void);
-  const r={n:live.length,amt:0,cm:0,zh:0,byT:{}};
+  const r={n:live.length,amt:0,cash:0,cm:0,zh:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},rj:{}};
   live.forEach(o=>{
-    const z=zhiOf(o,S);r.amt+=o.amt||0;r.cm+=o.cm||0;r.zh+=z;
+    const z=zhiOf(o,S);const a=o.amt||0;
+    const rev=o.skip?(o.skipRev?a:0):a;          // 計入營業額的金額
+    r.amt+=rev;r.cash+=o.skip?0:a;r.cm+=o.cm||0;r.zh+=z;
+    if(o.skip){r.skip+=a;r.skipN++;if(o.skipRev)r.skipRev+=a;const by=o.skipBy||'store';r.skipBy[by]=(r.skipBy[by]||0)+a;r.skipList.push(o)}
     const t=r.byT[o.tc]||(r.byT[o.tc]={tc:o.tc,n:0,zh:0,ld:0,cm:0,amt:0});
-    t.n++;t.zh+=z;t.ld+=o.ld?1:0;t.cm+=o.cm||0;t.amt+=o.amt||0;
+    t.n++;t.zh+=z;t.ld+=o.ld?1:0;t.cm+=o.cm||0;t.amt+=rev;
+    (o.rj||[]).forEach(c=>{r.rj[c]=(r.rj[c]||0)+1});
   });
   return r;
 }
@@ -241,7 +255,10 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
   const isNew=!order;
   const nextSn=()=>{let mx=0;dayOrders.forEach(o=>{const n=parseInt(o.sn,10);if(!isNaN(n)&&n>mx)mx=n});return String(mx+1)};
   const [f,setF]=useState(()=>order?Object.assign({},order,{ad:[...(order.ad||[])]}):
-    {id:newId(S.device),sn:nextSn(),t:'',svc:null,min:null,promo:false,ad:[],tc:'',ld:false,note:'',void:false});
+    {id:newId(S.device),sn:nextSn(),t:'',svc:null,min:null,promo:false,ad:[],tc:'',ld:false,rj:[],skip:false,skipRev:false,skipBy:'store',skipNote:'',note:'',void:false});
+  const [rjIn,setRjIn]=useState('');
+  const addRj=c=>{c=String(c||'').trim();if(!c)return;setF(p=>Object.assign({},p,{rj:(p.rj||[]).includes(c)?p.rj:[...(p.rj||[]),c]}));setRjIn('')};
+  const delRj=c=>setF(p=>Object.assign({},p,{rj:(p.rj||[]).filter(x=>x!==c)}));
   const set=(k,v)=>setF(p=>Object.assign({},p,{[k]:v}));
   const pickCell=(svc,min)=>setF(p=>(p.svc===svc&&p.min===min&&!p.promo)?Object.assign({},p,{svc:null,min:null}):Object.assign({},p,{svc,min,promo:false}));
   const pickPromo=()=>setF(p=>p.promo?Object.assign({},p,{svc:null,min:null,promo:false}):Object.assign({},p,{svc:S.promo.svc,min:S.promo.min,promo:true}));
@@ -255,9 +272,10 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
   const zh=sameItems&&order.zh!=null?order.zh:calc.zh;
 
   const save=async(next)=>{
-    if(!f.svc&&!f.ad.length){await ask({title:'尚未選擇品項',msg:'請點選主項目或額外品項。',okOnly:true});return}
+    if(!f.svc){await ask({title:'尚未選擇主項目',msg:'請先點選主項目（指壓／油壓／腳底或平日限定），額外品項不能單獨成單。',okOnly:true});return}
     const tc=String(f.tc||'').trim();
     if(!tc){await ask({title:'請輸入老師編號',okOnly:true});return}
+    if((f.rj||[]).includes(tc)){await ask({title:'老師編號重複',msg:tc+' 老師同時被登記為「打槍老師」，請確認。',okOnly:true});return}
     const sn=String(f.sn||'').trim();
     const dup=sn&&dayOrders.find(o=>o.id!==f.id&&!o.void&&String(o.sn)===sn);
     if(dup){
@@ -275,7 +293,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
     <div>
       <div className="flex items-end justify-between mb-3">
         <div className="text-sm text-mute"><span className="num text-ink">{zh}</span> 支・老師抽成 <span className="num text-ink">{money(cm)}</span></div>
-        <div className="text-right"><span className="text-sm text-mute mr-1">金額</span><span className="serif text-3xl text-brown num">{money(amt)}</span></div>
+        <div className="text-right"><span className="text-sm text-mute mr-1">{f.skip?(f.skipRev?'跳單・計入':'跳單・不計入'):'金額'}</span><span className={'serif text-3xl num '+(f.skip?'text-warn'+(f.skipRev?'':' line-through'):'text-brown')}>{money(amt)}</span></div>
       </div>
       {locked?
         <div className="text-center text-mute text-sm py-2">此日已日結，需先解除日結才能修改</div>:
@@ -338,13 +356,39 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
         </div>}
         {recent.length===0&&<div className="mb-4"></div>}
 
-        <div className="text-xs text-mute mb-1">額外品項</div>
+        <div className="text-xs text-mute mb-1">額外品項{!f.svc&&<span className="ml-2 text-brown">（需先選主項目）</span>}</div>
         <div className="grid grid-cols-2 gap-2 mb-4">
           {S.addons.map(a=>{const on=f.ad.includes(a.id);return (
             <button key={a.id} type="button" className={'h-12 rounded-xl border flex items-center justify-between px-3 '+(on?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>togAd(a.id)}>
-              <span>{on?'☑':'☐'} {a.name}</span><span className="num text-sm">{a.id==='eoil'?'+':''}{a.price}</span>
+              <span>{on?'☑':'☐'} {a.name}{Number(a.zh)>0&&<span className="text-xs text-mute ml-1">+{a.zh}支</span>}</span><span className="num text-sm">{a.id==='eoil'?'+':''}{a.price}</span>
             </button>);})}
         </div>
+
+        <div className="text-xs text-mute mb-1">打槍老師（被客人換下的老師，可多位）</div>
+        <div className="flex gap-2 mb-2">
+          <input className="flex-1 h-11 px-3 rounded-xl border border-line bg-card num" inputMode="numeric" placeholder="輸入編號後按加入" value={rjIn} onChange={e=>setRjIn(e.target.value)}/>
+          <button type="button" className="px-4 h-11 rounded-xl border border-warn text-warn bg-card" onClick={()=>addRj(rjIn)}>加入</button>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {(f.rj||[]).map(c=><span key={c} className="inline-flex items-center h-8 pl-3 pr-1 rounded-full bg-warnL text-warn num text-sm">{c} 老師<button type="button" className="w-6 h-6 ml-1 rounded-full" onClick={()=>delRj(c)} aria-label={'移除 '+c}>×</button></span>)}
+          {!(f.rj||[]).length&&recent.filter(t=>t!==String(f.tc)).slice(0,8).map(t=><button key={t} type="button" className="h-8 px-3 rounded-full border border-line bg-card text-sm num text-mute" onClick={()=>addRj(t)}>+{t}</button>)}
+        </div>
+
+        <button type="button" className={'w-full h-12 border text-left px-3 '+(f.skip?'rounded-t-xl bg-warnL border-warn text-warn':'rounded-xl mb-4 bg-card border-line')} onClick={()=>set('skip',!f.skip)}>
+          {f.skip?'☑':'☐'} 跳單（客人未付款就離開）<span className="text-xs text-mute ml-1">老師費用照算</span>
+        </button>
+        {f.skip&&<div className="mb-4 px-3 py-3 rounded-b-xl border border-t-0 border-warn bg-card space-y-3">
+          <div className="flex items-center gap-2"><div className="w-20 text-sm text-mute">營業額</div>
+            <div className="flex-1 flex rounded-lg border border-line overflow-hidden text-sm">
+              {[[false,'不計入'],[true,'計入']].map(([v,l])=><button key={l} type="button" className={'flex-1 h-10 '+(!!f.skipRev===v?'bg-warn text-white':'bg-card')} onClick={()=>set('skipRev',v)}>{l}</button>)}
+            </div></div>
+          <div className="flex items-center gap-2"><div className="w-20 text-sm text-mute">責任歸屬</div>
+            <div className="flex-1 flex rounded-lg border border-line overflow-hidden text-sm">
+              {Object.keys(SKIP_BY).map(k=><button key={k} type="button" className={'flex-1 h-10 '+((f.skipBy||'store')===k?'bg-warn text-white':'bg-card')} onClick={()=>set('skipBy',k)}>{SKIP_BY[k]}</button>)}
+            </div></div>
+          <input className="w-full h-11 px-3 rounded-lg border border-line bg-card" placeholder="跳單說明（例：客人說去領錢就沒回來）" value={f.skipNote||''} onChange={e=>set('skipNote',e.target.value)}/>
+          <div className="text-xs text-mute">不論是否計入營業額，跳單金額都不算進日結的應有現金。</div>
+        </div>}
 
         <label className="block mb-2">
           <div className="text-xs text-mute mb-1">備註</div>
@@ -357,23 +401,32 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
 }
 
 /* ========== 日結 ========== */
-function CloseSheet({st,ex,onSave,onClose}){
+function CloseSheet({S,st,ex,onSave,onClose}){
   const [cash,setCash]=useState('');
   const [note,setNote]=useState('');
-  const expected=st.amt-ex.cash;
+  const expected=st.cash-ex.cash;
   const c=cash===''?null:Number(cash);
   const diff=c==null||isNaN(c)?null:c-expected;
   const footer=(
     <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-40" disabled={diff==null}
-      onClick={()=>onSave({revenue:st.amt,cashExp:ex.cash,expected,cash:c,diff,note:note.trim(),at:Date.now()})}>確認日結</button>
+      onClick={()=>onSave({revenue:st.amt,skip:st.skip,skipN:st.skipN,skipRev:st.skipRev,cashExp:ex.cash,expected,cash:c,diff,note:note.trim(),at:Date.now()})}>確認日結</button>
   );
   return (
     <Sheet onClose={onClose} title="日結" footer={footer}>
       <Card className="p-3 mb-4 num">
         <div className="flex justify-between py-1"><span className="text-mute">營業額（{st.n} 單）</span><span>{money(st.amt)}</span></div>
+        {st.skipRev>0&&<div className="flex justify-between py-1 text-warn"><span>－ 跳單未收（已計入營業額）</span><span>{money(st.skipRev)}</span></div>}
         <div className="flex justify-between py-1"><span className="text-mute">－ 現金支出</span><span>{money(ex.cash)}</span></div>
         <div className="flex justify-between pt-2 mt-1 border-t border-line"><span>應有現金</span><span className="serif text-2xl text-brown">{money(expected)}</span></div>
       </Card>
+      {st.skipN>0&&<Card className="p-3 mb-4 border-warn">
+        <div className="text-sm font-semibold text-warn mb-2">跳單 {st.skipN} 筆・共 {money(st.skip)}</div>
+        {st.skipList.map(o=>(
+          <div key={o.id} className="py-2 border-t border-line text-sm num">
+            <div className="flex justify-between"><span>#{o.sn||'-'}　{orderLabel(o,S)}　{o.tc} 老師</span><span className="text-warn">{money(o.amt)}</span></div>
+            <div className="text-xs text-mute mt-0.5">責任：{SKIP_BY[o.skipBy||'store']}・{o.skipRev?'計入營業額':'不計入營業額'}{o.skipNote?'・'+o.skipNote:''}</div>
+          </div>))}
+      </Card>}
       <label className="block mb-3">
         <div className="text-xs text-mute mb-1">實收現金（盤點）</div>
         <input className="w-full h-14 px-3 rounded-xl border border-line bg-card text-2xl num" inputMode="numeric" value={cash} onChange={e=>setCash(e.target.value.replace(/[^\d-]/g,''))} placeholder="盤點後輸入"/>
@@ -481,6 +534,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
           <Stat label="支出" value={money(ex.total)}/>
           <Stat label="店家淨額" value={money(st.amt-st.cm-ex.total)} tone="sage"/>
         </div>
+        {st.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {st.skipN} 筆・未收 {money(st.skip)}{st.skipRev>0&&<span>（其中 {money(st.skipRev)} 計入營業額）</span>}</div>}
       </Card>
 
       {closed&&<Card className="p-4 mb-3 bg-sageL/60">
@@ -491,7 +545,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
           <div><div className="text-xs text-mute">實收</div>{money(dd.close.cash)}</div>
           <div><div className="text-xs text-mute">差額</div><span className={dd.close.diff===0?'text-sageD':'text-warn'}>{smoney(dd.close.diff)}</span></div>
         </div>
-        {dd.close.expected!==st.amt-ex.cash&&<div className="text-xs text-warn mt-2">注意：目前的營業額或現金支出與日結時不同</div>}
+        {dd.close.expected!==st.cash-ex.cash&&<div className="text-xs text-warn mt-2">注意：目前的營業額或現金支出與日結時不同</div>}
         {dd.close.note&&<div className="text-xs text-mute mt-2">備註：{dd.close.note}</div>}
       </Card>}
 
@@ -508,10 +562,12 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
                 {o.ld&&<span className="ml-1 px-1.5 rounded bg-brownL text-brown">老點</span>}
                 {o.t&&<span className="ml-2">{o.t}</span>}
                 {o.void&&<span className="ml-2 text-warn">已作廢</span>}
+                {o.skip&&<span className="ml-1 px-1.5 rounded bg-warn text-white">跳單・{SKIP_BY[o.skipBy||'store']}{o.skipRev?'・計入':''}</span>}
+                {(o.rj||[]).length>0&&<span className="ml-2 text-warn">打槍 {o.rj.join('、')}</span>}
                 {o.note&&<span className="ml-2">・{o.note}</span>}
               </div>
             </div>
-            <div className={'num text-right '+(o.void?'line-through':'')}>{money(o.amt)}</div>
+            <div className={'num text-right '+(o.void||(o.skip&&!o.skipRev)?'line-through ':'')+(o.skip?'text-warn':'')}>{money(o.amt)}</div>
           </button>
         ))}
       </div>
@@ -555,36 +611,62 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
 }
 
 /* ========== 月報 ========== */
-function monthData(ym,S){
-  const md=loadMonth(ym);const a=ym.split('-').map(Number);const dim=new Date(a[0],a[1],0).getDate();
-  const rows=[];const tot={n:0,amt:0,cm:0,exp:0,byT:{},byCat:{}};
-  for(let d=1;d<=dim;d++){
+/* 發薪週期：上期 1～15 號（當月 20 號發薪）、下期 16 號～月底（次月 5 號發薪） */
+const PERIODS=[{id:'all',label:'整月'},{id:'h1',label:'上期'},{id:'h2',label:'下期'}];
+const PERIOD_LABEL={all:'整月',h1:'上期',h2:'下期'};
+function periodRange(ym,p){const a=ym.split('-').map(Number);const dim=new Date(a[0],a[1],0).getDate();return p==='h1'?[1,15]:p==='h2'?[16,dim]:[1,dim]}
+function periodText(ym,p){const m=Number(ym.split('-')[1]);const r=periodRange(ym,p);return m+'/'+r[0]+'～'+m+'/'+r[1]}
+function payDay(ym,p){const a=ym.split('-').map(Number);if(p==='h1')return new Date(a[0],a[1]-1,20);if(p==='h2')return new Date(a[0],a[1],5);return null}
+const fmtPayDay=d=>d?(d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()):'';
+const adjIn=(list,p)=>p==='all'?list:list.filter(j=>(j.p||'h2')===p);   // 舊資料沒標期別的，視為下期（月底結算）
+const adjSumOf=list=>list.reduce((s,x)=>s+(Number(x.amt)||0),0);
+
+function monthData(ym,S,p){
+  const md=loadMonth(ym);const [from,to]=periodRange(ym,p||'all');
+  const rows=[];const tot={n:0,amt:0,cm:0,exp:0,zh:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{}};
+  for(let d=from;d<=to;d++){
     const dd=md.days[pad(d)];
     if(!dd||(!(dd.orders||[]).length&&!(dd.expenses||[]).length&&!dd.close))continue;
     const st=statsOf(dd.orders||[],S);const ex=expStatsOf(dd.expenses);
     rows.push({date:ym+'-'+pad(d),st,ex,closed:!!dd.close});
-    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;
+    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;
+    Object.keys(st.skipBy).forEach(k=>{tot.skipBy[k]=(tot.skipBy[k]||0)+st.skipBy[k]});st.skipList.forEach(o=>tot.skipList.push(Object.assign({date:ym+'-'+pad(d)},o)));
+    Object.keys(st.rj).forEach(c=>{tot.rj[c]=(tot.rj[c]||0)+st.rj[c]});
     Object.keys(ex.byCat).forEach(c=>{tot.byCat[c]=(tot.byCat[c]||0)+ex.byCat[c]});
     Object.values(st.byT).forEach(t=>{const x=tot.byT[t.tc]||(tot.byT[t.tc]={tc:t.tc,n:0,zh:0,ld:0,cm:0,amt:0});x.n+=t.n;x.zh+=t.zh;x.ld+=t.ld;x.cm+=t.cm;x.amt+=t.amt});
   }
   return {rows,tot,pay:md.pay||{}};
 }
-function teacherOrders(ym,tc){
-  const md=loadMonth(ym);const list=[];
+function teacherOrders(ym,tc,p){
+  const md=loadMonth(ym);const [from,to]=periodRange(ym,p||'all');const list=[];
   Object.keys(md.days).sort().forEach(d=>{
+    const dn=Number(d);if(dn<from||dn>to)return;
     (md.days[d].orders||[]).filter(o=>!o.void&&String(o.tc)===String(tc))
       .sort((a,b)=>snNum(a)-snNum(b)||(a.ca||0)-(b.ca||0))
       .forEach(o=>list.push(Object.assign({date:ym+'-'+d},o)));
   });
   return list;
 }
+function PeriodSeg({value,onChange,ym,noAll}){
+  return (
+    <div className="flex rounded-xl border border-line overflow-hidden bg-card">
+      {PERIODS.filter(x=>!(noAll&&x.id==='all')).map(x=>(
+        <button key={x.id} className={'flex-1 h-11 text-sm leading-tight '+(value===x.id?'bg-sage text-white':'text-ink')} onClick={()=>onChange(x.id)}>
+          {x.label}{x.id!=='all'&&<div className={'text-[11px] num '+(value===x.id?'text-white/80':'text-mute')}>{periodText(ym,x.id)}</div>}
+        </button>))}
+    </div>
+  );
+}
 
 function MonthPage({S,rev,goDay,openPay}){
   const [ym,setYm]=useState(()=>monKey(bizToday(S.cutoff)));
+  const [per,setPer]=useState('all');
   const shift=n=>{const a=ym.split('-').map(Number);const d=new Date(a[0],a[1]-1+n,1);setYm(d.getFullYear()+'-'+pad(d.getMonth()+1))};
-  const data=useMemo(()=>monthData(ym,S),[ym,rev,S]);
+  const data=useMemo(()=>monthData(ym,S,per),[ym,rev,S,per]);
+  const halves=useMemo(()=>({h1:monthData(ym,S,'h1').tot,h2:monthData(ym,S,'h2').tot}),[ym,rev,S]);
   const a=ym.split('-');
   const cats=Object.keys(data.tot.byCat).sort((x,y)=>data.tot.byCat[y]-data.tot.byCat[x]);
+  const pd=payDay(ym,per);
   return (
     <div className="pb-24">
       <div className="flex items-center justify-between mb-3">
@@ -592,20 +674,32 @@ function MonthPage({S,rev,goDay,openPay}){
         <div className="serif text-2xl num">{a[0]} 年 {Number(a[1])} 月</div>
         <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>shift(1)}>▶</button>
       </div>
+      <div className="mb-3"><PeriodSeg value={per} onChange={setPer} ym={ym}/></div>
+
       <Card className="p-4 mb-3">
         <div className="flex items-end justify-between">
-          <Stat label="本月營業額" value={money(data.tot.amt)} big tone="brown"/>
-          <div className="text-sm text-mute">{data.tot.n} 單</div>
+          <Stat label={(per==='all'?'本月':PERIOD_LABEL[per])+'營業額'} value={money(data.tot.amt)} big tone="brown"/>
+          <div className="text-sm text-mute text-right">{data.tot.n} 單・{data.tot.zh} 支{pd&&<div className="text-xs text-brown">發薪日 {fmtPayDay(pd)}</div>}</div>
         </div>
         <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
           <Stat label="老師抽成" value={money(data.tot.cm)}/>
           <Stat label="支出" value={money(data.tot.exp)}/>
           <Stat label="店家淨額" value={money(data.tot.amt-data.tot.cm-data.tot.exp)} tone="sage"/>
         </div>
+        {data.tot.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {data.tot.skipN} 筆・未收 {money(data.tot.skip)}{data.tot.skipRev>0&&<span>（其中 {money(data.tot.skipRev)} 計入營業額）</span>}</div>}
+        {per==='all'&&<div className="mt-3 pt-3 border-t border-line grid grid-cols-2 gap-2 num">
+          {['h1','h2'].map(h=>(
+            <button key={h} className="text-left rounded-xl bg-bg border border-line px-3 py-2 active:bg-sageL" onClick={()=>setPer(h)}>
+              <div className="text-xs text-mute">{PERIOD_LABEL[h]} {periodText(ym,h)}</div>
+              <div className="text-lg">{money(halves[h].amt)}</div>
+              <div className="text-xs text-mute">抽成 {money(halves[h].cm)}</div>
+              <div className="text-xs text-brown">{fmtPayDay(payDay(ym,h))} 發薪</div>
+            </button>))}
+        </div>}
       </Card>
 
       <div className="text-sm text-mute mb-2 px-1">每日</div>
-      {data.rows.length===0&&<Card className="p-6 text-center text-mute">本月沒有資料</Card>}
+      {data.rows.length===0&&<Card className="p-6 text-center text-mute">{per==='all'?'本月':'本期'}沒有資料</Card>}
       {data.rows.length>0&&<Card className="overflow-hidden">
         {data.rows.map((r,i)=>(
           <button key={r.date} className={'w-full flex items-center px-3 py-3 text-left num active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>goDay(r.date)}>
@@ -618,7 +712,7 @@ function MonthPage({S,rev,goDay,openPay}){
 
       {data.tot.n>0&&<>
         <div className="flex items-baseline justify-between mt-5 mb-2 px-1">
-          <div className="text-sm text-mute">老師月統計</div><div className="text-xs text-mute">點老師可產生薪資條</div>
+          <div className="text-sm text-mute">老師{per==='all'?'月':PERIOD_LABEL[per]}統計</div><div className="text-xs text-mute">點老師可產生薪資條</div>
         </div>
         <Card className="overflow-hidden">
           <table className="w-full text-sm num">
@@ -626,13 +720,41 @@ function MonthPage({S,rev,goDay,openPay}){
               <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">支數</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">應領</th>
             </tr></thead>
             <tbody>{sortT(data.tot.byT).map(t=>{
-              const adj=((data.pay[t.tc]||{}).adj||[]).reduce((s,x)=>s+(Number(x.amt)||0),0);
+              const adj=adjSumOf(adjIn((data.pay[t.tc]||{}).adj||[],per));
               return (
-              <tr key={t.tc} className="border-t border-line active:bg-sageL cursor-pointer" onClick={()=>openPay(ym,t.tc)}>
+              <tr key={t.tc} className="border-t border-line active:bg-sageL cursor-pointer" onClick={()=>openPay(ym,t.tc,per)}>
                 <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span></td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
                 <td className="text-right px-3">{money(t.cm+adj)} <span className="text-mute">›</span></td>
               </tr>);})}</tbody>
           </table>
+        </Card>
+      </>}
+
+      {data.tot.skipN>0&&<>
+        <div className="flex items-baseline justify-between mt-5 mb-2 px-1">
+          <div className="text-sm text-mute">跳單紀錄</div>
+          <div className="text-xs text-mute num">{Object.keys(SKIP_BY).filter(k=>data.tot.skipBy[k]).map(k=>SKIP_BY[k]+' '+money(data.tot.skipBy[k])).join('・')}</div>
+        </div>
+        <Card className="overflow-hidden">
+          {data.tot.skipList.map((o,i)=>(
+            <button key={o.id} className={'w-full text-left px-3 py-2.5 text-sm num active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>goDay(o.date)}>
+              <div className="flex justify-between"><span>{fmtDate(o.date)}　#{o.sn||'-'}　{o.tc} 老師</span><span className="text-warn">{money(o.amt)}</span></div>
+              <div className="text-xs text-mute mt-0.5">責任：<span className="text-warn">{SKIP_BY[o.skipBy||'store']}</span>・{o.skipRev?'計入營業額':'不計入'}{o.skipNote?'・'+o.skipNote:''}</div>
+            </button>))}
+        </Card>
+      </>}
+
+      {Object.keys(data.tot.rj).length>0&&<>
+        <div className="text-sm text-mute mt-5 mb-2 px-1">打槍統計（被客人換下）</div>
+        <Card className="overflow-hidden">
+          {Object.keys(data.tot.rj).sort((x,y)=>data.tot.rj[y]-data.tot.rj[x]||String(x).localeCompare(String(y),'zh-Hant',{numeric:true})).map((c,i)=>{
+            const served=(data.tot.byT[c]||{}).n||0;
+            return (
+            <div key={c} className={'flex items-center px-3 py-2.5 text-sm num '+(i?'border-t border-line':'')}>
+              <div className="flex-1">{c} 老師</div>
+              <div className="w-28 text-right text-mute text-xs">服務 {served} 單</div>
+              <div className="w-20 text-right text-warn">打槍 {data.tot.rj[c]} 次</div>
+            </div>);})}
         </Card>
       </>}
 
@@ -652,13 +774,15 @@ function MonthPage({S,rev,goDay,openPay}){
 /* ========== 薪資條（給老師看：一律寫「費用」，不出現「抽成」） ========== */
 const SERIF='"Noto Serif TC","Songti TC","PMingLiU",serif';
 const SLIP_TITLES={salary:{title:'薪資明細',total:'應領薪資'},fee:{title:'費用明細',total:'應領費用'}};
-function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
+function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand,per}){
   const L=size==='a4'?{W:1240,H:1754,M:90,k:1,fixed:true}:{W:1080,H:3840,M:60,k:1.12,fixed:false};
   const {W,M}=L;const f=n=>Math.round(n*L.k);
   const ROW=f(52),FOOT=f(110);
   const TT=SLIP_TITLES[kind]||SLIP_TITLES.salary;
   const C={ink:'#3b3a36',mute:'#8b8478',line:'#e4dccf',sage:'#6f7d62',sageD:'#56624b',sageL:'#eef1ea',brown:'#a0784f',brownL:'#f6efe6',warn:'#b5543c'};
-  const a=ym.split('-');const ymText=a[0]+' 年 '+Number(a[1])+' 月';
+  const a=ym.split('-');per=per||'all';
+  const ymText=a[0]+' 年 '+Number(a[1])+' 月'+(per!=='all'?'・'+PERIOD_LABEL[per]+'（'+periodText(ym,per)+'）':'');
+  const pdText=per!=='all'?'發薪日 '+fmtPayDay(payDay(ym,per)):'';
   const sumFee=orders.reduce((s,o)=>s+(o.cm||0),0);
   const sumAmt=orders.reduce((s,o)=>s+(o.amt||0),0);
   const sumZhi=orders.reduce((s,o)=>s+zhiOf(o,S),0);
@@ -694,6 +818,7 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
     y+=f(50);text(ctx,ymText,W-M,y,{size:28,color:C.mute,align:'right'});
     y+=f(30);hline(ctx,y,C.sage,3);
     y+=f(80);text(ctx,'老師編號',M,y,{size:28,color:C.mute});text(ctx,String(tc),M+f(150),y+f(4),{size:56,weight:'600'});
+    if(pdText)text(ctx,pdText,W-M,y,{size:30,weight:'600',color:C.brown,align:'right'});
     y+=f(50);const bw=(W-2*M-3*f(20))/4;
     [['服務單數',orders.length+' 單'],['服務支數',sumZhi+' 支'],['老點',sumLd+' 次'],['費用合計',money(sumFee)]].forEach((b,i)=>{
       const bx=M+i*(bw+f(20));rect(ctx,bx,y,bw,f(120),C.sageL);
@@ -701,6 +826,8 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
     });
     y+=f(160);
     text(ctx,'服務費用（'+(Number(S.zhiMin)||30)+' 分鐘 1 支，每支 '+S.comm.per30+'，老點每單 +'+S.comm.laodian+'）',M,y,{size:26,max:W-2*M-f(200)});text(ctx,money(sumFee),W-M,y,{size:28,align:'right'});
+    const adZ=S.addons.filter(x=>Number(x.zh)>0);
+    if(adZ.length){y+=f(38);text(ctx,'　'+adZ.map(x=>x.name+(Number(x.zh)>1?' '+x.zh+' 支':'')).join('、')+(adZ.every(x=>Number(x.zh)===1)?' 每項另計 1 支':' 另計支數'),M,y,{size:22,color:C.mute,max:W-2*M})}
     adj.forEach(j=>{y+=f(46);const v=Number(j.amt)||0;text(ctx,(v<0?'扣項：':'加項：')+(j.name||''),M,y,{size:28,max:W-2*M-f(260)});text(ctx,smoney(v),W-M,y,{size:28,align:'right',color:v<0?C.warn:C.ink})});
     y+=f(26);hline(ctx,y);y+=f(66);
     text(ctx,TT.total,M,y,{size:34,weight:'600'});text(ctx,money(total),W-M,y+f(6),{size:64,serif:true,color:C.brown,align:'right'});
@@ -734,7 +861,7 @@ function drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand}){
       cols.forEach(cl=>text(ctx,v[cl.k],cl.right?cl.x+cl.w-14:cl.center?cl.x+cl.w/2:cl.x+14,y+ROW*0.67,{size:26,align:cl.right?'right':cl.center?'center':'left',max:cl.w-28,color:cl.k==='ld'?C.brown:C.ink}));
       y+=ROW;rect(ctx,M,y-1,W-2*M,1,C.line);
     });
-    if(!orders.length)text(ctx,'本月無服務紀錄',W/2,y+f(40),{size:26,color:C.mute,align:'center'});
+    if(!orders.length)text(ctx,(per!=='all'?'本期':'本月')+'無服務紀錄',W/2,y+f(40),{size:26,color:C.mute,align:'center'});
     hline(ctx,H-FOOT+f(20));
     text(ctx,'產出時間 '+stamp+'　如有疑問請洽店長',M,H-FOOT+f(66),{size:22,color:C.mute});
     text(ctx,'第 '+(pi+1)+' / '+chunks.length+' 頁',W-M,H-FOOT+f(66),{size:22,color:C.mute,align:'right'});
@@ -753,16 +880,18 @@ const yuan=n=>Number(n||0).toLocaleString('en-US')+' 元';
 function b64uEnc(str){return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 function b64uDec(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return decodeURIComponent(escape(atob(s)))}
 // 精簡資料：{v,y,m,t,k,b,f,z,l,a:[[名稱,金額]],d:[[日,支,老點,費用]]}
-function payShareData({S,ym,tc,orders,adj,kind,showBrand}){
+function payShareData({S,ym,tc,orders,adj,kind,showBrand,per}){
   const a=ym.split('-');const byDay={};
   orders.forEach(o=>{const d=Number(o.date.slice(8));const x=byDay[d]||(byDay[d]=[d,0,0,0]);x[1]+=zhiOf(o,S);x[2]+=o.ld?1:0;x[3]+=o.cm||0});
-  return {v:1,y:Number(a[0]),m:Number(a[1]),t:String(tc),k:kind==='fee'?'fee':'salary',b:showBrand===false?0:1,
+  return {v:1,y:Number(a[0]),m:Number(a[1]),t:String(tc),k:kind==='fee'?'fee':'salary',b:showBrand===false?0:1,p:per||'all',
     f:orders.reduce((s,o)=>s+(o.cm||0),0),z:orders.reduce((s,o)=>s+zhiOf(o,S),0),l:orders.filter(o=>o.ld).length,
     a:adj.map(j=>[String(j.name||''),Number(j.amt)||0]),d:Object.values(byDay).sort((p,q)=>p[0]-q[0])};
 }
 function buildPayFlex(D){
   const TT=SLIP_TITLES[D.k]||SLIP_TITLES.salary;const showBrand=!!D.b;
   const y=D.y,m=D.m,tc=D.t;const dim=new Date(y,m,0).getDate();
+  const per=D.p||'all';const ymk=y+'-'+pad(m);
+  const perLabel=per!=='all'?PERIOD_LABEL[per]:'';const pd=payDay(ymk,per);
   const G={sage:'#6f7d62',brown:'#a0784f',mute:'#8b8478',ink:'#3b3a36',warn:'#b5543c'};
   const net=D.f+D.a.reduce((s,x)=>s+(Number(x[1])||0),0);
   const T=(text,o)=>Object.assign({type:'text',text:String(text)||' ',wrap:true},o||{});
@@ -771,12 +900,13 @@ function buildPayFlex(D){
   const header=sub=>({type:'box',layout:'vertical',backgroundColor:G.sage,paddingAll:'16px',contents:[
     ...(showBrand?[T('緩緩 SLOWVE',{size:'xs',color:'#e7ebe1'})]:[]),
     T(TT.title+(sub?'｜'+sub:''),{size:'md',color:'#ffffff',weight:'bold'}),
-    T(y+'年'+m+'月・'+tc+' 老師',{size:'xs',color:'#e7ebe1'})]});
+    T(y+'年'+m+'月'+(perLabel?perLabel:'')+'・'+tc+' 老師',{size:'xs',color:'#e7ebe1'})]});
   const b1={type:'bubble',size:'mega',header:header(''),body:{type:'box',layout:'vertical',contents:[
-    T(y+'年'+m+'月',{size:'sm',color:G.mute}),
+    T(y+'年'+m+'月'+(perLabel?'　'+perLabel+'（'+periodText(ymk,per)+'）':''),{size:'sm',color:G.mute}),
     T(tc+' 老師',{size:'xl',weight:'bold',color:G.ink,margin:'sm'}),
     row('應領金額',yuan(D.f),{margin:'lg',size:'md',lc:G.ink,bold:true}),
     row('服務',D.z+' 支　'+D.l+' 老點'),
+    ...(pd?[row('發薪日',fmtPayDay(pd),{rc:G.brown,bold:true})]:[]),
     ...(D.a.length?[{type:'separator',margin:'lg'}]:[]),
     ...D.a.map(j=>{const v=Number(j[1])||0;return row(j[0]||(v<0?'扣項':'加項'),(v<0?'－':'＋')+yuan(Math.abs(v)),{rc:v<0?G.warn:G.ink})}),
     {type:'separator',margin:'lg'},
@@ -785,7 +915,8 @@ function buildPayFlex(D){
       T(yuan(net),{size:'xl',weight:'bold',color:G.brown,align:'end',flex:7})]}
   ]}};
   const byDay={};D.d.forEach(x=>{byDay[x[0]]=x});
-  const pages=[[1,10],[11,20],[21,dim]].map(([from,to])=>{
+  const ranges=per==='all'?[[1,10],[11,20],[21,dim]]:[periodRange(ymk,per)];
+  const pages=ranges.map(([from,to])=>{
     const rows=[];let tz=0,tl=0,tf=0;
     for(let d=from;d<=to;d++){const x=byDay[d];if(!x)continue;tz+=x[1];tl+=x[2];tf+=x[3];
       rows.push({type:'box',layout:'horizontal',margin:'md',contents:[
@@ -799,7 +930,7 @@ function buildPayFlex(D){
       footer:{type:'box',layout:'vertical',contents:[{type:'separator'},
         row('小計',tz+' 支　'+tl+' 老點　$'+tf.toLocaleString('en-US'),{margin:'md',lc:G.ink,bold:true})]}};
   });
-  return {type:'flex',altText:(showBrand?'緩緩 ':'')+y+'年'+m+'月 '+tc+'老師 '+TT.title+'，實領 '+yuan(net),
+  return {type:'flex',altText:(showBrand?'緩緩 ':'')+y+'年'+m+'月'+perLabel+' '+tc+'老師 '+TT.title+'，實領 '+yuan(net),
     contents:{type:'carousel',contents:[b1].concat(pages)}};
 }
 const liffShareUrl=D=>'https://liff.line.me/'+LIFF_ID+'?share='+b64uEnc(JSON.stringify(D));
@@ -844,9 +975,11 @@ function ShareRelay(){
   );
 }
 
-function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
-  const orders=useMemo(()=>teacherOrders(ym,tc),[ym,tc,rev]);
-  const adj=useMemo(()=>((loadMonth(ym).pay||{})[tc]||{}).adj||[],[ym,tc,rev]);
+function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask,per:per0}){
+  const [per,setPer]=useState(per0||'all');
+  const orders=useMemo(()=>teacherOrders(ym,tc,per),[ym,tc,rev,per]);
+  const allAdj=useMemo(()=>((loadMonth(ym).pay||{})[tc]||{}).adj||[],[ym,tc,rev]);
+  const adj=useMemo(()=>adjIn(allAdj,per),[allAdj,per]);
   const [nm,setNm]=useState('');const [am,setAm]=useState('');const [neg,setNeg]=useState(false);
   const [showAmt,setShowAmt]=useState(false);
   const [kind,setKind]=useState('salary');     // salary 薪資明細 / fee 費用明細
@@ -857,14 +990,17 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
   const adjSum=adj.reduce((s,x)=>s+(Number(x.amt)||0),0);
   const TT=SLIP_TITLES[kind];
   const saveAdj=list=>{mutateMonth(ym,md=>{md.pay=md.pay||{};md.pay[tc]=Object.assign({},md.pay[tc]||{},{adj:list})});bump()};
-  const addAdj=()=>{const v=Number(am);if(!v)return;saveAdj(adj.concat([{name:nm.trim()||(neg?'扣款':'獎金'),amt:neg?-v:v}]));setNm('');setAm('')};
-  const a=ym.split('-');const base='slowve-'+(kind==='fee'?'fee':'pay')+'-'+tc+'-'+a[0]+a[1]+(size==='a4'?'-a4':'');
-  const shareTitle='老師 '+tc+' '+TT.title;
+  const addAdj=async()=>{const v=Number(am);if(!v)return;
+    if(per==='all'){await ask({title:'請先選上期或下期',msg:'加項／扣項要歸在上期或下期，才會出現在該期的薪資明細。',okOnly:true});return}
+    saveAdj(allAdj.concat([{name:nm.trim()||(neg?'扣款':'獎金'),amt:neg?-v:v,p:per}]));setNm('');setAm('')};
+  const a=ym.split('-');const base='slowve-'+(kind==='fee'?'fee':'pay')+'-'+tc+'-'+a[0]+a[1]+(per!=='all'?'-'+per:'')+(size==='a4'?'-a4':'');
+  const shareTitle='老師 '+tc+' '+(per!=='all'?PERIOD_LABEL[per]:'')+TT.title;
+  const pd=payDay(ym,per);
 
   const gen=async type=>{
     if(busy)return;setBusy(type);
     try{
-      const {canvases}=drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand});
+      const {canvases}=drawPayslipPages({S,ym,tc,orders,adj,showAmt,size,kind,showBrand,per});
       let r;
       if(type==='pdf'){
         if(!window.jspdf)await loadScript(JSPDF_URL);
@@ -887,7 +1023,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
   // 導到 liff.line.me 代發（見 ShareRelay）；需在按鈕事件內同步導頁，iOS 才會交給 LINE App 開啟
   const shareLine=()=>{
     if(busy)return;
-    const D=payShareData({S,ym,tc,orders,adj,kind,showBrand});
+    const D=payShareData({S,ym,tc,orders,adj,kind,showBrand,per});
     location.href=liffShareUrl(D);
   };
   const seg=(val,cur,set,label)=><button key={val} className={'flex-1 h-10 text-sm '+(cur===val?'bg-sage text-white':'bg-card text-ink')} onClick={()=>set(val)}>{label}</button>;
@@ -903,6 +1039,8 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
   );
   return (
     <Sheet onClose={onClose} title={'老師 '+tc+'・'+a[0]+'年'+Number(a[1])+'月'} footer={footer}>
+      <div className="mb-3"><PeriodSeg value={per} onChange={setPer} ym={ym}/></div>
+      {pd&&<div className="text-sm text-brown mb-2 px-1">{PERIOD_LABEL[per]}（{periodText(ym,per)}）・發薪日 {fmtPayDay(pd)}</div>}
       <Card className="p-4 mb-3 num">
         <div className="grid grid-cols-3 gap-2 mb-3">
           <Stat label="單數" value={orders.length}/>
@@ -912,14 +1050,27 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
         <div className="flex justify-between py-1 border-t border-line pt-2"><span className="text-mute">費用合計</span><span>{money(sumFee)}</span></div>
         {adj.map((j,i)=>(
           <div key={i} className="flex items-center justify-between py-1">
-            <span className="text-mute">{j.amt<0?'扣項':'加項'}：{j.name}</span>
+            <span className="text-mute">{per==='all'&&<span className="mr-1 px-1 rounded bg-brownL text-brown text-xs">{PERIOD_LABEL[j.p||'h2']}</span>}{j.amt<0?'扣項':'加項'}：{j.name}</span>
             <span className={j.amt<0?'text-warn':''}>{smoney(j.amt)}
-              <button className="ml-2 w-6 h-6 rounded-full text-mute" onClick={async()=>{if(await ask({title:'刪除這個項目？',okText:'刪除',danger:true}))saveAdj(adj.filter((_,k)=>k!==i))}}>×</button></span>
+              <button className="ml-2 w-6 h-6 rounded-full text-mute" onClick={async()=>{if(await ask({title:'刪除這個項目？',okText:'刪除',danger:true}))saveAdj(allAdj.filter(x=>x!==j))}}>×</button></span>
           </div>))}
         <div className="flex items-end justify-between pt-2 mt-1 border-t border-line">
           <span>{TT.total}</span><span className="serif text-3xl text-brown">{money(sumFee+adjSum)}</span>
         </div>
       </Card>
+
+      {orders.filter(o=>o.skip&&o.skipBy==='teacher').length>0&&<Card className="p-3 mb-3 border-warn">
+        <div className="text-sm text-warn font-semibold mb-1">責任歸老師的跳單</div>
+        {orders.filter(o=>o.skip&&o.skipBy==='teacher').map(o=>{
+          const done=allAdj.some(j=>j.src===o.id);const d=Number(o.date.slice(8));
+          return (
+          <div key={o.id} className="flex items-center gap-2 py-1.5 border-t border-line text-sm num">
+            <div className="flex-1">{fmtDate(o.date).replace(/（.）/,'')} #{o.sn||'-'}　{money(o.amt)}{o.skipNote&&<div className="text-xs text-mute">{o.skipNote}</div>}</div>
+            {done?<span className="text-xs text-sageD">✓ 已列扣項</span>:
+              <button className="h-8 px-3 rounded-lg border border-warn text-warn text-xs" onClick={()=>saveAdj(allAdj.concat([{name:'跳單吸收 '+fmtDate(o.date).replace(/（.）/,'')+' #'+(o.sn||''),amt:-(o.amt||0),p:d<=15?'h1':'h2',src:o.id}]))}>加入扣項</button>}
+          </div>);})}
+        <div className="text-xs text-mute mt-1">扣項會歸在跳單當天所屬的上期／下期。</div>
+      </Card>}
 
       <div className="text-xs text-mute mb-1">加項／扣項（獎金、預支、借款等）</div>
       <div className="flex gap-2 mb-4">
@@ -945,7 +1096,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask}){
 
       <div className="text-xs text-mute mb-1">服務明細（{orders.length} 筆）</div>
       <Card className="overflow-hidden">
-        {orders.length===0&&<div className="p-4 text-center text-mute text-sm">本月無服務紀錄</div>}
+        {orders.length===0&&<div className="p-4 text-center text-mute text-sm">{per!=='all'?'本期':'本月'}無服務紀錄</div>}
         {orders.map((o,i)=>(
           <div key={o.id} className={'flex items-center gap-2 px-3 py-2 text-sm num '+(i?'border-t border-line':'')}>
             <div className="w-20 text-mute">{fmtDate(o.date).replace(/（.）/,'')}<span className="ml-1">#{o.sn||'-'}</span></div>
@@ -1021,11 +1172,11 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
       <div className={sec}>額外品項</div>
       <Card className="p-3">
         <div className="grid grid-cols-[1fr_5rem_5rem] gap-2 items-center text-sm">
-          <div></div><div className="text-center text-xs text-mute">價格</div><div className="text-center text-xs text-mute">老師抽成</div>
+          <div></div><div className="text-center text-xs text-mute">價格</div><div className="text-center text-xs text-mute">老師算幾支</div>
           {dr.addons.map((a,i)=>(<React.Fragment key={a.id}>
             <div>{a.name}</div>
             <NumIn value={String(a.price)} onChange={v=>up(n=>{n.addons[i].price=num(v)})}/>
-            <NumIn value={String(a.comm)} onChange={v=>up(n=>{n.addons[i].comm=num(v)})}/>
+            <NumIn value={String(a.zh||0)} onChange={v=>up(n=>{n.addons[i].zh=num(v)})}/>
           </React.Fragment>))}
         </div>
       </Card>
@@ -1193,7 +1344,7 @@ function App(){
       <main className="max-w-md mx-auto px-4 pt-4">
         {tab==='day'&&<DayPage S={S} date={date} setDate={setDate} rev={rev}
           openEditor={o=>setEd({order:o,k:0})} openExp={e=>setXe({exp:e,k:0})} openClose={(st,ex)=>setCloseSt({st,ex})} onUnlock={onUnlock}/>}
-        {tab==='month'&&<MonthPage S={S} rev={rev} goDay={d=>{setDate(d);setTab('day')}} openPay={(ym,tc)=>setPay({ym,tc})}/>}
+        {tab==='month'&&<MonthPage S={S} rev={rev} goDay={d=>{setDate(d);setTab('day')}} openPay={(ym,tc,per)=>setPay({ym,tc,per})}/>}
         {tab==='set'&&<SettingsPage S={S} saveS={saveS} ask={ask} toast={toast} onImported={()=>{setS(loadSettings());bump()}}/>}
       </main>
 
@@ -1210,8 +1361,8 @@ function App(){
         onSave={onSaveOrder} onToggleVoid={onToggleVoid} onClose={()=>{if(ed.count)toast('已連續新增 '+ed.count+' 筆');setEd(null)}} ask={ask}/>}
       {xe&&<ExpenseEditor key={'x'+xe.k} S={S} exp={xe.exp} locked={!!dayData().close} prev={xe.prev} count={xe.count}
         onSave={onSaveExp} onDelete={onDeleteExp} onClose={()=>{if(xe.count)toast('已連續新增 '+xe.count+' 筆支出');setXe(null)}} ask={ask}/>}
-      {pay&&<TeacherPaySheet S={S} ym={pay.ym} tc={pay.tc} rev={rev} bump={bump} onClose={()=>setPay(null)} toast={toast} ask={ask}/>}
-      {closeSt&&<CloseSheet st={closeSt.st} ex={closeSt.ex} onSave={onClose} onClose={()=>setCloseSt(null)}/>}
+      {pay&&<TeacherPaySheet S={S} ym={pay.ym} tc={pay.tc} per={pay.per} rev={rev} bump={bump} onClose={()=>setPay(null)} toast={toast} ask={ask}/>}
+      {closeSt&&<CloseSheet S={S} st={closeSt.st} ex={closeSt.ex} onSave={onClose} onClose={()=>setCloseSt(null)}/>}
       <Dialog dlg={dlg} onDone={v=>{const r=dlg.res;setDlg(null);r(v)}}/>
       {toastMsg&&<div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 px-4 py-2 rounded-full bg-ink/90 text-white text-sm shadow-lg">{toastMsg}</div>}
     </div>
