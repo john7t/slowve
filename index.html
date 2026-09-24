@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-010</title>
+<title>緩緩門店 v0.1-011</title>
 <script>
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
@@ -48,7 +48,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-010';
+const VER='v0.1-011';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -166,17 +166,33 @@ const SKIP_BY={store:'店家',counter:'櫃台',teacher:'老師'};
 /* 跳單（客人未付款）：老闆逐筆決定是否計入營業額（skipRev）；不論是否計入，都不算進應有現金；老師費用照算
    責任歸屬 skipBy：store 店家／counter 櫃台／teacher 老師；skipNote 說明
    打槍（被換下的老師）：每筆訂單可記多位，統計被打槍次數 */
+/* 一筆流水（訂單）可有多位同行客人 items[]，每位各自有方案／老師／老點／額外品項／打槍與金額快照；
+   跳單、時間、備註、作廢屬於整筆。舊資料沒有 items 的，整筆視為 1 位客人。 */
+function orderItems(o){
+  if(o.items&&o.items.length)return o.items;
+  return [{svc:o.svc,min:o.min,promo:!!o.promo,ad:o.ad||[],tc:o.tc,ld:!!o.ld,rj:o.rj||[],amt:o.amt,cm:o.cm,zh:o.zh}];
+}
+// 攤平成「每位客人一行」，並帶上整筆的欄位（統計、老師明細、薪資條都用這個）
+function orderLines(o,date){
+  return orderItems(o).map((it,i)=>Object.assign({},it,{id:o.id+'_'+i,oid:o.id,idx:i,sn:o.sn,t:o.t,
+    skip:o.skip,skipRev:o.skipRev,skipBy:o.skipBy,skipNote:o.skipNote,void:o.void,note:o.note,ca:o.ca},date?{date}:{}));
+}
+const orderAmt=o=>orderItems(o).reduce((s,x)=>s+(x.amt||0),0);
+const orderTcs=o=>orderItems(o).map(x=>x.tc);
+const orderSummary=(o,S)=>orderItems(o).map(x=>orderLabel(x,S)+' '+x.tc+'師').join('／');
 function statsOf(orders,S){
   const live=orders.filter(o=>!o.void);
-  const r={n:live.length,amt:0,cash:0,cm:0,zh:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},rj:{}};
+  const r={n:live.length,guests:0,amt:0,cash:0,cm:0,zh:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},rj:{}};
   live.forEach(o=>{
-    const z=zhiOf(o,S);const a=o.amt||0;
-    const rev=o.skip?(o.skipRev?a:0):a;          // 計入營業額的金額
-    r.amt+=rev;r.cash+=o.skip?0:a;r.cm+=o.cm||0;r.zh+=z;
-    if(o.skip){r.skip+=a;r.skipN++;if(o.skipRev)r.skipRev+=a;const by=o.skipBy||'store';r.skipBy[by]=(r.skipBy[by]||0)+a;r.skipList.push(o)}
-    const t=r.byT[o.tc]||(r.byT[o.tc]={tc:o.tc,n:0,zh:0,ld:0,cm:0,amt:0});
-    t.n++;t.zh+=z;t.ld+=o.ld?1:0;t.cm+=o.cm||0;t.amt+=rev;
-    (o.rj||[]).forEach(c=>{r.rj[c]=(r.rj[c]||0)+1});
+    const oa=orderAmt(o);
+    if(o.skip){r.skip+=oa;r.skipN++;if(o.skipRev)r.skipRev+=oa;const by=o.skipBy||'store';r.skipBy[by]=(r.skipBy[by]||0)+oa;r.skipList.push(o)}
+    orderLines(o).forEach(l=>{
+      const z=zhiOf(l,S);const a=l.amt||0;const rev=o.skip?(o.skipRev?a:0):a;
+      r.guests++;r.amt+=rev;r.cash+=o.skip?0:a;r.cm+=l.cm||0;r.zh+=z;
+      const t=r.byT[l.tc]||(r.byT[l.tc]={tc:l.tc,n:0,zh:0,ld:0,cm:0,amt:0});
+      t.n++;t.zh+=z;t.ld+=l.ld?1:0;t.cm+=l.cm||0;t.amt+=rev;
+      (l.rj||[]).forEach(c=>{r.rj[c]=(r.rj[c]||0)+1});
+    });
   });
   return r;
 }
@@ -250,50 +266,69 @@ function Stat({label,value,big,tone}){
   );
 }
 
-/* ========== 訂單編輯 ========== */
+/* ========== 訂單編輯（一筆流水可有多位客人，每位客人各自選方案與老師） ========== */
+const blankItem=()=>({svc:null,min:null,promo:false,ad:[],tc:'',ld:false,rj:[]});
+const sameItem=(a,b)=>!!a&&!!b&&a.svc===b.svc&&a.min===b.min&&!!a.promo===!!b.promo&&!!a.ld===!!b.ld
+  &&[...(a.ad||[])].sort().join()===[...(b.ad||[])].sort().join();
 function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,prev,count}){
   const isNew=!order;
+  const origItems=order?orderItems(order):[];
   const nextSn=()=>{let mx=0;dayOrders.forEach(o=>{const n=parseInt(o.sn,10);if(!isNaN(n)&&n>mx)mx=n});return String(mx+1)};
-  const [f,setF]=useState(()=>order?Object.assign({},order,{ad:[...(order.ad||[])]}):
-    {id:newId(S.device),sn:nextSn(),t:'',svc:null,min:null,promo:false,ad:[],tc:'',ld:false,rj:[],skip:false,skipRev:false,skipBy:'store',skipNote:'',note:'',void:false});
+  const [f,setF]=useState(()=>order?Object.assign({},order,{items:origItems.map(x=>Object.assign({},x,{ad:[...(x.ad||[])],rj:[...(x.rj||[])]}))}):
+    {id:newId(S.device),sn:nextSn(),t:'',items:[blankItem()],skip:false,skipRev:false,skipBy:'store',skipNote:'',note:'',void:false});
+  const [cur,setCur]=useState(0);
   const [rjIn,setRjIn]=useState('');
-  const addRj=c=>{c=String(c||'').trim();if(!c)return;setF(p=>Object.assign({},p,{rj:(p.rj||[]).includes(c)?p.rj:[...(p.rj||[]),c]}));setRjIn('')};
-  const delRj=c=>setF(p=>Object.assign({},p,{rj:(p.rj||[]).filter(x=>x!==c)}));
   const set=(k,v)=>setF(p=>Object.assign({},p,{[k]:v}));
-  const pickCell=(svc,min)=>setF(p=>(p.svc===svc&&p.min===min&&!p.promo)?Object.assign({},p,{svc:null,min:null}):Object.assign({},p,{svc,min,promo:false}));
-  const pickPromo=()=>setF(p=>p.promo?Object.assign({},p,{svc:null,min:null,promo:false}):Object.assign({},p,{svc:S.promo.svc,min:S.promo.min,promo:true}));
-  const togAd=id=>setF(p=>Object.assign({},p,{ad:p.ad.includes(id)?p.ad.filter(x=>x!==id):[...p.ad,id]}));
+  const it=f.items[cur]||f.items[0];
+  const setIt=fn=>setF(p=>{const items=p.items.map((x,i)=>i===cur?Object.assign({},x,fn(x)):x);return Object.assign({},p,{items})});
+  const pickCell=(svc,min)=>setIt(x=>(x.svc===svc&&x.min===min&&!x.promo)?{svc:null,min:null}:{svc,min,promo:false});
+  const pickPromo=()=>setIt(x=>x.promo?{svc:null,min:null,promo:false}:{svc:S.promo.svc,min:S.promo.min,promo:true});
+  const togAd=id=>setIt(x=>({ad:x.ad.includes(id)?x.ad.filter(y=>y!==id):[...x.ad,id]}));
+  const addRj=c=>{c=String(c||'').trim();if(!c)return;setIt(x=>({rj:(x.rj||[]).includes(c)?x.rj:[...(x.rj||[]),c]}));setRjIn('')};
+  const delRj=c=>setIt(x=>({rj:(x.rj||[]).filter(y=>y!==c)}));
+  const addGuest=()=>{setF(p=>Object.assign({},p,{items:[...p.items,blankItem()]}));setCur(f.items.length);setRjIn('')};
+  const delGuest=async()=>{
+    if(f.items.length<=1)return;
+    if(!await ask({title:'移除客人 '+(cur+1)+'？',okText:'移除',danger:true}))return;
+    setF(p=>Object.assign({},p,{items:p.items.filter((_,i)=>i!==cur)}));setCur(Math.max(0,cur-1));
+  };
 
-  const sameItems=!isNew&&order.svc===f.svc&&order.min===f.min&&!!order.promo===!!f.promo&&!!order.ld===!!f.ld
-    &&[...(order.ad||[])].sort().join()===[...f.ad].sort().join();
-  const calc=calcOrder(f,S);
-  const amt=sameItems&&order.amt!=null?order.amt:calc.amt;
-  const cm=sameItems&&order.cm!=null?order.cm:calc.cm;
-  const zh=sameItems&&order.zh!=null?order.zh:calc.zh;
+  // 各客人的金額／支數／費用：品項沒變就沿用原本快照
+  const priced=f.items.map((x,i)=>{
+    const o=origItems[i];
+    if(!isNew&&sameItem(o,x)&&o.amt!=null)return {amt:o.amt,cm:o.cm,zh:o.zh!=null?o.zh:calcOrder(x,S).zh,kept:true};
+    return Object.assign(calcOrder(x,S),{kept:false,changed:!isNew&&!!o&&o.amt!=null});
+  });
+  const tot=priced.reduce((s,p)=>({amt:s.amt+p.amt,cm:s.cm+p.cm,zh:s.zh+p.zh}),{amt:0,cm:0,zh:0});
 
   const save=async(next)=>{
-    if(!f.svc){await ask({title:'尚未選擇主項目',msg:'請先點選主項目（指壓／油壓／腳底或平日限定），額外品項不能單獨成單。',okOnly:true});return}
-    const tc=String(f.tc||'').trim();
-    if(!tc){await ask({title:'請輸入老師編號',okOnly:true});return}
-    if((f.rj||[]).includes(tc)){await ask({title:'老師編號重複',msg:tc+' 老師同時被登記為「打槍老師」，請確認。',okOnly:true});return}
+    for(let i=0;i<f.items.length;i++){
+      const x=f.items[i];const who=f.items.length>1?'客人 '+(i+1)+'：':'';
+      if(!x.svc){setCur(i);await ask({title:who+'尚未選擇主項目',msg:'請先點選主項目（指壓／油壓／腳底或平日限定），額外品項不能單獨成單。',okOnly:true});return}
+      const tc=String(x.tc||'').trim();
+      if(!tc){setCur(i);await ask({title:who+'請輸入老師編號',okOnly:true});return}
+      if((x.rj||[]).includes(tc)){setCur(i);await ask({title:who+'老師編號重複',msg:tc+' 老師同時被登記為「打槍老師」，請確認。',okOnly:true});return}
+    }
     const sn=String(f.sn||'').trim();
     const dup=sn&&dayOrders.find(o=>o.id!==f.id&&!o.void&&String(o.sn)===sn);
     if(dup){
-      const ok=await ask({title:'流水號重複',msg:'#'+sn+' 已有一筆（老師 '+dup.tc+'）。\n兩位老師同一張單可以共用流水號，確定要儲存嗎？',okText:'仍要儲存'});
+      const ok=await ask({title:'流水號重複',msg:'#'+sn+' 已有一筆（'+orderTcs(dup).join('、')+' 老師）。\n同一張單的多位客人請在同一筆裡「＋新增客人」。確定要另存一筆嗎？',okText:'仍要儲存'});
       if(!ok)return;
     }
     const now=Date.now();
-    onSave(Object.assign({},f,{tc,sn,amt,cm,zh,ca:f.ca||now,ua:now}),!!next);
+    const items=f.items.map((x,i)=>({svc:x.svc,min:x.min,promo:!!x.promo,ad:[...x.ad],tc:String(x.tc).trim(),ld:!!x.ld,rj:[...(x.rj||[])],amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh}));
+    onSave({id:f.id,sn,t:f.t||'',note:f.note||'',void:!!f.void,skip:!!f.skip,skipRev:!!f.skipRev,skipBy:f.skipBy||'store',skipNote:f.skipNote||'',items,ca:f.ca||now,ua:now},!!next);
   };
 
   const cellCls=on=>'h-14 rounded-xl border text-base num transition-colors '+(on?'bg-sage border-sage text-white shadow-inner':'bg-card border-line active:bg-sageL');
   const recent=S.teachers.slice(0,12);
+  const usedTc=f.items.map((x,i)=>i!==cur?String(x.tc):null).filter(Boolean);
 
   const footer=(
     <div>
       <div className="flex items-end justify-between mb-3">
-        <div className="text-sm text-mute"><span className="num text-ink">{zh}</span> 支・老師抽成 <span className="num text-ink">{money(cm)}</span></div>
-        <div className="text-right"><span className="text-sm text-mute mr-1">{f.skip?(f.skipRev?'跳單・計入':'跳單・不計入'):'金額'}</span><span className={'serif text-3xl num '+(f.skip?'text-warn'+(f.skipRev?'':' line-through'):'text-brown')}>{money(amt)}</span></div>
+        <div className="text-sm text-mute">{f.items.length>1&&<span className="text-ink">{f.items.length} 位・</span>}<span className="num text-ink">{tot.zh}</span> 支・老師抽成 <span className="num text-ink">{money(tot.cm)}</span></div>
+        <div className="text-right"><span className="text-sm text-mute mr-1">{f.skip?(f.skipRev?'跳單・計入':'跳單・不計入'):'金額'}</span><span className={'serif text-3xl num '+(f.skip?'text-warn'+(f.skipRev?'':' line-through'):'text-brown')}>{money(tot.amt)}</span></div>
       </div>
       {locked?
         <div className="text-center text-mute text-sm py-2">此日已日結，需先解除日結才能修改</div>:
@@ -310,8 +345,9 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
   return (
     <Sheet onClose={onClose} title={isNew?'新增訂單':(f.void?'訂單（已作廢）':'編輯訂單')} footer={footer}>
       {prev&&<div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm num">
-        ✓ 已存 #{prev.sn||'-'}　{orderLabel(prev,S)}　{prev.tc} 老師　{money(prev.amt)}
         <span className="float-right text-xs text-mute">連續第 {count} 筆</span>
+        ✓ 已存 #{prev.sn||'-'}　{orderItems(prev).length>1?orderItems(prev).length+' 位　':''}{money(orderAmt(prev))}
+        <div className="text-xs truncate">{orderSummary(prev,S)}</div>
       </div>}
       <fieldset disabled={locked} className={locked?'opacity-70':''}>
         <div className="flex gap-3 mb-4">
@@ -325,57 +361,74 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
           </label>
         </div>
 
-        <div className="text-xs text-mute mb-1">主項目</div>
-        <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-2 items-center mb-2">
-          <div></div>
-          {MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}
-          {SVCS.map(s=>(
-            <React.Fragment key={s.id}>
-              <div className="text-sm leading-tight">{s.short}</div>
-              {MINS.map((m,i)=>(
-                <button key={m} type="button" className={cellCls(f.svc===s.id&&f.min===m&&!f.promo)} onClick={()=>pickCell(s.id,m)}>
-                  {(S.prices[s.id]||[])[i]}
-                </button>
-              ))}
-            </React.Fragment>
-          ))}
+        <div className="text-xs text-mute mb-1">客人（同一張單的同行客人各自選方案與老師）</div>
+        <div className="flex gap-2 overflow-x-auto pb-1 mb-3">
+          {f.items.map((x,i)=>(
+            <button key={i} type="button" className={'shrink-0 min-w-[5.5rem] px-3 py-1.5 rounded-xl border text-left '+(i===cur?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>{setCur(i);setRjIn('')}}>
+              <div className="text-xs opacity-80">客人 {i+1}</div>
+              <div className="text-sm num whitespace-nowrap">{x.svc?SVC_SHORT[x.svc]+x.min:'未選'}{x.tc?'・'+x.tc:''}</div>
+            </button>))}
+          <button type="button" className="shrink-0 px-3 rounded-xl border border-dashed border-sage text-sageD text-sm" onClick={addGuest}>＋ 新增客人</button>
         </div>
-        <button type="button" className={'w-full h-12 rounded-xl border mb-4 '+(f.promo?'bg-brown border-brown text-white':'bg-brownL border-line text-brown')} onClick={pickPromo}>
-          平日限定　{S.promo.min} 分{SVC_SHORT[S.promo.svc]}　<span className="num font-semibold">{money(S.promo.price)}</span>
-        </button>
 
-        <div className="text-xs text-mute mb-1">老師編號</div>
-        <div className="flex gap-2 mb-2">
-          <input className="flex-1 h-12 px-3 rounded-xl border border-line bg-card text-lg num" inputMode="numeric" placeholder="例：122" value={f.tc} onChange={e=>set('tc',e.target.value)}/>
-          <button type="button" className={'px-4 h-12 rounded-xl border '+(f.ld?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('ld',!f.ld)}>
-            {f.ld?'✓ ':''}老點
+        <div className={'rounded-2xl '+(f.items.length>1?'border border-sage/40 p-3 mb-4 bg-sageL/20':'')}>
+          {f.items.length>1&&<div className="flex justify-between items-center mb-2">
+            <div className="text-sm text-sageD font-semibold">客人 {cur+1}</div>
+            <button type="button" className="text-xs text-warn" onClick={delGuest}>移除此客人</button>
+          </div>}
+          <div className="text-xs text-mute mb-1">主項目</div>
+          <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-2 items-center mb-2">
+            <div></div>
+            {MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}
+            {SVCS.map(s=>(
+              <React.Fragment key={s.id}>
+                <div className="text-sm leading-tight">{s.short}</div>
+                {MINS.map((m,i)=>(
+                  <button key={m} type="button" className={cellCls(it.svc===s.id&&it.min===m&&!it.promo)} onClick={()=>pickCell(s.id,m)}>
+                    {(S.prices[s.id]||[])[i]}
+                  </button>
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
+          <button type="button" className={'w-full h-12 rounded-xl border mb-4 '+(it.promo?'bg-brown border-brown text-white':'bg-brownL border-line text-brown')} onClick={pickPromo}>
+            平日限定　{S.promo.min} 分{SVC_SHORT[S.promo.svc]}　<span className="num font-semibold">{money(S.promo.price)}</span>
           </button>
-        </div>
-        {recent.length>0&&<div className="flex flex-wrap gap-2 mb-4">
-          {recent.map(t=><button key={t} type="button" className={'min-w-[2.75rem] h-9 px-3 rounded-full border text-sm num '+(String(f.tc)===t?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>set('tc',t)}>{t}</button>)}
-        </div>}
-        {recent.length===0&&<div className="mb-4"></div>}
 
-        <div className="text-xs text-mute mb-1">額外品項{!f.svc&&<span className="ml-2 text-brown">（需先選主項目）</span>}</div>
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          {S.addons.map(a=>{const on=f.ad.includes(a.id);return (
-            <button key={a.id} type="button" className={'h-12 rounded-xl border flex items-center justify-between px-3 '+(on?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>togAd(a.id)}>
-              <span>{on?'☑':'☐'} {a.name}{Number(a.zh)>0&&<span className="text-xs text-mute ml-1">+{a.zh}支</span>}</span><span className="num text-sm">{a.id==='eoil'?'+':''}{a.price}</span>
-            </button>);})}
-        </div>
+          <div className="text-xs text-mute mb-1">老師編號</div>
+          <div className="flex gap-2 mb-2">
+            <input className="flex-1 h-12 px-3 rounded-xl border border-line bg-card text-lg num" inputMode="numeric" placeholder="例：122" value={it.tc} onChange={e=>{const v=e.target.value;setIt(()=>({tc:v}))}}/>
+            <button type="button" className={'px-4 h-12 rounded-xl border whitespace-nowrap '+(it.ld?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setIt(x=>({ld:!x.ld}))}>
+              {it.ld?'✓ ':''}老點
+            </button>
+          </div>
+          {recent.length>0&&<div className="flex flex-wrap gap-2 mb-4">
+            {recent.map(t=><button key={t} type="button" disabled={usedTc.includes(t)} className={'min-w-[2.75rem] h-9 px-3 rounded-full border text-sm num disabled:opacity-30 '+(String(it.tc)===t?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setIt(()=>({tc:t}))}>{t}</button>)}
+          </div>}
+          {recent.length===0&&<div className="mb-4"></div>}
 
-        <div className="text-xs text-mute mb-1">打槍老師（被客人換下的老師，可多位）</div>
-        <div className="flex gap-2 mb-2">
-          <input className="flex-1 h-11 px-3 rounded-xl border border-line bg-card num" inputMode="numeric" placeholder="輸入編號後按加入" value={rjIn} onChange={e=>setRjIn(e.target.value)}/>
-          <button type="button" className="px-4 h-11 rounded-xl border border-warn text-warn bg-card" onClick={()=>addRj(rjIn)}>加入</button>
-        </div>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {(f.rj||[]).map(c=><span key={c} className="inline-flex items-center h-8 pl-3 pr-1 rounded-full bg-warnL text-warn num text-sm">{c} 老師<button type="button" className="w-6 h-6 ml-1 rounded-full" onClick={()=>delRj(c)} aria-label={'移除 '+c}>×</button></span>)}
-          {!(f.rj||[]).length&&recent.filter(t=>t!==String(f.tc)).slice(0,8).map(t=><button key={t} type="button" className="h-8 px-3 rounded-full border border-line bg-card text-sm num text-mute" onClick={()=>addRj(t)}>+{t}</button>)}
+          <div className="text-xs text-mute mb-1">額外品項{!it.svc&&<span className="ml-2 text-brown">（需先選主項目）</span>}</div>
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {S.addons.map(a=>{const on=it.ad.includes(a.id);return (
+              <button key={a.id} type="button" className={'h-12 rounded-xl border flex items-center justify-between px-3 '+(on?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>togAd(a.id)}>
+                <span>{on?'☑':'☐'} {a.name}{Number(a.zh)>0&&<span className="text-xs text-mute ml-1">+{a.zh}支</span>}</span><span className="num text-sm">{a.id==='eoil'?'+':''}{a.price}</span>
+              </button>);})}
+          </div>
+
+          <div className="text-xs text-mute mb-1">打槍老師（這位客人換下的老師，可多位）</div>
+          <div className="flex gap-2 mb-2">
+            <input className="flex-1 h-11 px-3 rounded-xl border border-line bg-card num" inputMode="numeric" placeholder="輸入編號後按加入" value={rjIn} onChange={e=>setRjIn(e.target.value)}/>
+            <button type="button" className="px-4 h-11 rounded-xl border border-warn text-warn bg-card" onClick={()=>addRj(rjIn)}>加入</button>
+          </div>
+          <div className={'flex flex-wrap gap-2 '+(f.items.length>1?'mb-1':'mb-4')}>
+            {(it.rj||[]).map(c=><span key={c} className="inline-flex items-center h-8 pl-3 pr-1 rounded-full bg-warnL text-warn num text-sm">{c} 老師<button type="button" className="w-6 h-6 ml-1 rounded-full" onClick={()=>delRj(c)} aria-label={'移除 '+c}>×</button></span>)}
+            {!(it.rj||[]).length&&recent.filter(t=>t!==String(it.tc)).slice(0,8).map(t=><button key={t} type="button" className="h-8 px-3 rounded-full border border-line bg-card text-sm num text-mute" onClick={()=>addRj(t)}>+{t}</button>)}
+          </div>
+          {priced[cur]&&priced[cur].changed&&<div className="text-xs text-brown mt-2">這位客人的品項已變更，金額依目前價目表重新計算（原 {money(origItems[cur].amt)}）</div>}
         </div>
 
         <button type="button" className={'w-full h-12 border text-left px-3 '+(f.skip?'rounded-t-xl bg-warnL border-warn text-warn':'rounded-xl mb-4 bg-card border-line')} onClick={()=>set('skip',!f.skip)}>
-          {f.skip?'☑':'☐'} 跳單（客人未付款就離開）<span className="text-xs text-mute ml-1">老師費用照算</span>
+          {f.skip?'☑':'☐'} 跳單（客人未付款就離開）<span className="text-xs text-mute ml-1">整張單・老師費用照算</span>
         </button>
         {f.skip&&<div className="mb-4 px-3 py-3 rounded-b-xl border border-t-0 border-warn bg-card space-y-3">
           <div className="flex items-center gap-2"><div className="w-20 text-sm text-mute">營業額</div>
@@ -387,14 +440,13 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
               {Object.keys(SKIP_BY).map(k=><button key={k} type="button" className={'flex-1 h-10 '+((f.skipBy||'store')===k?'bg-warn text-white':'bg-card')} onClick={()=>set('skipBy',k)}>{SKIP_BY[k]}</button>)}
             </div></div>
           <input className="w-full h-11 px-3 rounded-lg border border-line bg-card" placeholder="跳單說明（例：客人說去領錢就沒回來）" value={f.skipNote||''} onChange={e=>set('skipNote',e.target.value)}/>
-          <div className="text-xs text-mute">不論是否計入營業額，跳單金額都不算進日結的應有現金。</div>
+          <div className="text-xs text-mute">不論是否計入營業額，跳單金額都不算進日結的應有現金。責任歸老師時，每位老師吸收自己服務那位客人的金額。</div>
         </div>}
 
         <label className="block mb-2">
           <div className="text-xs text-mute mb-1">備註</div>
           <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={f.note||''} onChange={e=>set('note',e.target.value)}/>
         </label>
-        {!isNew&&!sameItems&&order.amt!=null&&<div className="text-xs text-brown">品項已變更，金額依目前價目表重新計算（原 {money(order.amt)}）</div>}
       </fieldset>
     </Sheet>
   );
@@ -423,7 +475,7 @@ function CloseSheet({S,st,ex,onSave,onClose}){
         <div className="text-sm font-semibold text-warn mb-2">跳單 {st.skipN} 筆・共 {money(st.skip)}</div>
         {st.skipList.map(o=>(
           <div key={o.id} className="py-2 border-t border-line text-sm num">
-            <div className="flex justify-between"><span>#{o.sn||'-'}　{orderLabel(o,S)}　{o.tc} 老師</span><span className="text-warn">{money(o.amt)}</span></div>
+            <div className="flex justify-between gap-2"><span>#{o.sn||'-'}　{orderSummary(o,S)}</span><span className="text-warn">{money(orderAmt(o))}</span></div>
             <div className="text-xs text-mute mt-0.5">責任：{SKIP_BY[o.skipBy||'store']}・{o.skipRev?'計入營業額':'不計入營業額'}{o.skipNote?'・'+o.skipNote:''}</div>
           </div>))}
       </Card>}
@@ -527,7 +579,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
       <Card className="p-4 mb-3">
         <div className="flex items-end justify-between">
           <Stat label="營業額" value={money(st.amt)} big tone="brown"/>
-          <div className="text-right text-sm text-mute">{st.n} 單{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</div>
+          <div className="text-right text-sm text-mute">{st.n} 單{st.guests>st.n&&<span>・{st.guests} 位</span>}{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</div>
         </div>
         <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
           <Stat label="老師抽成" value={money(st.cm)}/>
@@ -552,24 +604,29 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
       <div className="text-sm text-mute mb-2 px-1">訂單</div>
       {orders.length===0&&<Card className="p-6 text-center text-mute">這天還沒有訂單{!closed&&'，按右下「＋」新增'}</Card>}
       <div className="space-y-2">
-        {orders.map(o=>(
-          <button key={o.id} className={'w-full text-left bg-card rounded-xl border border-line px-3 py-3 flex items-center gap-3 active:bg-sageL '+(o.void?'opacity-50':'')} onClick={()=>openEditor(o)}>
-            <div className="w-10 text-center text-mute num text-sm">#{o.sn||'-'}</div>
-            <div className="flex-1 min-w-0">
-              <div className={'truncate '+(o.void?'line-through':'')}>{orderLabel(o,S)}</div>
-              <div className="text-xs text-mute num">
-                <span className="text-ink">{o.tc}</span> 老師{zhiOf(o,S)>0&&<span className="ml-1">・{zhiOf(o,S)} 支</span>}
-                {o.ld&&<span className="ml-1 px-1.5 rounded bg-brownL text-brown">老點</span>}
-                {o.t&&<span className="ml-2">{o.t}</span>}
-                {o.void&&<span className="ml-2 text-warn">已作廢</span>}
-                {o.skip&&<span className="ml-1 px-1.5 rounded bg-warn text-white">跳單・{SKIP_BY[o.skipBy||'store']}{o.skipRev?'・計入':''}</span>}
-                {(o.rj||[]).length>0&&<span className="ml-2 text-warn">打槍 {o.rj.join('、')}</span>}
-                {o.note&&<span className="ml-2">・{o.note}</span>}
-              </div>
+        {orders.map(o=>{const its=orderItems(o);return (
+          <button key={o.id} className={'w-full text-left bg-card rounded-xl border border-line px-3 py-3 flex items-start gap-3 active:bg-sageL '+(o.void?'opacity-50':'')} onClick={()=>openEditor(o)}>
+            <div className="w-10 pt-0.5 text-center text-mute num text-sm">#{o.sn||'-'}{its.length>1&&<div className="text-[11px] text-sageD">{its.length} 位</div>}</div>
+            <div className="flex-1 min-w-0 space-y-1.5">
+              {its.map((x,k)=>(
+                <div key={k} className={k?'pt-1.5 border-t border-line/70':''}>
+                  <div className={'truncate '+(o.void?'line-through':'')}>{orderLabel(x,S)}</div>
+                  <div className="text-xs text-mute num">
+                    <span className="text-ink">{x.tc}</span> 老師{zhiOf(x,S)>0&&<span className="ml-1">・{zhiOf(x,S)} 支</span>}
+                    {x.ld&&<span className="ml-1 px-1.5 rounded bg-brownL text-brown">老點</span>}
+                    {(x.rj||[]).length>0&&<span className="ml-2 text-warn">打槍 {x.rj.join('、')}</span>}
+                    {its.length>1&&<span className="ml-2">{money(x.amt)}</span>}
+                  </div>
+                </div>))}
+              {(o.t||o.void||o.skip||o.note)&&<div className="text-xs text-mute num">
+                {o.t&&<span className="mr-2">{o.t}</span>}
+                {o.void&&<span className="mr-2 text-warn">已作廢</span>}
+                {o.skip&&<span className="mr-2 px-1.5 rounded bg-warn text-white">跳單・{SKIP_BY[o.skipBy||'store']}{o.skipRev?'・計入':''}</span>}
+                {o.note&&<span>{o.note}</span>}
+              </div>}
             </div>
-            <div className={'num text-right '+(o.void||(o.skip&&!o.skipRev)?'line-through ':'')+(o.skip?'text-warn':'')}>{money(o.amt)}</div>
-          </button>
-        ))}
+            <div className={'num text-right pt-0.5 '+(o.void||(o.skip&&!o.skipRev)?'line-through ':'')+(o.skip?'text-warn':'')}>{money(orderAmt(o))}</div>
+          </button>);})}
       </div>
 
       <div className="flex items-center justify-between mt-5 mb-2 px-1">
@@ -641,9 +698,9 @@ function teacherOrders(ym,tc,p){
   const md=loadMonth(ym);const [from,to]=periodRange(ym,p||'all');const list=[];
   Object.keys(md.days).sort().forEach(d=>{
     const dn=Number(d);if(dn<from||dn>to)return;
-    (md.days[d].orders||[]).filter(o=>!o.void&&String(o.tc)===String(tc))
+    (md.days[d].orders||[]).filter(o=>!o.void)
       .sort((a,b)=>snNum(a)-snNum(b)||(a.ca||0)-(b.ca||0))
-      .forEach(o=>list.push(Object.assign({date:ym+'-'+d},o)));
+      .forEach(o=>orderLines(o,ym+'-'+d).filter(l=>String(l.tc)===String(tc)).forEach(l=>list.push(l)));
   });
   return list;
 }
@@ -738,7 +795,7 @@ function MonthPage({S,rev,goDay,openPay}){
         <Card className="overflow-hidden">
           {data.tot.skipList.map((o,i)=>(
             <button key={o.id} className={'w-full text-left px-3 py-2.5 text-sm num active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>goDay(o.date)}>
-              <div className="flex justify-between"><span>{fmtDate(o.date)}　#{o.sn||'-'}　{o.tc} 老師</span><span className="text-warn">{money(o.amt)}</span></div>
+              <div className="flex justify-between"><span>{fmtDate(o.date)}　#{o.sn||'-'}　{orderTcs(o).join('、')} 老師</span><span className="text-warn">{money(orderAmt(o))}</span></div>
               <div className="text-xs text-mute mt-0.5">責任：<span className="text-warn">{SKIP_BY[o.skipBy||'store']}</span>・{o.skipRev?'計入營業額':'不計入'}{o.skipNote?'・'+o.skipNote:''}</div>
             </button>))}
         </Card>
@@ -1289,10 +1346,11 @@ function App(){
   const saveFail=()=>ask({title:'儲存失敗',msg:'本機儲存空間可能已滿，請先匯出備份。',okOnly:true});
   const onSaveOrder=(o,next)=>{
     if(!mutateDay(date,d=>{const i=d.orders.findIndex(x=>x.id===o.id);if(i>=0)d.orders[i]=o;else d.orders.push(o);return d})){saveFail();return}
-    saveS(Object.assign({},S,{teachers:[o.tc,...S.teachers.filter(x=>x!==o.tc)].slice(0,40)}));
+    const tcs=orderTcs(o).map(String);
+    saveS(Object.assign({},S,{teachers:[...tcs,...S.teachers.filter(x=>!tcs.includes(x))].slice(0,40)}));
     bump();
     if(next){setEd(p=>({order:null,k:((p&&p.k)||0)+1,prev:o,count:((p&&p.count)||0)+1}))}
-    else{setEd(null);toast('已儲存 #'+(o.sn||'')+'　'+money(o.amt))}
+    else{setEd(null);toast('已儲存 #'+(o.sn||'')+'　'+money(orderAmt(o)))}
   };
   const onSaveExp=(e,next)=>{
     if(!mutateDay(date,d=>{d.expenses=d.expenses||[];const i=d.expenses.findIndex(x=>x.id===e.id);if(i>=0)d.expenses[i]=e;else d.expenses.push(e);return d})){saveFail();return}
