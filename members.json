@@ -1,6 +1,6 @@
 {
   "members": [
-    { "uid": "Ufc92e41f1f51906f9388a2cf3105c5cf", "name": "江江", "roles": ["teacher"], "tc": "122", "admin": "owner" },
+    { "uid": "Ufc92e41f1f51906f9388a2cf3105c5cf", "name": "江江", "roles": ["teacher", "counter", "guest"], "tc": "122", "admin": "owner" },
     { "uid": "U46ddda7096889852bbcb8aaf66e02d9c…", "name": "158 Ally～☺️歡迎私訊預約", "roles": ["teacher", "counter", "guest"], "tc": "77", "admin": "owner" },
     { "uid": "U老師…", "name": "阿明", "roles": ["teacher"], "tc": "58" },
     { "uid": "U客人…", "name": "王小姐", "roles": ["guest"] }
