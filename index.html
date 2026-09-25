@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-022</title>
+<title>緩緩門店 v0.1-023</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-022';
+const VER='v0.1-023';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1541,12 +1541,19 @@ const VIEWS={
   teacher:{label:'老師',desc:'我的服務、本期費用、打卡',icon:'✿'},
   counter:{label:'櫃台',desc:'訂單登打、老師狀態、交班',icon:'☰'},
   guest:{label:'客人',desc:'價目表、預約、消費紀錄',icon:'☺'},
+  visitor:{label:'未審核訪客',desc:'預覽訪客開通的每個階段，協助訪客加入',icon:'?'},
 };
 function viewsOf(m){
   const info=memberInfo(m);const v=[];
   if(info.admin==='owner')v.push('owner');
   ['teacher','counter','guest'].forEach(r=>{if(info.roles.includes(r))v.push(r)});
+  // 老師、櫃台、老闆、主管可看「未審核訪客」流程，協助訪客開通
+  if(info.admin||info.roles.includes('teacher')||info.roles.includes('counter'))v.push('visitor');
   return v;
+}
+function copyStr(t,ok){
+  const fb=()=>{try{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();ok&&ok()}catch(_e){}};
+  try{navigator.clipboard.writeText(t).then(()=>ok&&ok()).catch(fb)}catch(_e){fb()}
 }
 function GateShell({children}){
   return (
@@ -1614,75 +1621,166 @@ function RoleBar({view,me,canSwitch,onSwitch}){
   );
 }
 
-/* ---- 各身分預設畫面（先放欄位，尚未運作） ---- */
+/* ---- 各身分預設畫面（範例資料，尚未運作） ---- */
 const Soon=()=><span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-brownL text-brown align-middle">即將開放</span>;
-function Sec({title,soon,children,right}){
+const DemoTag=()=><span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-bg border border-line text-mute align-middle">範例</span>;
+function Sec({title,soon,demo,children,right}){
   return (<div className="mt-5">
-    <div className="flex items-center justify-between mb-2 px-1"><div className="text-sm text-mute">{title}{soon&&<Soon/>}</div>{right}</div>
+    <div className="flex items-center justify-between mb-2 px-1"><div className="text-sm text-mute">{title}{soon&&<Soon/>}{demo&&<DemoTag/>}</div>{right}</div>
     <Card className="p-4">{children}</Card>
   </div>);
 }
-const KV=({k,v})=><div><div className="text-xs text-mute">{k}</div><div className="text-lg num">{v}</div></div>;
+const KV=({k,v,cls})=><div><div className="text-xs text-mute">{k}</div><div className={'text-lg num '+(cls||'')}>{v}</div></div>;
 const Ph=({children})=><div className="text-sm text-mute text-center py-3">{children}</div>;
 const DisBtn=({children,cls})=><button disabled className={'h-11 rounded-xl border border-line bg-bg text-mute '+(cls||'')}>{children}</button>;
+const DemoNote=()=><div className="mt-4 px-3 py-2 rounded-xl bg-brownL text-brown text-xs">此畫面為預設樣式，數字都是<b>範例資料</b>，功能尚未開放。</div>;
+const Pill=({children,tone})=><span className={'inline-block text-[11px] px-2 py-0.5 rounded-full '+({sage:'bg-sageL text-sageD',brown:'bg-brownL text-brown',warn:'bg-warnL text-warn'}[tone]||'bg-bg text-mute border border-line')}>{children}</span>;
+
+/* 範例資料：依目前設定（價目、每支費用）計算，看起來跟真的一樣 */
+function demoDay(off){const d=new Date();d.setDate(d.getDate()-off);return d}
+function demoCalc(S,x){
+  const ad=(x.ad||[]).map(id=>S.addons.find(a=>a.id===id)).filter(Boolean);
+  const zh=Math.floor(x.min/(S.zhiMin||30))+ad.reduce((s,a)=>s+(a.zh||0),0);
+  const price=x.promo?S.promo.price:((S.prices[x.svc]||[])[MINS.indexOf(x.min)]||0);
+  return Object.assign({},x,{zh,fee:zh*S.comm.per30+(x.ld?S.comm.laodian:0),amt:price+ad.reduce((s,a)=>s+a.price,0),adName:ad.map(a=>a.name).join('、')});
+}
+const DEMO_TEACHER=[
+  {off:0,t:'15:10',sn:'0421',svc:'oil',min:90,ld:1,ad:['guasha']},
+  {off:0,t:'13:40',sn:'0417',svc:'foot',min:60},
+  {off:0,t:'11:05',sn:'0409',svc:'dry',min:90,promo:1,ld:1},
+  {off:1,t:'22:30',sn:'0396',svc:'oil',min:120,ld:1},
+  {off:1,t:'20:15',sn:'0388',svc:'dry',min:60,ad:['bagua']},
+  {off:2,t:'23:50',sn:'0371',svc:'foot',min:90},
+  {off:2,t:'18:20',sn:'0362',svc:'oil',min:60,ld:1,ad:['eoil']},
+];
 
 function TeacherHome({me}){
+  const S=loadSettings();
   const [per,setPer]=useState(()=>new Date().getDate()<=15?'h1':'h2');
   const ym=ymd(new Date()).slice(0,7);
+  const rows=DEMO_TEACHER.map(x=>demoCalc(S,x));
+  const today=rows.filter(r=>r.off===0);
+  const sum=(a,k)=>a.reduce((s,r)=>s+(k==='ld'?(r.ld?1:0):r[k]),0);
+  const P={h1:{zh:86,ld:11,adv:1000},h2:{zh:41,ld:5,adv:0}}[per];
+  const pfee=P.zh*S.comm.per30+P.ld*S.comm.laodian;
   return (
     <div className="max-w-md mx-auto px-4 pb-16">
-      <Sec title="今日服務" soon>
-        <div className="grid grid-cols-4 gap-2"><KV k="單數" v="—"/><KV k="支數" v="—"/><KV k="老點" v="—"/><KV k="費用" v="—"/></div>
+      <DemoNote/>
+      <Sec title="今日服務" demo>
+        <div className="grid grid-cols-4 gap-2"><KV k="單數" v={today.length}/><KV k="支數" v={sum(today,'zh')}/><KV k="老點" v={sum(today,'ld')}/><KV k="費用" v={money(sum(today,'fee'))} cls="text-brown"/></div>
       </Sec>
-      <Sec title="本期累計" soon right={<div className="flex rounded-lg border border-line overflow-hidden text-xs">{['h1','h2'].map(h=><button key={h} className={'px-3 h-7 '+(per===h?'bg-sage text-white':'bg-card')} onClick={()=>setPer(h)}>{PERIOD_LABEL[h]}</button>)}</div>}>
+      <Sec title="本期累計" demo right={<div className="flex rounded-lg border border-line overflow-hidden text-xs">{['h1','h2'].map(h=><button key={h} className={'px-3 h-7 '+(per===h?'bg-sage text-white':'bg-card')} onClick={()=>setPer(h)}>{PERIOD_LABEL[h]}</button>)}</div>}>
         <div className="text-xs text-mute mb-2 num">{periodText(ym,per)}・發薪日 {fmtPayDay(payDay(ym,per))}</div>
-        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="支數" v="—"/><KV k="老點" v="—"/><KV k="費用合計" v="—"/></div>
-        <div className="flex justify-between pt-2 border-t border-line"><span className="text-mute">預估應領</span><span className="serif text-2xl text-brown">—</span></div>
+        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="支數" v={P.zh}/><KV k="老點" v={P.ld}/><KV k="費用合計" v={money(pfee)}/></div>
+        {P.adv>0&&<div className="flex justify-between text-sm py-1"><span className="text-mute">預支</span><span className="num text-warn">-{money(P.adv)}</span></div>}
+        <div className="flex justify-between pt-2 border-t border-line"><span className="text-mute">預估應領</span><span className="serif text-2xl text-brown">{money(pfee-P.adv)}</span></div>
       </Sec>
-      <Sec title="我的服務明細" soon>
-        <div className="grid grid-cols-[4rem_3rem_1fr_2rem_3.5rem] gap-1 text-xs text-mute pb-1 border-b border-line"><span>日期</span><span>單號</span><span>項目</span><span>支</span><span className="text-right">費用</span></div>
-        <Ph>店家登打訂單後，這裡會列出你服務的每一筆</Ph>
+      <Sec title="我的服務明細" demo>
+        <div className="grid grid-cols-[3.2rem_2.6rem_1fr_1.6rem_3.6rem] gap-1 text-xs text-mute pb-1 border-b border-line"><span>日期</span><span>單號</span><span>項目</span><span className="text-center">支</span><span className="text-right">費用</span></div>
+        {rows.map((r,i)=>{const d=demoDay(r.off);return (
+          <div key={i} className="grid grid-cols-[3.2rem_2.6rem_1fr_1.6rem_3.6rem] gap-1 py-2 border-b border-line text-sm items-center">
+            <span className="num text-xs">{(d.getMonth()+1)+'/'+d.getDate()}<br/><span className="text-mute">{r.t}</span></span>
+            <span className="num text-xs">{r.sn}</span>
+            <span>{SVC_SHORT[r.svc]} {r.min}{r.promo&&<span className="text-brown text-xs"> 平日</span>}{r.ld&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>}{r.adName&&<span className="block text-xs text-mute">＋{r.adName}</span>}</span>
+            <span className="num text-center">{r.zh}</span>
+            <span className="num text-right">{money(r.fee)}</span>
+          </div>);})}
       </Sec>
-      <Sec title="打卡" soon>
-        <div className="text-sm text-mute mb-3">今日：尚未打卡</div>
-        <div className="grid grid-cols-2 gap-2"><DisBtn>上班打卡</DisBtn><DisBtn>下班打卡</DisBtn></div>
+      <Sec title="打卡" demo>
+        <div className="flex justify-between text-sm mb-3"><span>今日上班 <span className="num">12:58</span></span><span className="text-mute">下班 —</span></div>
+        <div className="grid grid-cols-2 gap-2"><DisBtn>✓ 已上班</DisBtn><DisBtn>下班打卡</DisBtn></div>
+      </Sec>
+      <Sec title="店家公告" demo>
+        {[['09/24','國慶連假 10/10～10/11 照常營業，請提早排班'],['09/20','新增「修腳皮」加購，算 1 支']].map((a,i)=><div key={i} className="flex gap-3 py-2 border-b border-line last:border-0 text-sm"><span className="num text-mute text-xs pt-0.5">{a[0]}</span><span>{a[1]}</span></div>)}
+      </Sec>
+      <Sec title="我的班表" demo>
+        <div className="grid grid-cols-7 gap-1 text-center text-xs">
+          {Array.from({length:7},(_,i)=>{const d=demoDay(-i);const off=i===3;return <div key={i} className={'rounded-lg py-2 '+(off?'bg-bg text-mute':'bg-sageL text-sageD')}><div>{WK[d.getDay()]}</div><div className="num">{d.getDate()}</div><div className="mt-1">{off?'休':'13–01'}</div></div>})}
+        </div>
       </Sec>
       <Sec title="其他" soon>
-        <div className="grid grid-cols-2 gap-2"><DisBtn>請假申請</DisBtn><DisBtn>薪資條</DisBtn><DisBtn>店家公告</DisBtn><DisBtn>我的班表</DisBtn></div>
+        <div className="grid grid-cols-2 gap-2"><DisBtn>請假申請</DisBtn><DisBtn>下載薪資條</DisBtn></div>
       </Sec>
     </div>
   );
 }
+
+const DEMO_ORDERS=[
+  {t:'15:10',sn:'0421',g:[{svc:'oil',min:90,tc:'77',ld:1,ad:['guasha']}]},
+  {t:'14:25',sn:'0419',g:[{svc:'foot',min:60,tc:'58'},{svc:'foot',min:60,tc:'36'}]},
+  {t:'13:40',sn:'0417',g:[{svc:'foot',min:60,tc:'77'}]},
+  {t:'12:30',sn:'0413',g:[{svc:'dry',min:120,tc:'122',ld:1}]},
+  {t:'11:05',sn:'0409',g:[{svc:'dry',min:90,tc:'77',promo:1,ld:1}]},
+];
 function CounterHome({me}){
+  const S=loadSettings();
+  const orders=DEMO_ORDERS.map(o=>Object.assign({},o,{g:o.g.map(x=>demoCalc(S,x))}));
+  const guests=orders.reduce((s,o)=>s+o.g.length,0);
+  const rev=orders.reduce((s,o)=>s+o.g.reduce((a,x)=>a+x.amt,0),0);
+  const exp=350;
+  const tstat=[
+    {tc:'122',st:'服務中',tone:'brown',note:'指壓 120・預計 14:30 結束',zh:4},
+    {tc:'77',st:'可接客',tone:'sage',note:'輪班第 1 位',zh:9},
+    {tc:'58',st:'服務中',tone:'brown',note:'腳底 60・預計 15:25 結束',zh:2},
+    {tc:'36',st:'可接客',tone:'sage',note:'輪班第 2 位',zh:2},
+    {tc:'12',st:'休息中',tone:'',note:'15:40 回來',zh:0},
+  ];
   return (
     <div className="max-w-md mx-auto px-4 pb-16">
-      <Sec title={'今日 '+fmtDate(ymd(new Date()))} soon>
-        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="單數" v="—"/><KV k="客人" v="—"/><KV k="營業額" v="—"/></div>
+      <DemoNote/>
+      <Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
+        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="營業額" v={money(rev)} cls="text-brown"/></div>
         <DisBtn cls="w-full">＋ 登打訂單</DisBtn>
       </Sec>
-      <Sec title="老師狀態" soon>
-        <div className="grid grid-cols-[3rem_1fr_4rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>編號</span><span>狀態</span><span className="text-right">今日支數</span></div>
-        {['在店・可接客','服務中（預計 15:30 結束）','休息中'].map((t,i)=><div key={i} className="grid grid-cols-[3rem_1fr_4rem] gap-2 py-2 border-b border-line text-sm text-mute"><span>—</span><span>{t}</span><span className="text-right">—</span></div>)}
-        <div className="text-xs text-mute mt-2">老師打卡後會出現在這裡，可排「輪班順序」</div>
+      <Sec title="最近訂單" demo>
+        {orders.map((o,i)=>(
+          <div key={i} className="flex items-start gap-3 py-2 border-b border-line last:border-0 text-sm">
+            <span className="num text-xs text-mute w-10 pt-0.5">{o.t}<br/>#{o.sn}</span>
+            <span className="flex-1">{o.g.map((x,j)=><span key={j} className="block">{SVC_SHORT[x.svc]} {x.min}{x.promo?<span className="text-brown text-xs"> 平日</span>:''}<span className="text-mute">・</span><span className="num">{x.tc}</span>{x.ld?<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>:''}{x.adName?<span className="text-xs text-mute"> ＋{x.adName}</span>:''}</span>)}</span>
+            <span className="num">{money(o.g.reduce((a,x)=>a+x.amt,0))}</span>
+          </div>))}
       </Sec>
-      <Sec title="預約／候位" soon>
-        <div className="grid grid-cols-[3.5rem_1fr_4rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>時間</span><span>客人・項目</span><span className="text-right">指定老師</span></div>
-        <Ph>尚無預約</Ph>
+      <Sec title="老師狀態" demo>
+        <div className="grid grid-cols-[2.5rem_1fr_3rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>編號</span><span>狀態</span><span className="text-right">今日支</span></div>
+        {tstat.map((t,i)=><div key={i} className="grid grid-cols-[2.5rem_1fr_3rem] gap-2 py-2 border-b border-line last:border-0 text-sm items-center">
+          <span className="num font-semibold">{t.tc}</span>
+          <span><Pill tone={t.tone}>{t.st}</Pill><span className="block text-xs text-mute mt-0.5">{t.note}</span></span>
+          <span className="num text-right">{t.zh}</span></div>)}
       </Sec>
-      <Sec title="交班／日結" soon>
-        <div className="grid grid-cols-2 gap-2 mb-3"><KV k="應有現金" v="—"/><KV k="支出" v="—"/></div>
+      <Sec title="預約／候位" demo>
+        <div className="grid grid-cols-[3rem_1fr_3.5rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>時間</span><span>客人・項目</span><span className="text-right">指定</span></div>
+        {[['15:00','陳先生','油壓 90','77','已確認'],['16:30','林小姐（2 位）','腳底 60','不指定','已確認'],['19:00','王小姐','指壓 120','122','待確認']].map((r,i)=>
+          <div key={i} className="grid grid-cols-[3rem_1fr_3.5rem] gap-2 py-2 border-b border-line text-sm items-center">
+            <span className="num">{r[0]}</span><span>{r[1]}<span className="block text-xs text-mute">{r[2]}・<span className={r[4]==='待確認'?'text-warn':''}>{r[4]}</span></span></span><span className="num text-right text-xs">{r[3]}</span></div>)}
+        <div className="flex justify-between items-center pt-2 text-sm"><span>現場候位 <b className="num">1</b> 組</span><span className="text-xs text-mute">張先生・指壓 60・約等 20 分</span></div>
+      </Sec>
+      <Sec title="交班／日結" demo>
+        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="現金收入" v={money(rev)}/><KV k="支出" v={'-'+money(exp)}/><KV k="應有現金" v={money(rev-exp)} cls="text-brown"/></div>
+        <div className="text-xs text-mute mb-3">支出：耗材（毛巾洗滌）{money(exp)}</div>
         <div className="grid grid-cols-2 gap-2"><DisBtn>登記支出</DisBtn><DisBtn>交班</DisBtn></div>
       </Sec>
-      <Sec title="打卡" soon>
-        <div className="grid grid-cols-2 gap-2"><DisBtn>上班打卡</DisBtn><DisBtn>下班打卡</DisBtn></div>
+      <Sec title="打卡" demo>
+        <div className="text-sm mb-3">今日上班 <span className="num">08:55</span></div>
+        <div className="grid grid-cols-2 gap-2"><DisBtn>✓ 已上班</DisBtn><DisBtn>下班打卡</DisBtn></div>
       </Sec>
     </div>
   );
 }
 function GuestHome({me}){
   const S=loadSettings();
+  const hist=[{off:3,svc:'oil',min:90,tc:'77',ad:['eoil']},{off:17,svc:'dry',min:90,promo:1,tc:'122'},{off:33,svc:'foot',min:60,tc:'77'}].map(x=>demoCalc(S,x));
+  const nd=demoDay(-2);
+  const Field=({k,v,span})=><div className={'h-12 rounded-xl border border-line px-3 flex flex-col justify-center '+(span?'col-span-2':'')}><span className="text-[10px] text-mute leading-none">{k}</span><span className="text-sm mt-0.5">{v}</span></div>;
   return (
     <div className="max-w-md mx-auto px-4 pb-16">
+      <DemoNote/>
+      <Sec title="我的預約" demo>
+        <div className="flex items-center gap-3">
+          <div className="w-14 h-14 rounded-xl bg-sageL text-sageD flex flex-col items-center justify-center"><span className="text-xs">{nd.getMonth()+1}月</span><span className="serif text-xl leading-none">{nd.getDate()}</span></div>
+          <div className="flex-1 text-sm"><div>（{WK[nd.getDay()]}）<span className="num">15:00</span>・油壓 90 分</div><div className="text-xs text-mute">指定老師 77・1 位</div></div>
+          <Pill tone="sage">已確認</Pill>
+        </div>
+      </Sec>
       <Sec title="價目表">
         <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-2 text-sm num">
           <div></div>{MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}
@@ -1693,23 +1791,120 @@ function GuestHome({me}){
         <div className="mt-2 text-sm">{S.addons.map(a=><span key={a.id} className="inline-block mr-3">{a.name} <span className="num">{a.id==='eoil'?'+':''}{a.price}</span></span>)}</div>
       </Sec>
       <Sec title="線上預約" soon>
-        <div className="grid grid-cols-2 gap-2 text-sm text-mute mb-3">
-          <div className="h-11 rounded-xl border border-line px-3 flex items-center">日期</div>
-          <div className="h-11 rounded-xl border border-line px-3 flex items-center">時間</div>
-          <div className="h-11 rounded-xl border border-line px-3 flex items-center">人數</div>
-          <div className="h-11 rounded-xl border border-line px-3 flex items-center">項目</div>
-          <div className="h-11 rounded-xl border border-line px-3 flex items-center col-span-2">指定老師（可不選）</div>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <Field k="日期" v={(nd.getMonth()+1)+'/'+nd.getDate()+'（'+WK[nd.getDay()]+'）'}/><Field k="時間" v="15:00"/>
+          <Field k="人數" v="1 位"/><Field k="項目" v="油壓 90 分"/>
+          <Field k="指定老師（可不選）" v="77" span/>
         </div>
         <DisBtn cls="w-full">送出預約</DisBtn>
       </Sec>
-      <Sec title="我的消費紀錄" soon><Ph>尚無紀錄</Ph></Sec>
-      <Sec title="會員點數" soon><div className="grid grid-cols-2 gap-2"><KV k="目前點數" v="—"/><KV k="儲值餘額" v="—"/></div></Sec>
+      <Sec title="我的消費紀錄" demo>
+        {hist.map((h,i)=>{const d=demoDay(h.off);return <div key={i} className="flex justify-between py-2 border-b border-line last:border-0 text-sm">
+          <span><span className="num text-xs text-mute mr-2">{(d.getMonth()+1)+'/'+d.getDate()}</span>{SVC_SHORT[h.svc]} {h.min} 分{h.promo?<span className="text-brown text-xs"> 平日</span>:''}{h.adName?<span className="text-xs text-mute"> ＋{h.adName}</span>:''}<span className="block text-xs text-mute ml-9">老師 {h.tc}</span></span>
+          <span className="num">{money(h.amt)}</span></div>})}
+      </Sec>
+      <Sec title="會員點數" demo>
+        <div className="grid grid-cols-2 gap-2 mb-2"><KV k="目前點數" v="1,280 點" cls="text-sageD"/><KV k="儲值餘額" v={money(3000)}/></div>
+        <div className="h-2 rounded-full bg-bg overflow-hidden"><div className="h-full bg-sage" style={{width:'64%'}}></div></div>
+        <div className="text-xs text-mute mt-1">再 720 點可兌換 60 分鐘腳底按摩</div>
+      </Sec>
       <Sec title="店家資訊">
         <div className="text-sm space-y-1">
           <div>營業時間　09:00～02:00</div>
           <div>電話　<a className="underline text-sageD" href="tel:0282571199">02-8257-1199</a></div>
           <div>地址　新北市板橋區雙十路三段 10 巷 1 號 1 樓</div>
         </div>
+      </Sec>
+    </div>
+  );
+}
+
+/* ---- 未審核訪客：預覽開通流程各階段，員工協助訪客加入 ---- */
+const DEMO_VISITOR={name:'王小姐',uid:'U8f3a1c2d4e5b6a7980c1d2e3f4a5b6c7',role:'guest'};
+function PhoneFrame({children}){
+  return (<div className="rounded-[28px] border-[6px] border-ink/80 bg-bg overflow-hidden shadow-sm">
+    <div className="h-7 bg-card border-b border-line flex items-center justify-center text-[11px] text-mute">緩緩 SLOWVE・LINE</div>
+    <div className="p-4 min-h-[22rem]">
+      <div className="serif text-2xl tracking-widest text-sageD text-center">緩緩</div>
+      <div className="text-center text-[10px] tracking-[0.3em] text-brown mb-4">SLOWVE BODY SPA</div>
+      <div className="pointer-events-none select-none">{children}</div>
+    </div>
+  </div>);
+}
+function VisitorGuide({me}){
+  const V=DEMO_VISITOR;
+  const [i,setI]=useState(0);
+  const topRef=useRef(null);const first=useRef(true);
+  useEffect(()=>{  // 換步驟時捲回步驟列，並把目前的步驟按鈕捲進可視範圍
+    if(first.current){first.current=false;return}
+    try{topRef.current.scrollIntoView({block:'start'});const b=topRef.current.querySelector('[data-on="1"]');b&&b.scrollIntoView({inline:'center',block:'nearest'})}catch(_e){}
+  },[i]);
+  const [f,setF]=useState({uid:'',name:'',roles:['guest'],tc:''});
+  const [copied,setCopied]=useState('');
+  const flash=k=>{setCopied(k);setTimeout(()=>setCopied(''),2000)};
+  const now=new Date();const hm=pad(now.getHours())+':'+pad(now.getMinutes());
+  const STAGES=[
+    {t:'開啟系統',sub:'尚未開通',
+      tip:'訪客點官方帳號圖文選單「門店系統」後，名單裡沒有他，會看到這個畫面。請他按「申請開通帳號」。',
+      ui:<Card className="p-5 text-center"><div className="text-lg mb-1">{V.name}，你的帳號尚未開通</div><div className="text-sm text-mute mb-4">請先申請開通帳號，並聯繫店家工作人員或主管完成開通。</div><div className="w-full h-12 rounded-xl bg-sage text-white text-lg flex items-center justify-center">申請開通帳號</div></Card>},
+    {t:'選擇身分',sub:'帳號開通申請',
+      tip:'請訪客點自己的身分（老師／櫃台／客人）。點下去就會送出申請，不用填其他資料。',
+      ui:<><div className="text-center text-lg mb-1">帳號開通申請</div><div className="text-center text-sm text-mute mb-4">{V.name}，請選擇你的身分</div><div className="space-y-2">{JOIN_ROLES.map(r=><div key={r.id} className={'h-14 rounded-2xl border border-sage text-xl text-sageD flex items-center justify-center '+(r.id===V.role?'bg-sageL':'bg-card')}>{r.label}</div>)}</div></>},
+    {t:'送出申請卡',sub:'已傳送到聊天室',
+      tip:'申請卡會以訪客名義傳到他和官方帳號的聊天室，並另傳一則只有申請碼的文字。你可以直接掃他螢幕上的 QR Code，或請他把申請碼傳給你。',
+      ui:<><div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm text-center">✓ 已傳送到聊天室</div><JoinCard name={V.name} role={V.role} uid={V.uid}/></>},
+    {t:'等待審查',sub:'你已申請開通帳號',
+      tip:'之後訪客再打開，會看到「尚未審查」。把申請碼加進 members.json 並推上 GitHub（約 1～數分鐘生效）後，請他按「重新檢查」。',
+      ui:<><div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown"><div className="font-semibold">你已申請開通帳號，目前尚未審查</div><div className="text-sm mt-1">請聯繫店家工作人員或主管掃描 QR Code 完成帳號開通作業，或分享以下帳號申請碼</div><div className="text-xs text-mute mt-1 num">申請時間 {ymd(now)} {hm}</div></div><div className="w-full h-12 rounded-xl bg-sage text-white text-lg flex items-center justify-center">重新檢查</div></>},
+    {t:'開通完成',sub:'正在進入系統',
+      tip:'名單生效後按「重新檢查」，會顯示已開通，約 1 秒後自動進入系統。',
+      ui:<div className="px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">✓ 帳號已開通（{ROLE_LABELS[V.role]}）</div><div className="text-sm mt-1">正在進入系統…</div></div>},
+    {t:'設定編號姓名',sub:'第一次進入',
+      tip:'第一次進入要設定編號和姓名。老師一定要填編號（和訂單上的老師編號相同），客人可以不填。資料只存在他的手機。',
+      ui:<Card className="p-4"><div className="text-lg mb-1">帳號已開通</div><div className="text-sm text-mute mb-3">第一次使用，請設定你的編號與姓名。身分：{ROLE_LABELS[V.role]}</div><div className="text-xs text-mute mb-1">編號（選填）</div><div className="h-11 rounded-xl border border-line bg-card mb-2"></div><div className="text-xs text-mute mb-1">姓名（必填）</div><div className="h-11 rounded-xl border border-line bg-card px-3 flex items-center mb-3">{V.name}</div><div className="h-11 rounded-xl bg-sage text-white flex items-center justify-center">存檔</div></Card>},
+    {t:'歡迎畫面',sub:'之後每次開啟',
+      tip:'設定好之後，每次開啟都會看到歡迎畫面，點身分就能進入。有多個身分的人可以在這裡切換。',
+      ui:<><div className="text-center mb-4"><div className="text-2xl">歡迎 <span className="text-sageD font-semibold">{V.name}</span></div><div className="text-mute mt-1">進入緩緩門店系統</div></div><div className="rounded-2xl border border-line bg-card px-4 py-3 flex items-center gap-3"><span className="w-10 h-10 rounded-full bg-sageL text-sageD flex items-center justify-center">{VIEWS.guest.icon}</span><span className="flex-1"><span className="block">進入系統（客人）</span><span className="block text-xs text-mute">{VIEWS.guest.desc}</span></span><span className="text-mute">›</span></div></>},
+  ];
+  const s=STAGES[i];
+  const tog=r=>setF(x=>Object.assign({},x,{roles:JOIN_ROLES.map(q=>q.id).filter(q=>q===r?!x.roles.includes(r):x.roles.includes(q))}));
+  const uidOk=/^U[0-9a-f]{32}$/.test(f.uid.trim());
+  const entry=(()=>{const o={uid:f.uid.trim(),name:f.name.trim()||'（姓名）',roles:f.roles};if(f.roles.includes('teacher')&&f.tc.trim())o.tc=f.tc.trim();return JSON.stringify(o)})();
+  const joinUrl='https://liff.line.me/'+LIFF_ID+'?mode=join';
+  return (
+    <div className="max-w-md mx-auto px-4 pb-16">
+      <div className="mt-4 text-sm text-mute">訪客開通共 {STAGES.length} 個階段。點下方步驟可以看訪客當時的畫面，方便在旁邊引導。</div>
+      <div ref={topRef} className="mt-3 flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scroll-mt-12">
+        {STAGES.map((x,k)=><button key={k} data-on={k===i?'1':'0'} onClick={()=>setI(k)} className={'shrink-0 h-9 px-3 rounded-full text-sm border '+(k===i?'bg-sage text-white border-sage':'bg-card border-line')}><span className="num mr-1">{k+1}</span>{x.t}</button>)}
+      </div>
+      <div className="mt-4 flex items-baseline justify-between px-1"><div><span className="num text-brown mr-1">{i+1}/{STAGES.length}</span><span className="text-lg">{s.t}</span></div><span className="text-xs text-mute">訪客看到：{s.sub}</span></div>
+      <div className="mt-2 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm">💡 {s.tip}</div>
+      <div className="mt-3"><PhoneFrame>{s.ui}</PhoneFrame></div>
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <button className="h-11 rounded-xl border border-line bg-card disabled:opacity-40" disabled={i===0} onClick={()=>setI(i-1)}>‹ 上一步</button>
+        <button className="h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={i===STAGES.length-1} onClick={()=>setI(i+1)}>下一步 ›</button>
+      </div>
+
+      <Sec title="給訪客的開通連結">
+        <div className="text-sm text-mute mb-2">訪客還沒加官方帳號、或找不到圖文選單時，把這個連結傳給他：</div>
+        <div className="rounded-lg bg-bg px-3 py-2 text-xs num break-all mb-2">{joinUrl}</div>
+        <button className="w-full h-11 rounded-xl border border-sage text-sageD" onClick={()=>copyStr(joinUrl,()=>flash('url'))}>{copied==='url'?'✓ 已複製':'複製開通連結'}</button>
+      </Sec>
+
+      <Sec title="產生名單資料（老闆／主管用）">
+        <div className="text-sm text-mute mb-3">收到申請碼後填入，複製產生的一行，貼到 GitHub 上 members.json 的 <span className="num">members</span> 清單裡（前一筆後面要加逗號）。</div>
+        <label className="block mb-2"><div className="text-xs text-mute mb-1">帳號申請碼（U 開頭，共 33 碼）</div>
+          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card text-sm num" placeholder="U1234…" value={f.uid} onChange={e=>setF(Object.assign({},f,{uid:e.target.value.replace(/[\s…]/g,'')}))}/></label>
+        {f.uid&&!uidOk&&<div className="text-xs text-warn mb-2">申請碼格式不對：應為 U 加 32 碼英數（不能有「…」或空白）</div>}
+        <label className="block mb-2"><div className="text-xs text-mute mb-1">姓名</div>
+          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={f.name} onChange={e=>setF(Object.assign({},f,{name:e.target.value}))}/></label>
+        <div className="text-xs text-mute mb-1">身分（可複選）</div>
+        <div className="grid grid-cols-3 gap-2 mb-2">{JOIN_ROLES.map(r=><button key={r.id} onClick={()=>tog(r.id)} className={'h-10 rounded-xl border '+(f.roles.includes(r.id)?'bg-sage text-white border-sage':'bg-card border-line')}>{r.label}</button>)}</div>
+        {f.roles.includes('teacher')&&<label className="block mb-2"><div className="text-xs text-mute mb-1">老師編號</div>
+          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card num" inputMode="numeric" placeholder="例：122" value={f.tc} onChange={e=>setF(Object.assign({},f,{tc:e.target.value}))}/></label>}
+        <div className="rounded-lg bg-bg px-3 py-2 text-xs num break-all mb-2">{entry}</div>
+        <button className="w-full h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={!uidOk||!f.roles.length} onClick={()=>copyStr(entry,()=>flash('entry'))}>{copied==='entry'?'✓ 已複製':'複製這一行'}</button>
+        <div className="text-xs text-mute mt-2">老闆、主管權限（admin）請直接在 GitHub 上加，這裡不提供。</div>
       </Sec>
     </div>
   );
@@ -1744,7 +1939,7 @@ function LineGate(){
   if(st==='view'&&view){
     const bar=<RoleBar view={view} me={me} canSwitch={views.length>1} onSwitch={()=>{setView(null);setSt('welcome')}}/>;
     if(view==='owner')return <>{bar}<App/></>;
-    const Page={teacher:TeacherHome,counter:CounterHome,guest:GuestHome}[view];
+    const Page={teacher:TeacherHome,counter:CounterHome,guest:GuestHome,visitor:VisitorGuide}[view];
     return (<div className="min-h-screen">{bar}
       <div className="max-w-md mx-auto px-4 pt-4 flex items-baseline gap-2"><span className="serif text-2xl tracking-widest text-sageD">緩緩</span><span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span><span className="text-sm text-mute ml-1">{VIEWS[view].label}</span></div>
       <Page me={me}/></div>);
@@ -1766,6 +1961,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-023','09-25','選身分新增「未審核訪客」（老師／櫃台／老闆／主管可見）：逐步預覽訪客開通 7 個階段畫面與引導說明，附開通連結、名單資料產生器；老師、櫃台、客人畫面放入範例資料'],
   ['v0.1-022','09-25','LINE 內開啟時新增入口檢查：LINE 登入→開通名單→首次設定編號姓名→「歡迎○○進入緩緩門店系統」→選身分（老闆／老師／櫃台／客人）；新增老師、櫃台、客人預設畫面（欄位先放、尚未運作）'],
   ['v0.1-021','09-25','開通申請頁：已開通的帳號（開啟時檢查或按重新檢查）自動轉到不帶參數的 LIFF 網址進入系統；沒申請過但已在名單內的人也會直接轉入'],
   ['v0.1-020','09-25','members.json 改為一人一筆：roles（工作身分，可多個：老師／櫃台／客人）＋ tc（老師編號）＋ admin（管理權限：owner 老闆／manager 主管）；相容舊的 role 寫法'],
