@@ -1,3 +1,8 @@
 {
-  "members": []
+  "members": [
+    { "uid": "Ufc92e41f1f51906f9388a2cf3105c5cf", "name": "老闆", "roles": ["teacher"], "tc": "122", "admin": "owner" },
+    { "uid": "U主管…", "name": "小美", "roles": ["counter"], "admin": "manager" },
+    { "uid": "U老師…", "name": "阿明", "roles": ["teacher"], "tc": "58" },
+    { "uid": "U客人…", "name": "王小姐", "roles": ["guest"] }
+  ]
 }
