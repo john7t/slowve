@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-020</title>
+<title>緩緩門店 v0.1-021</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-020';
+const VER='v0.1-021';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1435,12 +1435,16 @@ function JoinPage(){
   const [copied,setCopied]=useState(false);
   const [rec,setRec]=useState(null);           // 本機申請紀錄
   const [chk,setChk]=useState(null);           // {state:'pending'|'approved'|'unknown', member, at, msg}
+  // 已開通 → 轉到不帶參數的 LIFF 網址（進入系統）
+  const goHome=()=>setTimeout(()=>{location.replace('https://liff.line.me/'+LIFF_ID)},1200);
   const recheck=async uid=>{
     setChk(c=>Object.assign({},c||{},{busy:true}));
     try{
       const list=await fetchMembers();const m=list.find(x=>x&&x.uid===uid);
       setChk(m?{state:'approved',member:m,at:Date.now()}:{state:'pending',at:Date.now()});
-    }catch(e){setChk({state:'pending',at:Date.now(),msg:String(e.message)==='nofile'?'':'（檢查失敗，請稍後再試）'})}
+      if(m){setSt('status');goHome()}
+      return m||null;
+    }catch(e){setChk({state:'pending',at:Date.now(),msg:String(e.message)==='nofile'?'':'（檢查失敗，請稍後再試）'});return null}
   };
   useEffect(()=>{
     (async()=>{
@@ -1450,7 +1454,11 @@ function JoinPage(){
         if(!L.isLoggedIn()){L.login({redirectUri:location.href});return}
         const p=await L.getProfile();setProf(p);setInClient(L.isInClient());
         const r=joinGet(p.userId);
-        if(r){setRec(r);setRole(r.role);setSt('status');recheck(p.userId)}else setSt('pick');
+        if(r){setRec(r);setRole(r.role)}
+        // 先查名單：已開通（包含沒申請過、直接被寫進名單的人）→ 直接轉進系統
+        const m=await recheck(p.userId);
+        if(m){if(!r)setRec({uid:p.userId,role:(memberInfo(m).roles[0]||'guest'),name:p.displayName,at:Date.now()});return}
+        setSt(r?'status':'pick');
       }catch(e){setSt('error');setErr(String(e&&e.message||e))}
     })();
   },[]);
@@ -1496,7 +1504,7 @@ function JoinPage(){
         </div>}
         {chk&&chk.state==='approved'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD">
           <div className="font-semibold">✓ 帳號已開通（{memberInfo(chk.member).label||joinRoleLabel(rec.role)}）</div>
-          <div className="text-sm mt-1">之後可使用緩緩的員工功能（陸續開放）。</div>
+          <div className="text-sm mt-1">正在進入系統…</div>
         </div>}
         <button className="w-full h-12 mb-3 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={chk&&chk.busy} onClick={()=>recheck(prof.userId)}>{chk&&chk.busy?'檢查中…':'重新檢查'}</button>
         <JoinCard name={prof.displayName} role={rec.role} uid={prof.userId}/>
@@ -1523,6 +1531,7 @@ function JoinPage(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-021','09-25','開通申請頁：已開通的帳號（開啟時檢查或按重新檢查）自動轉到不帶參數的 LIFF 網址進入系統；沒申請過但已在名單內的人也會直接轉入'],
   ['v0.1-020','09-25','members.json 改為一人一筆：roles（工作身分，可多個：老師／櫃台／客人）＋ tc（老師編號）＋ admin（管理權限：owner 老闆／manager 主管）；相容舊的 role 寫法'],
   ['v0.1-019','09-25','members.json 的 role 支援 owner（老闆）：開通狀態顯示「老闆」；老闆不在申請按鈕中，只能由名單指定'],
   ['v0.1-018','09-25','開通申請：說明文字改為「請聯繫店家工作人員或主管掃描 QR Code 完成帳號開通作業…」；本機記錄已申請，再次開啟顯示開通狀態頁（尚未審查／已開通）與「重新檢查」（讀 GitHub 上的 members.json 已開通名單）'],
