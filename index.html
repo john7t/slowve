@@ -7,11 +7,12 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-013</title>
+<title>緩緩門店 v0.1-020</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
-try{var __k='slowve-urllog',__a=JSON.parse(sessionStorage.getItem(__k)||'[]');__a.push({u:location.href,r:document.referrer||'',t:Date.now()});sessionStorage.setItem(__k,JSON.stringify(__a.slice(-8)))}catch(_e){}
+/* 存 localStorage（不用 sessionStorage）：iOS 從 LINE 登入回來可能開成新分頁，sessionStorage 會不見；只留 15 分鐘內最近 10 筆 */
+try{var __k='slowve-urllog',__n=Date.now(),__a=JSON.parse(localStorage.getItem(__k)||'[]').filter(function(x){return __n-x.t<9e5});__a.push({u:location.href,r:document.referrer||'',t:__n});localStorage.setItem(__k,JSON.stringify(__a.slice(-10)))}catch(_e){}
 /* 錯誤兜底：致命錯誤顯示提示畫面（本機資料不受影響）；promise 錯誤只記錄不跳畫面 */
 window.__fb=function(msg){try{var d=document.getElementById('fb');if(!d)return;d.style.display='flex';d.querySelector('pre').textContent=String(msg||'')}catch(_e){}};
 window.onerror=function(m,s,l,c,e){window.__fb((m||'')+' @'+(l||0)+':'+(c||0));};
@@ -51,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-013';
+const VER='v0.1-020';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1193,7 +1194,26 @@ function ltFromUrl(u){
     return {lt,ltz,liffState:!!st,liffParams:q.has('liffClientId')||q.has('liffRedirectUri'),code:q.has('code')};
   }catch(_e){return {}}
 }
-function urlLog(){try{return JSON.parse(sessionStorage.getItem('slowve-urllog')||'[]')}catch(_e){return []}}
+function urlLog(){try{return JSON.parse(localStorage.getItem('slowve-urllog')||'[]')}catch(_e){return []}}
+// 送出的測試碼存 localStorage（15 分鐘有效），跨分頁也比對得到
+function ltSentSet(n){try{localStorage.setItem(LT_SENT_KEY,JSON.stringify({n,t:Date.now()}))}catch(_e){}}
+function ltSentGet(){try{const x=JSON.parse(localStorage.getItem(LT_SENT_KEY)||'null');return x&&Date.now()-x.t<9e5?x:null}catch(_e){return null}}
+// 遮蔽網址裡的登入憑證（access_token 等），避免截圖或複製時外流
+function maskUrl(u){
+  let s=String(u||'');try{s=decodeURIComponent(s)}catch(_e){}
+  return s.replace(/(access_token|context_token|id_token|refresh_token|code|state)=([^&#]+)/g,(m,k,v)=>k+'='+(v.length>8?v.slice(0,4)+'…（'+v.length+' 字）':v));
+}
+/* 開啟來源：看「這次測試的第一個網址」
+   - hash 帶 context_token／access_token → 在 LINE App 以 LIFF 網址開啟
+   - 帶 liff.state 但沒有 code → 從 liff.line.me 導入（外部瀏覽器）
+   - 其他 → 直接開 GitHub 網址（LINE 登入導回時也會出現 liff.state，但會同時帶 code，所以不算） */
+function sourceOf(u){
+  const s=String(u||'');
+  if(/[#&](context_token|access_token)=/.test(s))return 'LIFF 網址（LINE App 內開啟）';
+  const x=ltFromUrl(s);
+  if(x.liffState&&!x.code)return 'LIFF 網址（liff.line.me 導入）';
+  return 'GitHub 網址直接開啟';
+}
 function uaInfo(){
   const ua=navigator.userAgent||'';
   const os=/iPhone|iPad|iPod/.test(ua)?'iOS':/Android/.test(ua)?'Android':/Mac/.test(ua)?'Mac':/Windows/.test(ua)?'Windows':'其他';
@@ -1205,87 +1225,130 @@ function LineLoginTest({standalone}){
   const [st,setSt]=useState('idle');   // idle / working / done / error
   const [info,setInfo]=useState(null);
   const [err,setErr]=useState('');
+  const [copied,setCopied]=useState(false);
   const ui=uaInfo();
   const selfUrl=nonce=>location.origin+location.pathname+'?'+(standalone?'linetest=1&':'')+'lt='+nonce+'&ltz='+encodeURIComponent(LT_ZH);
+  const liffTestUrl=nonce=>'https://liff.line.me/'+LIFF_ID+'?linetest=1&lt='+nonce+'&ltz='+encodeURIComponent(LT_ZH);
   const collect=async()=>{
     const L=await liffReady();
+    // 網址還帶 liff.state＝LIFF 的中繼頁，liff.init 之後會自動換到最終網址；這裡先不測，免得提早清掉送出紀錄
+    if(new URLSearchParams(location.search).has('liff.state'))return null;
     const r={inClient:L.isInClient(),loggedIn:L.isLoggedIn(),os:L.getOS&&L.getOS(),sdk:L.getVersion&&L.getVersion(),lineVer:L.getLineVersion&&L.getLineVersion(),
       share:L.isApiAvailable&&L.isApiAvailable('shareTargetPicker'),at:Date.now()};
-    try{const c=L.getContext&&L.getContext();r.ctxType=c&&c.type;r.endpoint=c&&c.endpointUrl}catch(_e){}
-    // 開啟來源：這次（同一分頁）經過的網址裡，有 LIFF 導轉參數就是從 liff.line.me 進來的
-    const log=urlLog();const entry=window.__entryUrl||location.href;
-    const all=log.map(x=>x.u).concat([entry,location.href]);
-    // liff.state＝從 liff.line.me 開啟時 LINE 加的；code／liffClientId＝LINE 登入完導回時加的（兩件事要分開看）
-    const viaLiff=all.some(u=>ltFromUrl(u).liffState);
-    r.source=viaLiff?'LIFF 網址（liff.line.me 導入）':r.inClient?'LINE App 內（LIFF）':'GitHub 網址直接開啟';
-    r.loginBack=all.some(u=>{const x=ltFromUrl(u);return x.code||x.liffParams});
-    r.entry=entry;r.ref=window.__entryRef||'';r.log=log.slice(-6);
-    // 參數傳遞測試
-    let got=null;for(const u of all.slice().reverse()){const x=ltFromUrl(u);if(x.lt){got=x;break}}
-    let sent=null;try{sent=sessionStorage.getItem(LT_SENT_KEY)}catch(_e){}
-    r.ltGot=got?got.lt:null;r.ltzGot=got?got.ltz:null;r.ltSent=sent;
+    try{const c=L.getContext&&L.getContext();r.ctxType=c&&c.type}catch(_e){}
     if(r.loggedIn){
       try{const p=await L.getProfile();r.name=p.displayName;r.uid=p.userId;r.pic=p.pictureUrl}catch(e){r.profileErr=String(e&&e.message||e)}
       try{r.idToken=!!L.getIDToken()}catch(_e){r.idToken=false}
     }
+    const sent=ltSentGet();
+    const entry=window.__entryUrl||location.href;
+    // 這次測試的網址序列：有送出紀錄就從送出時間前一點開始算，否則只看本次進入網址
+    const log=urlLog();
+    let seq;
+    if(sent)seq=log.filter(x=>x.t>=sent.t-3000);
+    else{ // 沒有送出紀錄：從最後一筆往回找，彼此相隔 15 秒內的視為同一串導轉
+      seq=[];for(let i=log.length-1;i>=0;i--){if(seq.length&&seq[0].t-log[i].t>15000)break;seq.unshift(log[i])}
+    }
+    if(!seq.length)seq=[{u:entry,r:window.__entryRef||'',t:Date.now()}];
+    r.source=sourceOf(seq[0].u);
+    const all=seq.map(x=>x.u).concat([entry]);
+    r.loginBack=all.some(u=>{const x=ltFromUrl(u);return x.code||x.liffParams});
+    let got=null;for(const u of all.slice().reverse()){const x=ltFromUrl(u);if(x.lt){got=x;break}}
+    r.ltGot=got?got.lt:null;r.ltzGot=got?got.ltz:null;r.ltSent=sent?sent.n:null;
+    r.entry=entry;r.ref=window.__entryRef||'';r.log=seq.slice(-8);
+    try{localStorage.removeItem(LT_SENT_KEY)}catch(_e){}   // 比對完就清掉，避免之後每次開都跳到設定頁
     setInfo(r);setSt(r.loggedIn?'done':'idle');
-    try{if(/[?&](code|liffClientId|liffRedirectUri|lt)=/.test(location.search))history.replaceState(null,'',location.pathname+(standalone?'?linetest=1':'')+location.hash)}catch(_e){}
+    try{if(/[?&](code|liffClientId|liffRedirectUri|lt)=/.test(location.search)||/access_token=/.test(location.hash))history.replaceState(null,'',location.pathname+(standalone?'?linetest=1':''))}catch(_e){}
     return r;
   };
   const login=async()=>{
     setSt('working');setErr('');
     try{
       const L=await liffReady();
-      if(L.isInClient()){await collect();return}          // LINE App 內一定是登入狀態
-      try{if(L.isLoggedIn())L.logout()}catch(_e){}
       const nonce=newNonce();
-      try{sessionStorage.setItem(LINE_TEST_KEY,'1');sessionStorage.setItem(LT_SENT_KEY,nonce)}catch(_e){}
+      if(L.isInClient()){
+        // LINE App 內本來就是登入狀態，不會經過登入頁；改用 liff.line.me 重新開啟測試頁，測 LIFF 網址帶參數
+        ltSentSet(nonce);location.href=liffTestUrl(nonce);return;
+      }
+      try{if(L.isLoggedIn())L.logout()}catch(_e){}
+      ltSentSet(nonce);
       L.login({redirectUri:selfUrl(nonce)});
     }catch(e){setSt('error');setErr(String(e&&e.message||e))}
   };
   const logout=async()=>{try{const L=await liffReady();L.logout()}catch(_e){}setInfo(null);setSt('idle')};
   useEffect(()=>{
-    let pend=false;try{pend=sessionStorage.getItem(LINE_TEST_KEY)==='1';sessionStorage.removeItem(LINE_TEST_KEY)}catch(_e){}
-    if(pend||standalone||/[?&](code|lt)=/.test(location.search)){
-      setSt('working');collect().catch(e=>{setSt('error');setErr(String(e&&e.message||e))});
+    const pend=!!ltSentGet();
+    if(pend||standalone||/[?&](code|lt)=/.test(location.search)||/context_token=/.test(location.hash)){
+      setSt('working');collect().then(r=>{if(!r)setSt('working')}).catch(e=>{setSt('error');setErr(String(e&&e.message||e))});
     }
   },[]);
-  const Row=({k,v,ok})=><div className="flex justify-between py-1 border-t border-line text-sm"><span className="text-mute">{k}</span><span className={'num text-right '+(ok===false?'text-warn':ok?'text-sageD':'')}>{v}</span></div>;
+
+  const rows=info?[
+    ['登入狀態',info.loggedIn?'✓ 已登入':'未登入',info.loggedIn],
+    ['執行環境',info.inClient?'LINE App 內':'外部瀏覽器'],
+    ['選好友分享',info.share?'可用':'不可用',!!info.share],
+    ...(info.loggedIn?[['ID Token',info.idToken?'有':'無',!!info.idToken]]:[]),
+    ...(info.profileErr?[['讀取個人資料',info.profileErr,false]]:[]),
+    ['LIFF SDK',(info.sdk||'-')+(info.lineVer?'・LINE '+info.lineVer:'')],
+    ['開啟來源',info.source],
+    ['LINE 登入導回',info.loginBack?'✓ 有（網址帶 code）':'無（本次沒有經過登入頁）',info.loginBack?true:undefined],
+    ...(info.ctxType?[['LIFF context',info.ctxType]]:[]),
+    ['網址參數 lt',info.ltGot?(info.ltSent?(info.ltGot===info.ltSent?'✓ 收到 '+info.ltGot+'（與送出一致）':'✗ 收到 '+info.ltGot+'，送出 '+info.ltSent):'✓ 收到 '+info.ltGot+'（無送出紀錄可比對）'):(info.ltSent?'✗ 沒收到（送出 '+info.ltSent+'）':'（本次沒有帶測試參數）'),
+      info.ltGot?(info.ltSent?info.ltGot===info.ltSent:true):(info.ltSent?false:undefined)],
+    ...((info.ltGot||info.ltSent)?[['中文參數 ltz',info.ltzGot?(info.ltzGot===LT_ZH?'✓ '+info.ltzGot:'✗ '+info.ltzGot):'✗ 沒收到',info.ltzGot===LT_ZH]]:[]),
+  ]:[];
+  const copyText=()=>{
+    const d=new Date(info.at);
+    const lines=['緩緩門店 LINE 登入測試 '+VER,'時間：'+ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()),
+      '環境：'+ui.os+'・'+ui.br+(ui.standalone?'・主畫面 App':''),
+      ...(info.name?['使用者：'+info.name+'（'+(info.uid?info.uid.slice(0,6)+'…'+info.uid.slice(-4):'')+'）']:[]),
+      ...rows.map(r=>r[0]+'：'+r[1]),
+      '本次進入網址：'+maskUrl(info.entry),
+      ...(info.ref?['來源頁：'+maskUrl(info.ref)]:[]),
+      ...(info.log&&info.log.length?['導轉經過的網址：',...info.log.map(x=>new Date(x.t).toLocaleTimeString('zh-TW',{hour12:false})+'　'+maskUrl(x.u))]:[])];
+    return lines.join('\n');
+  };
+  const [uidCopied,setUidCopied]=useState(false);
+  const copyStr=(t,done)=>{
+    const fallback=()=>{try{const a=document.createElement('textarea');a.value=t;a.setAttribute('readonly','');a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();done()}catch(_e){}};
+    try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(done).catch(fallback);else fallback()}catch(_e){fallback()}
+  };
+  const copyUid=()=>copyStr(info.uid,()=>{setUidCopied(true);setTimeout(()=>setUidCopied(false),2000)});
+  const doCopy=()=>{
+    const t=copyText();
+    const ok=()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)};
+    const fallback=()=>{try{const a=document.createElement('textarea');a.value=t;a.setAttribute('readonly','');a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();ok()}catch(_e){}};
+    try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(ok).catch(fallback);else fallback()}catch(_e){fallback()}
+  };
+  const Row=({k,v,ok})=><div className="flex justify-between gap-3 py-1 border-t border-line text-sm"><span className="text-mute shrink-0">{k}</span><span className={'num text-right '+(ok===false?'text-warn':ok?'text-sageD':'')}>{v}</span></div>;
   return (
     <div>
       <div className="text-xs text-mute mb-2">環境：{ui.os}・{ui.br}{ui.standalone?'・主畫面 App':''}</div>
       {info&&<div className="mb-3">
         {info.loggedIn&&info.name&&<div className="flex items-center gap-3 mb-2">
           {info.pic&&<img src={info.pic} alt="" className="w-10 h-10 rounded-full"/>}
-          <div><div className="font-semibold">{info.name}</div><div className="text-xs text-mute num">{info.uid?info.uid.slice(0,6)+'…'+info.uid.slice(-4):''}</div></div>
+          <div className="flex-1 min-w-0"><div className="font-semibold">{info.name}</div><div className="text-xs text-mute num">{info.uid?info.uid.slice(0,6)+'…'+info.uid.slice(-4):''}</div></div>
+          {info.uid&&<button className={'shrink-0 h-9 px-3 rounded-lg border text-sm '+(uidCopied?'border-sage bg-sageL text-sageD':'border-sage text-sageD')} onClick={copyUid}>{uidCopied?'✓ 已複製':'複製 LINE userId'}</button>}
         </div>}
-        <Row k="登入狀態" v={info.loggedIn?'✓ 已登入':'未登入'} ok={info.loggedIn}/>
-        <Row k="執行環境" v={info.inClient?'LINE App 內':'外部瀏覽器'}/>
-        <Row k="選好友分享" v={info.share?'可用':'不可用'} ok={!!info.share}/>
-        {info.loggedIn&&<Row k="ID Token" v={info.idToken?'有':'無'} ok={!!info.idToken}/>}
-        {info.profileErr&&<Row k="讀取個人資料" v={info.profileErr} ok={false}/>}
-        <Row k="LIFF SDK" v={(info.sdk||'-')+(info.lineVer?'・LINE '+info.lineVer:'')}/>
-        <Row k="開啟來源" v={info.source}/>
-        <Row k="LINE 登入導回" v={info.loginBack?'✓ 有（網址帶 code）':'無（本次沒有經過登入頁）'} ok={info.loginBack?true:undefined}/>
-        {info.ctxType&&<Row k="LIFF context" v={info.ctxType}/>}
-        <Row k="網址參數 lt" v={info.ltGot?(info.ltSent?(info.ltGot===info.ltSent?'✓ 收到 '+info.ltGot+'（與送出一致）':'✗ 收到 '+info.ltGot+'，送出 '+info.ltSent):'✓ 收到 '+info.ltGot):(info.ltSent?'✗ 沒收到（送出 '+info.ltSent+'）':'（本次沒有帶測試參數）')}
-          ok={info.ltGot?(info.ltSent?info.ltGot===info.ltSent:true):(info.ltSent?false:undefined)}/>
-        {(info.ltGot||info.ltSent)&&<Row k="中文參數 ltz" v={info.ltzGot?(info.ltzGot===LT_ZH?'✓ '+info.ltzGot:'✗ '+info.ltzGot):'✗ 沒收到'} ok={info.ltzGot===LT_ZH}/>}
+        {rows.map(r=><Row key={r[0]} k={r[0]} v={r[1]} ok={r[2]}/>)}
         <div className="pt-2 border-t border-line text-xs">
-          <div className="text-mute mb-1">本次進入網址</div>
-          <div className="break-all num bg-bg rounded p-2">{decodeURIComponent(info.entry)}</div>
-          {info.ref&&<div className="text-mute mt-1 break-all">來源頁：{info.ref}</div>}
+          <div className="text-mute mb-1">本次進入網址<span className="ml-1">（登入憑證已遮蔽）</span></div>
+          <div className="break-all num bg-bg rounded p-2">{maskUrl(info.entry)}</div>
+          {info.ref&&<div className="text-mute mt-1 break-all">來源頁：{maskUrl(info.ref)}</div>}
           {info.log&&info.log.length>1&&<details className="mt-2"><summary className="text-mute">導轉經過的網址（{info.log.length}）</summary>
-            {info.log.map((x,i)=><div key={i} className="break-all num mt-1 bg-bg rounded p-2"><span className="text-mute">{new Date(x.t).toLocaleTimeString('zh-TW',{hour12:false})}　</span>{(()=>{try{return decodeURIComponent(x.u)}catch(_e){return x.u}})()}</div>)}
+            {info.log.map((x,i)=><div key={i} className="break-all num mt-1 bg-bg rounded p-2"><span className="text-mute">{new Date(x.t).toLocaleTimeString('zh-TW',{hour12:false})}　</span>{maskUrl(x.u)}</div>)}
           </details>}
         </div>
+        <button className="w-full h-10 mt-3 rounded-lg border border-sage text-sageD" onClick={doCopy}>{copied?'✓ 已複製':'複製測試結果'}</button>
       </div>}
       {st==='error'&&<div className="text-sm text-warn mb-2 whitespace-pre-line">登入失敗：{err}</div>}
       <div className="flex gap-2">
-        <button className="flex-1 h-10 rounded-lg text-white disabled:opacity-50" style={{background:'#06c755'}} disabled={st==='working'} onClick={login}>{st==='working'?'連線中…':info&&info.loggedIn?'重新登入測試':'LINE 登入測試'}</button>
-        {info&&info.loggedIn&&<button className="px-4 h-10 rounded-lg border border-line" onClick={logout}>登出</button>}
+        <button className="flex-1 h-10 rounded-lg text-white disabled:opacity-50" style={{background:'#06c755'}} disabled={st==='working'} onClick={login}>
+          {st==='working'?'連線中…':info&&info.inClient?'LIFF 參數傳遞測試':info&&info.loggedIn?'重新登入測試':'LINE 登入測試'}</button>
+        {info&&info.loggedIn&&!info.inClient&&<button className="px-4 h-10 rounded-lg border border-line" onClick={logout}>登出</button>}
       </div>
-      {!standalone&&<a className="block text-center text-sm text-sageD underline mt-2" href={'https://liff.line.me/'+LIFF_ID+'?linetest=1&lt=app'+newNonce()+'&ltz='+encodeURIComponent(LT_ZH)}>改用 LINE App 開啟測試頁</a>}
+      {info&&info.inClient&&<div className="text-xs text-mute mt-1">LINE App 內本來就已登入，按上面會以 liff.line.me 帶參數重新開啟，測試 LIFF 網址的參數傳遞。</div>}
+      {!standalone&&<a className="block text-center text-sm text-sageD underline mt-2" href={liffTestUrl('app'+newNonce())} onClick={e=>{const u=new URL(e.currentTarget.href);ltSentSet(u.searchParams.get('lt'))}}>改用 LINE App 開啟測試頁</a>}
     </div>
   );
 }
@@ -1301,8 +1364,172 @@ function LineTestPage(){
   );
 }
 
+/* ========== 帳號開通申請（圖文選單 → liff.line.me/{LIFF_ID}?mode=join） ==========
+   點選身分（老師／櫃台／客人）→ 立刻用 liff.sendMessages 以申請人名義，把「QR Code＋帳號申請碼」卡片與申請碼純文字
+   傳進他與官方帳號的一對一聊天室；頁面上同時顯示同一張卡片，主管可直接掃申請人螢幕。
+   帳號申請碼＝LINE userId。Flex 的圖片必須是公開網址，QR 圖由 api.qrserver.com 產生（申請碼會經過該服務）。
+   前提：LIFF 勾選 chat_message.write；從官方帳號聊天室的圖文選單開啟；官方帳號開啟「聊天」。 */
+const JOIN_ROLES=[{id:'teacher',label:'老師'},{id:'counter',label:'櫃台'},{id:'guest',label:'客人'}];
+const joinQrUrl=code=>'https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=16&data='+encodeURIComponent(code);
+// 顯示用名稱。工作身分 roles：teacher／counter／guest；管理權限 admin：owner 老闆／manager 主管
+const ROLE_LABELS={owner:'老闆',teacher:'老師',counter:'櫃台',guest:'客人'};
+const ADMIN_LABELS={owner:'老闆',manager:'主管'};
+const joinRoleLabel=id=>ROLE_LABELS[id]||id;
+/* members.json 一人一筆：{uid,name,roles:[...],tc,admin}；相容舊寫法 {role:'teacher'|'owner'} */
+function memberInfo(m){
+  let roles=Array.isArray(m.roles)?m.roles.slice():(m.role&&m.role!=='owner'?[m.role]:[]);
+  const admin=m.admin||(m.role==='owner'?'owner':null);
+  const parts=roles.map(r=>ROLE_LABELS[r]||r);
+  if(m.tc&&roles.includes('teacher'))parts[roles.indexOf('teacher')]+=' '+m.tc;
+  if(admin)parts.push(ADMIN_LABELS[admin]||admin);
+  return {roles,admin,label:parts.join('・')};
+}
+function buildJoinFlex({name,role,uid}){
+  const G={sage:'#6f7d62',mute:'#8b8478',ink:'#3b3a36',brown:'#a0784f',bg:'#f4efe7'};
+  const T=(t,o)=>Object.assign({type:'text',text:String(t)||' ',wrap:true},o||{});
+  return {type:'flex',altText:'帳號開通申請（'+joinRoleLabel(role)+'）',contents:{type:'bubble',size:'mega',
+    hero:{type:'image',url:joinQrUrl(uid),size:'full',aspectRatio:'1:1',aspectMode:'fit',backgroundColor:'#ffffff'},
+    body:{type:'box',layout:'vertical',spacing:'md',contents:[
+      T('帳號開通申請',{size:'xl',weight:'bold',color:G.ink,align:'center'}),
+      T(joinRoleLabel(role)+'・'+name,{size:'sm',color:G.sage,align:'center'}),
+      {type:'separator',margin:'md'},
+      T('請聯繫店家工作人員或主管掃描 QR Code 完成帳號開通作業，或分享以下帳號申請碼',{size:'sm',color:G.mute,align:'center',margin:'md'}),
+      {type:'box',layout:'vertical',backgroundColor:G.bg,cornerRadius:'8px',paddingAll:'10px',contents:[
+        T(uid,{size:'sm',color:G.ink,align:'center'})]},
+      T('緩緩 SLOWVE BODY SPA',{size:'xxs',color:G.brown,align:'center',margin:'md'})
+    ]}}};
+}
+/* 本機記錄申請過（LINE 內建瀏覽器的 localStorage）；userId 不同（換了 LINE 帳號）就不算 */
+const JOIN_KEY=P+'join';
+function joinGet(uid){try{const x=JSON.parse(localStorage.getItem(JOIN_KEY)||'null');return x&&x.uid===uid?x:null}catch(_e){return null}}
+function joinSet(x){try{localStorage.setItem(JOIN_KEY,JSON.stringify(x))}catch(_e){}}
+/* 已開通名單：GitHub 上的公開檔 members.json，格式 {"members":[{"uid":"U…","role":"teacher","name":"江將"}]}；
+   沒有這個檔或讀取失敗 → 視為尚未審查 */
+async function fetchMembers(){
+  const r=await fetch('./members.json?t='+Date.now(),{cache:'no-store'});
+  if(!r.ok)throw new Error(r.status===404?'nofile':'http '+r.status);
+  const j=await r.json();return Array.isArray(j)?j:(j.members||[]);
+}
+function JoinCard({name,role,uid}){
+  return (
+    <div className="bg-white rounded-2xl border border-line overflow-hidden">
+      <img src={joinQrUrl(uid)} alt="QR Code" className="w-full aspect-square bg-white p-4"/>
+      <div className="p-4 text-center">
+        <div className="text-xl font-semibold">帳號開通申請</div>
+        <div className="text-sm text-sageD mt-1">{joinRoleLabel(role)}・{name}</div>
+        <div className="border-t border-line my-3"></div>
+        <div className="text-sm text-mute">請聯繫店家工作人員或主管掃描 QR Code 完成帳號開通作業，或分享以下帳號申請碼</div>
+        <div className="mt-2 rounded-lg bg-bg px-3 py-2 text-sm num break-all">{uid}</div>
+        <div className="text-[11px] tracking-widest text-brown mt-3">緩緩 SLOWVE BODY SPA</div>
+      </div>
+    </div>
+  );
+}
+function JoinPage(){
+  const [st,setSt]=useState('loading');   // loading / pick / sending / done / error
+  const [err,setErr]=useState('');
+  const [prof,setProf]=useState(null);
+  const [inClient,setInClient]=useState(false);
+  const [role,setRole]=useState(null);
+  const [sent,setSent]=useState(false);
+  const [copied,setCopied]=useState(false);
+  const [rec,setRec]=useState(null);           // 本機申請紀錄
+  const [chk,setChk]=useState(null);           // {state:'pending'|'approved'|'unknown', member, at, msg}
+  const recheck=async uid=>{
+    setChk(c=>Object.assign({},c||{},{busy:true}));
+    try{
+      const list=await fetchMembers();const m=list.find(x=>x&&x.uid===uid);
+      setChk(m?{state:'approved',member:m,at:Date.now()}:{state:'pending',at:Date.now()});
+    }catch(e){setChk({state:'pending',at:Date.now(),msg:String(e.message)==='nofile'?'':'（檢查失敗，請稍後再試）'})}
+  };
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const L=await liffReady();
+        if(new URLSearchParams(location.search).has('liff.state'))return;   // LIFF 中繼頁，等換頁
+        if(!L.isLoggedIn()){L.login({redirectUri:location.href});return}
+        const p=await L.getProfile();setProf(p);setInClient(L.isInClient());
+        const r=joinGet(p.userId);
+        if(r){setRec(r);setRole(r.role);setSt('status');recheck(p.userId)}else setSt('pick');
+      }catch(e){setSt('error');setErr(String(e&&e.message||e))}
+    })();
+  },[]);
+  const pick=async r=>{
+    setRole(r);setErr('');setSent(false);
+    const x={uid:prof.userId,role:r,name:prof.displayName,at:Date.now()};joinSet(x);setRec(x);
+    if(!inClient){setSt('done');return}             // 不在聊天室：只顯示卡片給主管掃
+    setSt('sending');
+    try{
+      await window.liff.sendMessages([buildJoinFlex({name:prof.displayName,role:r,uid:prof.userId}),{type:'text',text:prof.userId}]);
+      setSent(true);
+    }catch(e){
+      const m=String(e&&e.message||e);
+      setErr(/scope|permission|403/i.test(m)?'無法傳送到聊天室：LIFF 尚未開啟傳送訊息權限（chat_message.write）。\n仍可直接讓主管掃描下方 QR Code。':'無法傳送到聊天室：'+m+'\n仍可直接讓主管掃描下方 QR Code。');
+    }
+    setSt('done');
+  };
+  const copyUid=()=>{
+    const t=prof.userId;const ok=()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)};
+    const fb=()=>{try{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();ok()}catch(_e){}};
+    try{navigator.clipboard.writeText(t).then(ok).catch(fb)}catch(_e){fb()}
+  };
+  const close=()=>{try{window.liff.closeWindow()}catch(_e){}};
+  return (
+    <div className="min-h-screen max-w-md mx-auto p-6">
+      <div className="serif text-3xl tracking-widest text-sageD text-center">緩緩</div>
+      <div className="text-center text-xs tracking-[0.3em] text-brown mb-5">SLOWVE BODY SPA</div>
+      {st==='loading'&&<div className="text-center text-mute">載入中…</div>}
+      {st==='error'&&<Card className="p-4 text-warn text-sm whitespace-pre-line">{err}</Card>}
+      {prof&&st==='pick'&&<>
+        <div className="text-center text-lg mb-1">帳號開通申請</div>
+        <div className="text-center text-sm text-mute mb-5">{prof.displayName}，請選擇你的身分</div>
+        <div className="space-y-3">
+          {JOIN_ROLES.map(r=><button key={r.id} className="w-full h-16 rounded-2xl border border-sage bg-card text-xl text-sageD active:bg-sageL" onClick={()=>pick(r.id)}>{r.label}</button>)}
+        </div>
+        {!inClient&&<div className="text-xs text-mute mt-4">目前不在「緩緩」官方帳號聊天室內，選擇身分後只會在畫面顯示申請卡，不會傳到聊天室。</div>}
+      </>}
+      {prof&&st==='status'&&rec&&<>
+        {(!chk||chk.state!=='approved')&&<div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown">
+          <div className="font-semibold">你已申請開通帳號，目前尚未審查</div>
+          <div className="text-sm mt-1">請聯繫店家工作人員或主管掃描 QR Code 完成帳號開通作業，或分享以下帳號申請碼</div>
+          <div className="text-xs text-mute mt-1 num">申請時間 {(()=>{const d=new Date(rec.at);return ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes())})()}{chk&&chk.at&&!chk.busy?'・最後檢查 '+pad(new Date(chk.at).getHours())+':'+pad(new Date(chk.at).getMinutes())+':'+pad(new Date(chk.at).getSeconds()):''}{chk&&chk.msg?' '+chk.msg:''}</div>
+        </div>}
+        {chk&&chk.state==='approved'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD">
+          <div className="font-semibold">✓ 帳號已開通（{memberInfo(chk.member).label||joinRoleLabel(rec.role)}）</div>
+          <div className="text-sm mt-1">之後可使用緩緩的員工功能（陸續開放）。</div>
+        </div>}
+        <button className="w-full h-12 mb-3 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={chk&&chk.busy} onClick={()=>recheck(prof.userId)}>{chk&&chk.busy?'檢查中…':'重新檢查'}</button>
+        <JoinCard name={prof.displayName} role={rec.role} uid={prof.userId}/>
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          <button className="h-11 rounded-xl border border-sage text-sageD" onClick={copyUid}>{copied?'✓ 已複製':'複製申請碼'}</button>
+          <button className="h-11 rounded-xl border border-line bg-card" onClick={()=>{setSt('pick');setErr('')}}>更改身分重新申請</button>
+        </div>
+        {inClient&&<button className="w-full h-11 mt-2 rounded-xl border border-line bg-card" onClick={close}>回到聊天室</button>}
+      </>}
+      {st==='sending'&&<div className="text-center text-mute">傳送中…</div>}
+      {prof&&st==='done'&&role&&<>
+        {sent&&<div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm text-center">✓ 已傳送到聊天室</div>}
+        {err&&<div className="mb-3 px-3 py-2 rounded-xl bg-warnL text-warn text-sm whitespace-pre-line">{err}</div>}
+        <JoinCard name={prof.displayName} role={role} uid={prof.userId}/>
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          <button className="h-11 rounded-xl border border-sage text-sageD" onClick={copyUid}>{copied?'✓ 已複製':'複製申請碼'}</button>
+          <button className="h-11 rounded-xl border border-line bg-card" onClick={()=>{setSt('pick');setRole(null);setErr('')}}>重新選擇身分</button>
+        </div>
+        {inClient&&<button className="w-full h-11 mt-2 rounded-xl bg-sage text-white" onClick={close}>回到聊天室</button>}
+      </>}
+    </div>
+  );
+}
+
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-020','09-25','members.json 改為一人一筆：roles（工作身分，可多個：老師／櫃台／客人）＋ tc（老師編號）＋ admin（管理權限：owner 老闆／manager 主管）；相容舊的 role 寫法'],
+  ['v0.1-019','09-25','members.json 的 role 支援 owner（老闆）：開通狀態顯示「老闆」；老闆不在申請按鈕中，只能由名單指定'],
+  ['v0.1-018','09-25','開通申請：說明文字改為「請聯繫店家工作人員或主管掃描 QR Code 完成帳號開通作業…」；本機記錄已申請，再次開啟顯示開通狀態頁（尚未審查／已開通）與「重新檢查」（讀 GitHub 上的 members.json 已開通名單）'],
+  ['v0.1-017','09-25','開通申請改版：身分改為老師／櫃台／客人，點選即送出；卡片上方為 QR Code，標題「帳號開通申請」，下方為帳號申請碼（LINE userId）；頁面同步顯示卡片可直接掃描'],
+  ['v0.1-016','09-25','新增「開通帳號申請」頁（liff.line.me/…?mode=join）：選身分（老師／櫃台／老闆）、老師編號、稱呼，送出後以申請人名義把申請卡片＋userId 純文字傳進官方帳號聊天室，老闆在官方帳號 App 複製 userId'],
+  ['v0.1-015','09-25','LINE 登入測試結果新增「複製 LINE userId」按鈕（複製完整 userId，畫面仍只顯示遮蔽版）'],
+  ['v0.1-014','09-25','LINE 登入測試：修正開啟來源誤判（以測試第一個網址判斷）、送出碼與網址紀錄改存本機儲存（iOS 新分頁也能比對）、LINE App 內改為「LIFF 參數傳遞測試」、遮蔽網址中的登入憑證、新增「複製測試結果」'],
   ['v0.1-013','09-24','LINE 登入測試：加上網址參數傳遞檢查（隨機碼＋中文）、開啟來源判斷（LIFF 網址／LINE App／GitHub 直接開）、進入網址與導轉紀錄；版本紀錄預設只顯示最新一筆'],
   ['v0.1-012','09-24','設定頁新增 LINE 登入測試（本瀏覽器／LINE App 兩種開法）、設定頁最下方新增版本紀錄'],
   ['v0.1-011','09-24','一筆流水可登記多位同行客人，每位各自選方案、老師、老點、額外品項、打槍老師；跳單／時間／備註整筆共用'],
@@ -1505,7 +1732,7 @@ function App(){
   const [S,setS]=useState(()=>{const s=loadSettings();ls.set('settings',s);return s});
   const [date,setDate]=useState(()=>bizToday(loadSettings().cutoff));
   const [tab,setTab]=useState(()=>{   // LINE 登入測試導回時，直接回到設定頁顯示結果
-    try{if(sessionStorage.getItem(LINE_TEST_KEY)==='1'||/[?&]code=/.test(location.search))return 'set'}catch(_e){}
+    try{if(ltSentGet()||/[?&](code|lt)=/.test(location.search))return 'set'}catch(_e){}
     return 'day';
   });
   const [rev,setRev]=useState(0);
@@ -1607,9 +1834,10 @@ function App(){
 }
 
 const __q=new URLSearchParams(location.search);const __ls=__q.get('liff.state')||'';
-const IS_LINE_TEST=__q.has('linetest')||__ls.indexOf('linetest')>=0;
-const IS_SHARE_RELAY=!IS_LINE_TEST&&(__q.has('share')||__ls.indexOf('share')>=0);
-ReactDOM.createRoot(document.getElementById('root')).render(IS_LINE_TEST?<LineTestPage/>:IS_SHARE_RELAY?<ShareRelay/>:<App/>);
+const IS_JOIN=__q.get('mode')==='join'||__ls.indexOf('mode=join')>=0;
+const IS_LINE_TEST=!IS_JOIN&&(__q.has('linetest')||__ls.indexOf('linetest')>=0);
+const IS_SHARE_RELAY=!IS_JOIN&&!IS_LINE_TEST&&(__q.has('share')||__ls.indexOf('share')>=0);
+ReactDOM.createRoot(document.getElementById('root')).render(IS_JOIN?<JoinPage/>:IS_LINE_TEST?<LineTestPage/>:IS_SHARE_RELAY?<ShareRelay/>:<App/>);
 </script>
 </body>
 </html>
