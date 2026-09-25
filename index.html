@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-021</title>
+<title>緩緩門店 v0.1-022</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-021';
+const VER='v0.1-022';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1529,8 +1529,244 @@ function JoinPage(){
   );
 }
 
+/* ========== LINE 入口檢查（在 LINE App 內開啟時） ==========
+   LINE 登入 → 讀 members.json → 未開通轉申請頁 → 首次設定編號／姓名（本機）→ 歡迎畫面選身分 → 各身分畫面
+   外部瀏覽器（Safari／主畫面）直接開 GitHub 網址時不檢查，維持老闆離線使用門店系統。 */
+const ME_KEY=P+'me';           // 本機個人設定 {uid, code, name, at}
+const VIEW_KEY=P+'last-view';  // 上次選的身分
+function meGet(uid){try{const x=JSON.parse(localStorage.getItem(ME_KEY)||'null');return x&&x.uid===uid?x:null}catch(_e){return null}}
+function meSet(x){try{localStorage.setItem(ME_KEY,JSON.stringify(x))}catch(_e){}}
+const VIEWS={
+  owner:{label:'老闆',desc:'門店系統：訂單、日結、月報、薪資明細',icon:'◆'},
+  teacher:{label:'老師',desc:'我的服務、本期費用、打卡',icon:'✿'},
+  counter:{label:'櫃台',desc:'訂單登打、老師狀態、交班',icon:'☰'},
+  guest:{label:'客人',desc:'價目表、預約、消費紀錄',icon:'☺'},
+};
+function viewsOf(m){
+  const info=memberInfo(m);const v=[];
+  if(info.admin==='owner')v.push('owner');
+  ['teacher','counter','guest'].forEach(r=>{if(info.roles.includes(r))v.push(r)});
+  return v;
+}
+function GateShell({children}){
+  return (
+    <div className="min-h-screen max-w-md mx-auto p-6">
+      <div className="serif text-3xl tracking-widest text-sageD text-center mt-4">緩緩</div>
+      <div className="text-center text-xs tracking-[0.3em] text-brown mb-6">SLOWVE BODY SPA</div>
+      {children}
+    </div>
+  );
+}
+function ProfileForm({m,prof,me,onSave,onCancel}){
+  const info=memberInfo(m);
+  const [code,setCode]=useState(me?me.code:(m.tc||''));
+  const [name,setName]=useState(me?me.name:(m.name||prof.displayName||''));
+  const [err,setErr]=useState('');
+  const save=()=>{
+    if(!String(name).trim()){setErr('請輸入姓名');return}
+    if(info.roles.includes('teacher')&&!String(code).trim()){setErr('請輸入編號');return}
+    onSave({uid:prof.userId,code:String(code).trim(),name:String(name).trim(),at:Date.now()});
+  };
+  return (
+    <Card className="p-5">
+      <div className="text-lg mb-1">{me?'修改個人資料':'帳號已開通'}</div>
+      <div className="text-sm text-mute mb-4">{me?'':'第一次使用，請設定你的編號與姓名。'}身分：{info.label}</div>
+      <label className="block mb-3"><div className="text-xs text-mute mb-1">編號{info.roles.includes('teacher')?'（必填）':'（選填）'}</div>
+        <input className="w-full h-12 px-3 rounded-xl border border-line bg-card text-lg num" inputMode="numeric" placeholder="例：122" value={code} onChange={e=>{setCode(e.target.value);setErr('')}}/></label>
+      <label className="block mb-3"><div className="text-xs text-mute mb-1">姓名（必填）</div>
+        <input className="w-full h-12 px-3 rounded-xl border border-line bg-card text-lg" value={name} onChange={e=>{setName(e.target.value);setErr('')}}/></label>
+      {err&&<div className="text-sm text-warn mb-2">{err}</div>}
+      <button className="w-full h-12 rounded-xl bg-sage text-white text-lg" onClick={save}>存檔</button>
+      {onCancel&&<button className="w-full h-11 mt-2 rounded-xl border border-line bg-card" onClick={onCancel}>取消</button>}
+      <div className="text-xs text-mute mt-3">編號與姓名目前只存在這支手機，之後會同步給店家。</div>
+    </Card>
+  );
+}
+function Welcome({me,views,onPick,onEdit}){
+  let last=null;try{last=localStorage.getItem(VIEW_KEY)}catch(_e){}
+  return (
+    <>
+      <div className="text-center mb-6">
+        <div className="text-2xl">歡迎 <span className="text-sageD font-semibold">{me.name}</span></div>
+        <div className="text-mute mt-1">{me.code?<span className="num">{me.code}・</span>:''}進入緩緩門店系統</div>
+      </div>
+      {views.length>1&&<div className="text-sm text-mute mb-2 text-center">請選擇要檢視的身分</div>}
+      <div className="space-y-3">
+        {views.map(v=>(
+          <button key={v} className={'w-full text-left rounded-2xl border px-4 py-4 flex items-center gap-4 active:bg-sageL '+(v===last&&views.length>1?'border-sage bg-sageL/40':'border-line bg-card')} onClick={()=>onPick(v)}>
+            <span className="w-12 h-12 rounded-full bg-sageL text-sageD text-xl flex items-center justify-center">{VIEWS[v].icon}</span>
+            <span className="flex-1"><span className="block text-lg">{views.length>1?VIEWS[v].label:'進入系統（'+VIEWS[v].label+'）'}</span><span className="block text-xs text-mute">{VIEWS[v].desc}</span></span>
+            <span className="text-mute text-xl">›</span>
+          </button>))}
+      </div>
+      <button className="w-full h-10 mt-6 text-sm text-mute underline" onClick={onEdit}>修改編號／姓名</button>
+    </>
+  );
+}
+function RoleBar({view,me,canSwitch,onSwitch}){
+  return (
+    <div className="bg-sageD text-white text-sm">
+      <div className="max-w-md mx-auto px-4 h-10 flex items-center justify-between">
+        <span>{VIEWS[view].label}檢視・{me.name}{me.code?<span className="num opacity-80">（{me.code}）</span>:''}</span>
+        {canSwitch&&<button className="h-7 px-3 rounded-full bg-white/15" onClick={onSwitch}>切換身分</button>}
+      </div>
+    </div>
+  );
+}
+
+/* ---- 各身分預設畫面（先放欄位，尚未運作） ---- */
+const Soon=()=><span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-brownL text-brown align-middle">即將開放</span>;
+function Sec({title,soon,children,right}){
+  return (<div className="mt-5">
+    <div className="flex items-center justify-between mb-2 px-1"><div className="text-sm text-mute">{title}{soon&&<Soon/>}</div>{right}</div>
+    <Card className="p-4">{children}</Card>
+  </div>);
+}
+const KV=({k,v})=><div><div className="text-xs text-mute">{k}</div><div className="text-lg num">{v}</div></div>;
+const Ph=({children})=><div className="text-sm text-mute text-center py-3">{children}</div>;
+const DisBtn=({children,cls})=><button disabled className={'h-11 rounded-xl border border-line bg-bg text-mute '+(cls||'')}>{children}</button>;
+
+function TeacherHome({me}){
+  const [per,setPer]=useState(()=>new Date().getDate()<=15?'h1':'h2');
+  const ym=ymd(new Date()).slice(0,7);
+  return (
+    <div className="max-w-md mx-auto px-4 pb-16">
+      <Sec title="今日服務" soon>
+        <div className="grid grid-cols-4 gap-2"><KV k="單數" v="—"/><KV k="支數" v="—"/><KV k="老點" v="—"/><KV k="費用" v="—"/></div>
+      </Sec>
+      <Sec title="本期累計" soon right={<div className="flex rounded-lg border border-line overflow-hidden text-xs">{['h1','h2'].map(h=><button key={h} className={'px-3 h-7 '+(per===h?'bg-sage text-white':'bg-card')} onClick={()=>setPer(h)}>{PERIOD_LABEL[h]}</button>)}</div>}>
+        <div className="text-xs text-mute mb-2 num">{periodText(ym,per)}・發薪日 {fmtPayDay(payDay(ym,per))}</div>
+        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="支數" v="—"/><KV k="老點" v="—"/><KV k="費用合計" v="—"/></div>
+        <div className="flex justify-between pt-2 border-t border-line"><span className="text-mute">預估應領</span><span className="serif text-2xl text-brown">—</span></div>
+      </Sec>
+      <Sec title="我的服務明細" soon>
+        <div className="grid grid-cols-[4rem_3rem_1fr_2rem_3.5rem] gap-1 text-xs text-mute pb-1 border-b border-line"><span>日期</span><span>單號</span><span>項目</span><span>支</span><span className="text-right">費用</span></div>
+        <Ph>店家登打訂單後，這裡會列出你服務的每一筆</Ph>
+      </Sec>
+      <Sec title="打卡" soon>
+        <div className="text-sm text-mute mb-3">今日：尚未打卡</div>
+        <div className="grid grid-cols-2 gap-2"><DisBtn>上班打卡</DisBtn><DisBtn>下班打卡</DisBtn></div>
+      </Sec>
+      <Sec title="其他" soon>
+        <div className="grid grid-cols-2 gap-2"><DisBtn>請假申請</DisBtn><DisBtn>薪資條</DisBtn><DisBtn>店家公告</DisBtn><DisBtn>我的班表</DisBtn></div>
+      </Sec>
+    </div>
+  );
+}
+function CounterHome({me}){
+  return (
+    <div className="max-w-md mx-auto px-4 pb-16">
+      <Sec title={'今日 '+fmtDate(ymd(new Date()))} soon>
+        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="單數" v="—"/><KV k="客人" v="—"/><KV k="營業額" v="—"/></div>
+        <DisBtn cls="w-full">＋ 登打訂單</DisBtn>
+      </Sec>
+      <Sec title="老師狀態" soon>
+        <div className="grid grid-cols-[3rem_1fr_4rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>編號</span><span>狀態</span><span className="text-right">今日支數</span></div>
+        {['在店・可接客','服務中（預計 15:30 結束）','休息中'].map((t,i)=><div key={i} className="grid grid-cols-[3rem_1fr_4rem] gap-2 py-2 border-b border-line text-sm text-mute"><span>—</span><span>{t}</span><span className="text-right">—</span></div>)}
+        <div className="text-xs text-mute mt-2">老師打卡後會出現在這裡，可排「輪班順序」</div>
+      </Sec>
+      <Sec title="預約／候位" soon>
+        <div className="grid grid-cols-[3.5rem_1fr_4rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>時間</span><span>客人・項目</span><span className="text-right">指定老師</span></div>
+        <Ph>尚無預約</Ph>
+      </Sec>
+      <Sec title="交班／日結" soon>
+        <div className="grid grid-cols-2 gap-2 mb-3"><KV k="應有現金" v="—"/><KV k="支出" v="—"/></div>
+        <div className="grid grid-cols-2 gap-2"><DisBtn>登記支出</DisBtn><DisBtn>交班</DisBtn></div>
+      </Sec>
+      <Sec title="打卡" soon>
+        <div className="grid grid-cols-2 gap-2"><DisBtn>上班打卡</DisBtn><DisBtn>下班打卡</DisBtn></div>
+      </Sec>
+    </div>
+  );
+}
+function GuestHome({me}){
+  const S=loadSettings();
+  return (
+    <div className="max-w-md mx-auto px-4 pb-16">
+      <Sec title="價目表">
+        <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-2 text-sm num">
+          <div></div>{MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}
+          {SVCS.map(s=>(<React.Fragment key={s.id}><div>{s.short}</div>{MINS.map((m,i)=><div key={m} className="text-center">{(S.prices[s.id]||[])[i]}</div>)}</React.Fragment>))}
+        </div>
+        <div className="mt-3 pt-3 border-t border-line text-sm flex justify-between"><span className="text-brown">平日限定 {S.promo.min} 分{SVC_SHORT[S.promo.svc]}</span><span className="num text-brown">{money(S.promo.price)}</span></div>
+        <div className="text-xs text-mute mt-1">平日 09:00～14:00、21:00～02:00</div>
+        <div className="mt-2 text-sm">{S.addons.map(a=><span key={a.id} className="inline-block mr-3">{a.name} <span className="num">{a.id==='eoil'?'+':''}{a.price}</span></span>)}</div>
+      </Sec>
+      <Sec title="線上預約" soon>
+        <div className="grid grid-cols-2 gap-2 text-sm text-mute mb-3">
+          <div className="h-11 rounded-xl border border-line px-3 flex items-center">日期</div>
+          <div className="h-11 rounded-xl border border-line px-3 flex items-center">時間</div>
+          <div className="h-11 rounded-xl border border-line px-3 flex items-center">人數</div>
+          <div className="h-11 rounded-xl border border-line px-3 flex items-center">項目</div>
+          <div className="h-11 rounded-xl border border-line px-3 flex items-center col-span-2">指定老師（可不選）</div>
+        </div>
+        <DisBtn cls="w-full">送出預約</DisBtn>
+      </Sec>
+      <Sec title="我的消費紀錄" soon><Ph>尚無紀錄</Ph></Sec>
+      <Sec title="會員點數" soon><div className="grid grid-cols-2 gap-2"><KV k="目前點數" v="—"/><KV k="儲值餘額" v="—"/></div></Sec>
+      <Sec title="店家資訊">
+        <div className="text-sm space-y-1">
+          <div>營業時間　09:00～02:00</div>
+          <div>電話　<a className="underline text-sageD" href="tel:0282571199">02-8257-1199</a></div>
+          <div>地址　新北市板橋區雙十路三段 10 巷 1 號 1 樓</div>
+        </div>
+      </Sec>
+    </div>
+  );
+}
+
+function LineGate(){
+  const [st,setSt]=useState('loading');   // loading / error / notmember / profile / welcome / view
+  const [err,setErr]=useState('');
+  const [prof,setProf]=useState(null);
+  const [mem,setMem]=useState(null);
+  const [me,setMe]=useState(null);
+  const [view,setView]=useState(null);
+  const run=async()=>{
+    setSt('loading');setErr('');
+    try{
+      const L=await liffReady();
+      if(new URLSearchParams(location.search).has('liff.state'))return;   // LIFF 中繼頁
+      if(!L.isLoggedIn()){L.login({redirectUri:location.href});return}
+      const p=await L.getProfile();setProf(p);
+      let list=[];
+      try{list=await fetchMembers()}catch(e){if(String(e.message)!=='nofile')throw new Error('讀取開通名單失敗，請檢查網路後重試')}
+      const m=list.find(x=>x&&x.uid===p.userId);
+      if(!m){setSt('notmember');return}
+      setMem(m);
+      const mine=meGet(p.userId);setMe(mine);
+      setSt(mine?'welcome':'profile');
+    }catch(e){setErr(String(e&&e.message||e));setSt('error')}
+  };
+  useEffect(()=>{run()},[]);
+  const views=mem?viewsOf(mem):[];
+  const pick=v=>{try{localStorage.setItem(VIEW_KEY,v)}catch(_e){}setView(v);setSt('view')};
+  if(st==='view'&&view){
+    const bar=<RoleBar view={view} me={me} canSwitch={views.length>1} onSwitch={()=>{setView(null);setSt('welcome')}}/>;
+    if(view==='owner')return <>{bar}<App/></>;
+    const Page={teacher:TeacherHome,counter:CounterHome,guest:GuestHome}[view];
+    return (<div className="min-h-screen">{bar}
+      <div className="max-w-md mx-auto px-4 pt-4 flex items-baseline gap-2"><span className="serif text-2xl tracking-widest text-sageD">緩緩</span><span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span><span className="text-sm text-mute ml-1">{VIEWS[view].label}</span></div>
+      <Page me={me}/></div>);
+  }
+  return (
+    <GateShell>
+      {st==='loading'&&<div className="text-center text-mute">確認帳號中…</div>}
+      {st==='error'&&<Card className="p-4 text-center"><div className="text-warn text-sm whitespace-pre-line mb-3">{err}</div><button className="h-11 px-6 rounded-xl bg-sage text-white" onClick={run}>重試</button></Card>}
+      {st==='notmember'&&<Card className="p-5 text-center">
+        <div className="text-lg mb-1">{prof?prof.displayName+'，':''}你的帳號尚未開通</div>
+        <div className="text-sm text-mute mb-4">請先申請開通帳號，並聯繫店家工作人員或主管完成開通。</div>
+        <button className="w-full h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>location.replace('https://liff.line.me/'+LIFF_ID+'?mode=join')}>申請開通帳號</button>
+      </Card>}
+      {st==='profile'&&mem&&<ProfileForm m={mem} prof={prof} me={me} onSave={x=>{meSet(x);setMe(x);setSt('welcome')}} onCancel={me?()=>setSt('welcome'):null}/>}
+      {st==='welcome'&&me&&<Welcome me={me} views={views} onPick={pick} onEdit={()=>setSt('profile')}/>}
+    </GateShell>
+  );
+}
+
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-022','09-25','LINE 內開啟時新增入口檢查：LINE 登入→開通名單→首次設定編號姓名→「歡迎○○進入緩緩門店系統」→選身分（老闆／老師／櫃台／客人）；新增老師、櫃台、客人預設畫面（欄位先放、尚未運作）'],
   ['v0.1-021','09-25','開通申請頁：已開通的帳號（開啟時檢查或按重新檢查）自動轉到不帶參數的 LIFF 網址進入系統；沒申請過但已在名單內的人也會直接轉入'],
   ['v0.1-020','09-25','members.json 改為一人一筆：roles（工作身分，可多個：老師／櫃台／客人）＋ tc（老師編號）＋ admin（管理權限：owner 老闆／manager 主管）；相容舊的 role 寫法'],
   ['v0.1-019','09-25','members.json 的 role 支援 owner（老闆）：開通狀態顯示「老闆」；老闆不在申請按鈕中，只能由名單指定'],
@@ -1846,7 +2082,9 @@ const __q=new URLSearchParams(location.search);const __ls=__q.get('liff.state')|
 const IS_JOIN=__q.get('mode')==='join'||__ls.indexOf('mode=join')>=0;
 const IS_LINE_TEST=!IS_JOIN&&(__q.has('linetest')||__ls.indexOf('linetest')>=0);
 const IS_SHARE_RELAY=!IS_JOIN&&!IS_LINE_TEST&&(__q.has('share')||__ls.indexOf('share')>=0);
-ReactDOM.createRoot(document.getElementById('root')).render(IS_JOIN?<JoinPage/>:IS_LINE_TEST?<LineTestPage/>:IS_SHARE_RELAY?<ShareRelay/>:<App/>);
+// 在 LINE App 內開啟 → 入口檢查（登入＋開通名單＋身分）；外部瀏覽器直接進門店系統（老闆離線使用）。?gate=1 可在瀏覽器強制測試
+const IN_LINE=/\bLine\//i.test(navigator.userAgent)||__q.get('gate')==='1';
+ReactDOM.createRoot(document.getElementById('root')).render(IS_JOIN?<JoinPage/>:IS_LINE_TEST?<LineTestPage/>:IS_SHARE_RELAY?<ShareRelay/>:IN_LINE?<LineGate/>:<App/>);
 </script>
 </body>
 </html>
