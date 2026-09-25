@@ -1,0 +1,75 @@
+{
+ "type": "bubble",
+ "size": "mega",
+ "hero": {
+  "type": "image",
+  "url": "https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=16&data=Ufc92e41f1f51906f9388a2cf3105c5cf",
+  "size": "full",
+  "aspectRatio": "1:1",
+  "aspectMode": "fit",
+  "backgroundColor": "#ffffff"
+ },
+ "body": {
+  "type": "box",
+  "layout": "vertical",
+  "spacing": "md",
+  "contents": [
+   {
+    "type": "text",
+    "text": "帳號開通申請",
+    "wrap": true,
+    "size": "xl",
+    "weight": "bold",
+    "color": "#3b3a36",
+    "align": "center"
+   },
+   {
+    "type": "text",
+    "text": "老師・江將",
+    "wrap": true,
+    "size": "sm",
+    "color": "#6f7d62",
+    "align": "center"
+   },
+   {
+    "type": "separator",
+    "margin": "md"
+   },
+   {
+    "type": "text",
+    "text": "請聯繫店家工作人員或主管掃描 QR Code 完成帳號開通作業，或分享以下帳號申請碼",
+    "wrap": true,
+    "size": "sm",
+    "color": "#8b8478",
+    "align": "center",
+    "margin": "md"
+   },
+   {
+    "type": "box",
+    "layout": "vertical",
+    "backgroundColor": "#f4efe7",
+    "cornerRadius": "8px",
+    "paddingAll": "10px",
+    "contents": [
+     {
+      "type": "text",
+      "text": "Ufc92e41f1f51906f9388a2cf3105c5cf",
+      "wrap": true,
+      "size": "sm",
+      "color": "#3b3a36",
+      "align": "center"
+     }
+    ]
+   },
+   {
+    "type": "text",
+    "text": "緩緩 SLOWVE BODY SPA",
+    "wrap": true,
+    "size": "xxs",
+    "color": "#a0784f",
+    "align": "center",
+    "margin": "md"
+   }
+  ]
+ }
+}
