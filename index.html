@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-023</title>
+<title>緩緩門店 v0.1-024</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-023';
+const VER='v0.1-024';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1705,58 +1705,126 @@ function TeacherHome({me}){
   );
 }
 
+/* 櫃台範例情境（範例時間 14:50）：
+   5 位老師在班；3 個預約＋1 位現場候位 → 4 位老師已被「壓牌」（保留給某位客人），只剩 1 位未壓牌（休息中）。
+   訂單分「服務中（未結帳）」與「已結帳」；營業額、應有現金只算已結帳。 */
+const DEMO_NOW='14:50';
 const DEMO_ORDERS=[
-  {t:'15:10',sn:'0421',g:[{svc:'oil',min:90,tc:'77',ld:1,ad:['guasha']}]},
-  {t:'14:25',sn:'0419',g:[{svc:'foot',min:60,tc:'58'},{svc:'foot',min:60,tc:'36'}]},
-  {t:'13:40',sn:'0417',g:[{svc:'foot',min:60,tc:'77'}]},
-  {t:'12:30',sn:'0413',g:[{svc:'dry',min:120,tc:'122',ld:1}]},
-  {t:'11:05',sn:'0409',g:[{svc:'dry',min:90,tc:'77',promo:1,ld:1}]},
+  {t:'14:25',sn:'0424',st:'serving',g:[{svc:'foot',min:60,tc:'58'}]},
+  {t:'13:30',sn:'0423',st:'serving',g:[{svc:'dry',min:120,tc:'122',ld:1}]},
+  {t:'13:00',sn:'0419',st:'paid',pay:'14:05',g:[{svc:'foot',min:60,tc:'58'},{svc:'foot',min:60,tc:'36'}]},
+  {t:'12:10',sn:'0417',st:'paid',pay:'13:45',g:[{svc:'oil',min:90,tc:'77',ld:1,ad:['guasha']}]},
+  {t:'11:20',sn:'0413',st:'paid',pay:'12:25',g:[{svc:'foot',min:60,tc:'77'}]},
+  {t:'10:05',sn:'0409',st:'paid',pay:'11:40',g:[{svc:'dry',min:90,tc:'77',promo:1,ld:1}]},
+  {t:'09:15',sn:'0402',st:'paid',pay:'10:20',g:[{svc:'dry',min:60,tc:'122'}]},
 ];
+// 預約／候位：hold＝壓到哪位老師的牌
+const DEMO_BOOK=[
+  {id:'b1',kind:'book',t:'15:00',who:'陳先生',item:'油壓 90',hold:'77',how:'指定',st:'已確認'},
+  {id:'b2',kind:'book',t:'15:30',who:'林小姐',item:'腳底 60',hold:'36',how:'不指定・依輪班排入',st:'已確認'},
+  {id:'b3',kind:'book',t:'19:00',who:'王小姐',item:'指壓 120',hold:'122',how:'指定',st:'待確認'},
+  {id:'w1',kind:'walk',t:'14:40',who:'張先生',item:'指壓 60',hold:'58',how:'等最快下鐘',st:'約 15:25 可開始'},
+];
+// 老師狀態：avail 可接客（rot＝輪班順位）／serving 服務中（end＝預計下鐘）／rest 休息中
+const DEMO_TSTAT=[
+  {tc:'122',st:'serving',sn:'0423',note:'指壓 120',start:'13:30',end:'15:30'},
+  {tc:'77',st:'avail',rot:1,since:'13:45'},
+  {tc:'58',st:'serving',sn:'0424',note:'腳底 60',start:'14:25',end:'15:25'},
+  {tc:'36',st:'avail',rot:2,since:'14:05'},
+  {tc:'12',st:'rest',note:'15:40 回來'},
+];
+const TST={avail:{label:'可接客',tone:'sage'},serving:{label:'服務中',tone:'brown'},rest:{label:'休息中',tone:''}};
+const T_SORTS=[{id:'tc',label:'按編號'},{id:'rot',label:'輪班優先'},{id:'serv',label:'服務中優先'}];
+function sortTeachers(list,by){
+  const a=list.slice();
+  const num=t=>Number(t.tc)||0;
+  const rank={rot:{avail:0,serving:1,rest:2},serv:{serving:0,avail:1,rest:2}}[by];
+  if(!rank)return a.sort((x,y)=>num(x)-num(y));
+  return a.sort((x,y)=>{
+    const r=rank[x.st]-rank[y.st];if(r)return r;
+    if(x.st==='avail')return x.rot-y.rot;            // 可接客：依輪班順位
+    if(x.st==='serving')return x.end<y.end?-1:x.end>y.end?1:0;   // 服務中：先下鐘的在前
+    return num(x)-num(y);
+  });
+}
 function CounterHome({me}){
   const S=loadSettings();
+  const [tsort,setTsort]=useState('rot');
+  const [of,setOf]=useState('all');
   const orders=DEMO_ORDERS.map(o=>Object.assign({},o,{g:o.g.map(x=>demoCalc(S,x))}));
+  const oAmt=o=>o.g.reduce((a,x)=>a+x.amt,0);
+  const paid=orders.filter(o=>o.st==='paid'),serving=orders.filter(o=>o.st==='serving');
   const guests=orders.reduce((s,o)=>s+o.g.length,0);
-  const rev=orders.reduce((s,o)=>s+o.g.reduce((a,x)=>a+x.amt,0),0);
+  const rev=paid.reduce((s,o)=>s+oAmt(o),0),unpaid=serving.reduce((s,o)=>s+oAmt(o),0);
   const exp=350;
-  const tstat=[
-    {tc:'122',st:'服務中',tone:'brown',note:'指壓 120・預計 14:30 結束',zh:4},
-    {tc:'77',st:'可接客',tone:'sage',note:'輪班第 1 位',zh:9},
-    {tc:'58',st:'服務中',tone:'brown',note:'腳底 60・預計 15:25 結束',zh:2},
-    {tc:'36',st:'可接客',tone:'sage',note:'輪班第 2 位',zh:2},
-    {tc:'12',st:'休息中',tone:'',note:'15:40 回來',zh:0},
-  ];
+  const zhOf=tc=>orders.reduce((s,o)=>s+o.g.filter(x=>x.tc===tc).reduce((a,x)=>a+x.zh,0),0);
+  const holdOf=tc=>DEMO_BOOK.filter(b=>b.hold===tc);
+  const tlist=sortTeachers(DEMO_TSTAT,tsort);
+  const cnt=k=>DEMO_TSTAT.filter(t=>t.st===k).length;
+  const held=DEMO_TSTAT.filter(t=>holdOf(t.tc).length).length;
+  const free=DEMO_TSTAT.filter(t=>t.st==='avail'&&!holdOf(t.tc).length).length;
+  const shown=orders.filter(o=>of==='all'||o.st===of);
+  const Seg=({opts,val,set})=><div className="flex rounded-lg border border-line overflow-hidden text-xs">{opts.map(o=><button key={o.id} className={'px-2.5 h-7 '+(val===o.id?'bg-sage text-white':'bg-card')} onClick={()=>set(o.id)}>{o.label}</button>)}</div>;
   return (
     <div className="max-w-md mx-auto px-4 pb-16">
       <DemoNote/>
+      <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span></div>
       <Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
-        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="營業額" v={money(rev)} cls="text-brown"/></div>
+        <div className="grid grid-cols-3 gap-2 mb-1"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="已結帳營業額" v={money(rev)} cls="text-brown"/></div>
+        <div className="text-xs text-mute mb-3">服務中 {serving.length} 單・未結帳 <span className="num">{money(unpaid)}</span></div>
         <DisBtn cls="w-full">＋ 登打訂單</DisBtn>
       </Sec>
-      <Sec title="最近訂單" demo>
-        {orders.map((o,i)=>(
-          <div key={i} className="flex items-start gap-3 py-2 border-b border-line last:border-0 text-sm">
-            <span className="num text-xs text-mute w-10 pt-0.5">{o.t}<br/>#{o.sn}</span>
+
+      <Sec title="訂單" demo right={<Seg opts={[{id:'all',label:'全部'},{id:'serving',label:'服務中'},{id:'paid',label:'已結帳'}]} val={of} set={setOf}/>}>
+        {shown.map((o,i)=>(
+          <div key={i} className={'flex items-start gap-3 py-2 border-b border-line last:border-0 text-sm '+(o.st==='paid'?'':'')}>
+            <span className="num text-xs text-mute w-12 shrink-0 pt-0.5">#{o.sn}<br/><span className="whitespace-nowrap">{o.t} 開</span></span>
             <span className="flex-1">{o.g.map((x,j)=><span key={j} className="block">{SVC_SHORT[x.svc]} {x.min}{x.promo?<span className="text-brown text-xs"> 平日</span>:''}<span className="text-mute">・</span><span className="num">{x.tc}</span>{x.ld?<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>:''}{x.adName?<span className="text-xs text-mute"> ＋{x.adName}</span>:''}</span>)}</span>
-            <span className="num">{money(o.g.reduce((a,x)=>a+x.amt,0))}</span>
+            <span className="text-right">
+              <span className="block num">{money(oAmt(o))}</span>
+              {o.st==='paid'?<span className="block text-[11px] text-sageD">✓ 已結帳 <span className="num">{o.pay}</span></span>:<span className="block text-[11px] text-brown">服務中・未結帳</span>}
+            </span>
           </div>))}
+        {!shown.length&&<Ph>沒有訂單</Ph>}
+        {of!=='paid'&&serving.length>0&&<DisBtn cls="w-full mt-3">結帳（選擇服務中訂單）</DisBtn>}
       </Sec>
-      <Sec title="老師狀態" demo>
-        <div className="grid grid-cols-[2.5rem_1fr_3rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>編號</span><span>狀態</span><span className="text-right">今日支</span></div>
-        {tstat.map((t,i)=><div key={i} className="grid grid-cols-[2.5rem_1fr_3rem] gap-2 py-2 border-b border-line last:border-0 text-sm items-center">
-          <span className="num font-semibold">{t.tc}</span>
-          <span><Pill tone={t.tone}>{t.st}</Pill><span className="block text-xs text-mute mt-0.5">{t.note}</span></span>
-          <span className="num text-right">{t.zh}</span></div>)}
+
+      <Sec title="老師狀態" demo right={<Seg opts={T_SORTS} val={tsort} set={setTsort}/>}>
+        <div className="text-xs text-mute mb-2">在班 {DEMO_TSTAT.length} 位・可接 {cnt('avail')}・服務中 {cnt('serving')}・休息 {cnt('rest')}　|　<span className="text-warn">已壓牌 {held} 位</span>・可接且未壓牌 <b className={free?'text-sageD':'text-warn'}>{free}</b> 位</div>
+        <div className="grid grid-cols-[2.5rem_1fr_2.5rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>編號</span><span>狀態</span><span className="text-right">今日支</span></div>
+        {tlist.map(t=>{const h=holdOf(t.tc);return (
+          <div key={t.tc} className="grid grid-cols-[2.5rem_1fr_2.5rem] gap-2 py-2 border-b border-line last:border-0 text-sm items-start">
+            <span className="num font-semibold pt-0.5">{t.tc}</span>
+            <span>
+              <Pill tone={TST[t.st].tone}>{TST[t.st].label}</Pill>
+              {t.st==='avail'&&<span className="ml-1 text-xs text-sageD">輪班第 {t.rot} 位</span>}
+              <span className="block text-xs text-mute mt-0.5">
+                {t.st==='serving'&&<>#{t.sn} {t.note}・<span className="num">{t.start}～{t.end}</span> 下鐘</>}
+                {t.st==='avail'&&<>等待中（<span className="num">{t.since}</span> 起）</>}
+                {t.st==='rest'&&t.note}
+              </span>
+              {h.map(b=><span key={b.id} className="mt-1.5 block rounded-lg bg-warnL/60 px-2 py-1 text-xs text-warn"><span className="whitespace-nowrap font-semibold">壓牌 <span className="num">{b.t}</span> {b.who}</span><span className="ml-1 text-[10px] px-1 rounded bg-white/70">{b.kind==='walk'?'現場':'預約'}</span><span className="block text-mute">{b.item}・{b.how}</span></span>)}
+            </span>
+            <span className="num text-right pt-0.5">{zhOf(t.tc)}</span>
+          </div>);})}
+        <div className="text-xs text-mute mt-2">排序：按編號＝小到大；輪班優先＝可接客（依輪班順位）→服務中（先下鐘在前）→休息；服務中優先＝服務中（先下鐘在前）→可接客→休息。</div>
       </Sec>
+
       <Sec title="預約／候位" demo>
-        <div className="grid grid-cols-[3rem_1fr_3.5rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>時間</span><span>客人・項目</span><span className="text-right">指定</span></div>
-        {[['15:00','陳先生','油壓 90','77','已確認'],['16:30','林小姐（2 位）','腳底 60','不指定','已確認'],['19:00','王小姐','指壓 120','122','待確認']].map((r,i)=>
-          <div key={i} className="grid grid-cols-[3rem_1fr_3.5rem] gap-2 py-2 border-b border-line text-sm items-center">
-            <span className="num">{r[0]}</span><span>{r[1]}<span className="block text-xs text-mute">{r[2]}・<span className={r[4]==='待確認'?'text-warn':''}>{r[4]}</span></span></span><span className="num text-right text-xs">{r[3]}</span></div>)}
-        <div className="flex justify-between items-center pt-2 text-sm"><span>現場候位 <b className="num">1</b> 組</span><span className="text-xs text-mute">張先生・指壓 60・約等 20 分</span></div>
+        <div className="grid grid-cols-[3rem_1fr_3.5rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>時間</span><span>客人・項目</span><span className="text-right">壓牌老師</span></div>
+        {DEMO_BOOK.map(b=>
+          <div key={b.id} className="grid grid-cols-[3rem_1fr_3.5rem] gap-2 py-2 border-b border-line last:border-0 text-sm items-center">
+            <span className="num">{b.t}{b.kind==='walk'&&<span className="block text-[10px] text-mute">到店</span>}</span>
+            <span>{b.kind==='walk'&&<span className="mr-1 text-[10px] px-1 rounded bg-brownL text-brown">現場候位</span>}{b.who}<span className="block text-xs text-mute">{b.item}・{b.how}・<span className={b.st==='待確認'?'text-warn':''}>{b.st}</span></span></span>
+            <span className="num text-right font-semibold">{b.hold}</span>
+          </div>)}
+        <div className="text-xs text-mute mt-2">預約 {DEMO_BOOK.filter(b=>b.kind==='book').length} 組＋現場候位 {DEMO_BOOK.filter(b=>b.kind==='walk').length} 組，共壓 {held} 位老師的牌。</div>
+        <div className="grid grid-cols-2 gap-2 mt-3"><DisBtn>＋ 新增預約</DisBtn><DisBtn>＋ 現場候位</DisBtn></div>
       </Sec>
+
       <Sec title="交班／日結" demo>
-        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="現金收入" v={money(rev)}/><KV k="支出" v={'-'+money(exp)}/><KV k="應有現金" v={money(rev-exp)} cls="text-brown"/></div>
-        <div className="text-xs text-mute mb-3">支出：耗材（毛巾洗滌）{money(exp)}</div>
+        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="已結帳現金" v={money(rev)}/><KV k="支出" v={'-'+money(exp)}/><KV k="應有現金" v={money(rev-exp)} cls="text-brown"/></div>
+        <div className="text-xs text-mute mb-3">支出：耗材（毛巾洗滌）{money(exp)}・另有服務中未結帳 {money(unpaid)}，結帳後才計入</div>
         <div className="grid grid-cols-2 gap-2"><DisBtn>登記支出</DisBtn><DisBtn>交班</DisBtn></div>
       </Sec>
       <Sec title="打卡" demo>
@@ -1961,6 +2029,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-024','09-26','櫃台範例調整：訂單分服務中（未結帳）／已結帳、營業額只算已結帳；老師狀態可排序（按編號／輪班優先／服務中優先）；3 個預約＋1 位現場候位壓 4 位老師的牌，老師列表標示壓牌'],
   ['v0.1-023','09-25','選身分新增「未審核訪客」（老師／櫃台／老闆／主管可見）：逐步預覽訪客開通 7 個階段畫面與引導說明，附開通連結、名單資料產生器；老師、櫃台、客人畫面放入範例資料'],
   ['v0.1-022','09-25','LINE 內開啟時新增入口檢查：LINE 登入→開通名單→首次設定編號姓名→「歡迎○○進入緩緩門店系統」→選身分（老闆／老師／櫃台／客人）；新增老師、櫃台、客人預設畫面（欄位先放、尚未運作）'],
   ['v0.1-021','09-25','開通申請頁：已開通的帳號（開啟時檢查或按重新檢查）自動轉到不帶參數的 LIFF 網址進入系統；沒申請過但已在名單內的人也會直接轉入'],
