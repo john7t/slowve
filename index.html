@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-027</title>
+<title>緩緩門店 v0.1-028</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-027';
+const VER='v0.1-028';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1570,13 +1570,14 @@ function meSet(x){try{localStorage.setItem(ME_KEY,JSON.stringify(x))}catch(_e){}
 const VIEWS={
   owner:{label:'老闆',desc:'門店系統：訂單、日結、月報、薪資明細',icon:'◆'},
   teacher:{label:'老師',desc:'我的服務、本期費用、打卡',icon:'✿'},
-  counter:{label:'櫃台',desc:'訂單登打、老師狀態、交班',icon:'☰'},
+  mainc:{label:'主櫃系統',desc:'店內 iPad：人員上牌打卡、訂單、老師狀態、交班',icon:'▣'},
+  counter:{label:'櫃台人員',desc:'我的打卡、差勤、班表',icon:'☰'},
   guest:{label:'客人',desc:'價目表、預約、消費紀錄',icon:'☺'},
   visitor:{label:'未審核訪客',desc:'預覽訪客開通的每個階段，協助訪客加入',icon:'?'},
 };
 function viewsOf(m){
   const info=memberInfo(m);const v=[];
-  if(info.admin==='owner')v.push('owner');
+  if(info.admin==='owner'){v.push('owner');v.push('mainc')}
   ['teacher','counter','guest'].forEach(r=>{if(info.roles.includes(r))v.push(r)});
   // 老師、櫃台、老闆、主管可看「未審核訪客」流程，協助訪客開通
   if(info.admin||info.roles.includes('teacher')||info.roles.includes('counter'))v.push('visitor');
@@ -1736,10 +1737,7 @@ function TeacherHome({me,mode}){
             <span className="num text-right">{money(r.fee)}</span>
           </div>);})}
       </Sec>),
-    (<Sec title="打卡" demo>
-        <div className="flex justify-between text-sm mb-3"><span>今日上班 <span className="num">09:55</span></span><span className="text-mute">下班 —</span></div>
-        <div className="grid grid-cols-2 gap-2"><DisBtn>✓ 已上班</DisBtn><DisBtn>下班打卡</DisBtn></div>
-      </Sec>),
+    (<Sec title="上牌打卡"><PunchPanel me={me} kind="teacher"/></Sec>),
     (<Sec title="店家公告" demo>
         {[['09/24','國慶連假 10/10～10/11 照常營業，請提早排班'],['09/20','新增「修腳皮」加購，算 1 支']].map((a,i)=><div key={i} className="flex gap-3 py-2 border-b border-line last:border-0 text-sm"><span className="num text-mute text-xs pt-0.5">{a[0]}</span><span>{a[1]}</span></div>)}
       </Sec>),
@@ -1754,7 +1752,7 @@ function TeacherHome({me,mode}){
   ];
   const head=(<><DemoNote/>
       <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span>{myTc!==(me&&me.code)?'・以老師 77 的資料示範':''}</div></>);
-  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4,5,6,7]} wide={{cols:[[0,1,2,4],[3,5,6,7]]}} xwide={{top:[0],cols:[[1,2,4],[3],[6,5,7]]}}/>;
+  return <RolePage mode={mode} head={head} B={B} phone={[4,0,1,2,3,5,6,7]} wide={{cols:[[4,0,1,2],[3,5,6,7]]}} xwide={{top:[0],cols:[[4,1,2],[3],[6,5,7]]}}/>;
 }
 
 /* 櫃台範例情境（範例時間 14:50）：
@@ -1944,7 +1942,7 @@ function MyDayStrip({tc,day}){
     </>
   );
 }
-function CounterHome({me,mode}){
+function CounterHome({me,mode,desk}){
   mode=mode||'phone';
   const S=loadSettings();
   const [tsort,setTsort]=useState('rot');
@@ -2026,10 +2024,7 @@ function CounterHome({me,mode}){
         <div className="text-xs text-mute mb-3">支出：耗材（毛巾洗滌）{money(exp)}・另有服務中未結帳 {money(unpaid)}，結帳後才計入</div>
         <div className="grid grid-cols-2 gap-2"><DisBtn>登記支出</DisBtn><DisBtn>交班</DisBtn></div>
       </Sec>),
-    (<Sec title="打卡" demo>
-        <div className="text-sm mb-3">今日上班 <span className="num">08:55</span></div>
-        <div className="grid grid-cols-2 gap-2"><DisBtn>✓ 已上班</DisBtn><DisBtn>下班打卡</DisBtn></div>
-      </Sec>),
+    (null),   // 主櫃不需要自己的打卡卡片（人員打卡改由「人員上牌／打卡」）
     (<Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
         <div className="flex items-center gap-6 flex-wrap">
           <KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="已結帳營業額" v={money(rev)} cls="text-brown"/>
@@ -2037,11 +2032,12 @@ function CounterHome({me,mode}){
           <div className="flex-1"></div>
           <DisBtn cls="px-8">＋ 登打訂單</DisBtn>
         </div>
-      </Sec>)
+      </Sec>),
+    (desk||null)
   ];
   const head=(<><DemoNote/>
       <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span></div></>);
-  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4,5,6]} wide={{top:[7,3],cols:[[2,4],[1,5,6]]}} xwide={{top:[7,3],cols:[[2],[1],[4,5,6]]}}/>;
+  return <RolePage mode={mode} head={head} B={B} phone={[8,0,1,2,3,4,5]} wide={{top:[8,7,3],cols:[[2,4],[1,5]]}} xwide={{top:[8,7,3],cols:[[2],[1],[4,5]]}}/>;
 }
 
 function GuestHome({me,mode}){
@@ -2229,10 +2225,255 @@ function VisitorGuide({me,mode}){
   );
 }
 
+/* ========== 確認碼打卡／上牌 ==========
+   主櫃點某位人員「上牌／打卡」→ 以「該人員 userId＋日期＋產生當下的時:分」算出 3 位數確認碼，並把這一刻記為上牌／打卡時間。
+   人員在自己手機輸入確認碼，手機用自己的 userId 比對最近 10 分鐘（含快 1 分鐘的誤差），吻合即成功。
+   主櫃畫面上的確認碼不倒數，關閉（做別的操作）後就看不到，只能重新產生；重新產生時以最新一次產生的時間為準。
+   不經後端：演算法在公開程式裡，目的只是讓員工不容易看出規律。 */
+const PUNCH_WIN=10;                       // 手機比對最近幾分鐘
+function punchHash(str){let h=0x811c9dc5;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,0x01000193)}h^=h>>>15;h=Math.imul(h,0x2c1b3c6d);h^=h>>>12;return h>>>0}
+function punchCode(uid,d){return String(punchHash('slowve-punch|'+uid+'|'+ymd(d)+'|'+pad(d.getHours())+':'+pad(d.getMinutes()))%1000).padStart(3,'0')}
+function punchVerify(uid,code,now){
+  now=now||new Date();
+  for(let k=-1;k<=PUNCH_WIN;k++){const d=new Date(now.getTime()-k*60000);if(punchCode(uid,d)===code)return d}
+  return null;
+}
+const hm=d=>pad(d.getHours())+':'+pad(d.getMinutes());
+// 示範模式的資料另外存，不會混進真正的備份
+const DS=()=>IS_ROLE_DEMO?'slowve.demo.':P;
+const jget=(k,def)=>{try{const x=JSON.parse(localStorage.getItem(DS()+k)||'null');return x==null?def:x}catch(_e){return def}};
+const jset=(k,v)=>{try{localStorage.setItem(DS()+k,JSON.stringify(v))}catch(_e){}};
+
+/* 示範人員（假的 userId）；正式版改讀 members.json */
+const DEMO_STAFF=[
+  {uid:'Udemo0000000000000000000000000122',name:'阿芳',tc:'122',roles:['teacher']},
+  {uid:'Udemo0000000000000000000000000077',name:'Ally',tc:'77',roles:['teacher','counter','guest']},
+  {uid:'Udemo0000000000000000000000000058',name:'阿明',tc:'58',roles:['teacher']},
+  {uid:'Udemo0000000000000000000000000036',name:'小琪',tc:'36',roles:['teacher']},
+  {uid:'Udemo0000000000000000000000000012',name:'小安',tc:'12',roles:['teacher']},
+  {uid:'Udemo000000000000000000000000mei1',name:'小美',roles:['counter']},
+  {uid:'Udemo000000000000000000000000lili',name:'麗麗',roles:['counter']},
+];
+const demoUidOf=x=>{const f=DEMO_STAFF.find(s=>s.tc===x||s.name===x);return f?f.uid:'Udemo-unknown'};
+const PK={teacher:{in:'上牌',out:'下牌'},counter:{in:'上班',out:'下班'}};
+const personLabel=p=>p.tc?p.tc+' '+p.name:p.name;
+
+/* ---- 手機端：輸入確認碼 ---- */
+function PunchPanel({me,kind}){   // kind：teacher（上牌／下牌）／counter（上班／下班）
+  const L=PK[kind];
+  const uid=me&&me.uid;
+  const key='mypunch-'+uid+'-'+ymd(new Date());
+  const [recs,setRecs]=useState(()=>jget(key,[]));
+  const [st,setSt]=useState('idle');   // idle / input / fail
+  const [act,setAct]=useState(null);
+  const [val,setVal]=useState('');
+  const [tries,setTries]=useState(0);
+  const [ok,setOk]=useState(null);
+  const inRef=useRef(null);
+  const last=k=>{const r=recs.filter(x=>x.k===k);return r.length?r[r.length-1].t:null};
+  const start=k=>{setAct(k);setVal('');setTries(0);setOk(null);setSt('input');setTimeout(()=>{try{inRef.current.focus()}catch(_e){}},50)};
+  const submit=()=>{
+    if(!/^\d{3}$/.test(val))return;
+    const d=punchVerify(uid,val);
+    if(d){
+      const r={k:act,t:hm(d),at:Date.now()};const n=recs.concat([r]);setRecs(n);jset(key,n);
+      setOk(r);setSt('idle');setVal('');setTries(0);return;
+    }
+    const n=tries+1;setTries(n);setVal('');
+    if(n>=5)setSt('fail');
+  };
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-3"><span>今日{L.in} <span className="num">{last('in')||'—'}</span></span><span className={last('out')?'':'text-mute'}>{L.out} <span className="num">{last('out')||'—'}</span></span></div>
+      {ok&&st==='idle'&&<div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm">✓ {L[ok.k]}成功・<span className="num">{ok.t}</span>（主櫃產生確認碼的時間）</div>}
+      {st==='idle'&&<div className="grid grid-cols-2 gap-2">
+        <button className="h-12 rounded-xl bg-sage text-white" onClick={()=>start('in')}>{L.in}打卡</button>
+        <button className="h-12 rounded-xl border border-sage text-sageD bg-card" onClick={()=>start('out')}>{L.out}打卡</button>
+      </div>}
+      {st==='input'&&<div className="rounded-xl border border-sage bg-sageL/30 p-3">
+        <div className="text-sm mb-2"><b>{L[act]}</b>：請向主櫃索取確認碼後輸入</div>
+        <div className="flex gap-2">
+          <input ref={inRef} className="flex-1 min-w-0 w-full h-14 px-3 rounded-xl border border-line bg-card text-3xl tracking-[0.5em] text-center num" inputMode="numeric" maxLength={3} placeholder="———" value={val}
+            onChange={e=>setVal(e.target.value.replace(/\D/g,'').slice(0,3))} onKeyDown={e=>{if(e.key==='Enter')submit()}}/>
+          <button className="px-5 h-14 rounded-xl bg-sage text-white disabled:opacity-40" disabled={val.length!==3} onClick={submit}>確認</button>
+        </div>
+        {tries>0&&tries<3&&<div className="text-sm text-warn mt-2">確認碼不正確（第 {tries} 次）</div>}
+        {tries>=3&&<div className="text-sm text-warn mt-2">確認碼已錯誤 {tries} 次。再持續輸入錯誤時，請向主櫃索取確認碼。</div>}
+        <button className="w-full h-9 mt-2 text-sm text-mute" onClick={()=>setSt('idle')}>取消</button>
+      </div>}
+      {st==='fail'&&<div className="rounded-xl border border-warn bg-warnL p-3 text-center">
+        <div className="text-warn font-semibold">打卡未成功</div>
+        <div className="text-sm text-warn mt-1">確認碼錯誤 5 次，請重新打卡。</div>
+        <button className="mt-3 h-11 px-6 rounded-xl bg-sage text-white" onClick={()=>{setSt('idle');setTries(0)}}>重新打卡</button>
+      </div>}
+      <div className="text-xs text-mute mt-2">確認碼由主櫃產生，{PUNCH_WIN} 分鐘內輸入有效；{L.in}時間以主櫃產生確認碼的時間為準。</div>
+    </div>
+  );
+}
+
+/* ---- 主櫃：點人員上牌／打卡 → 產生確認碼 ---- */
+function PunchDesk({op,people,recs,setRecs}){
+  const [pick,setPick]=useState(null);     // 選中的人員
+  const [show,setShow]=useState(null);     // {p,k,code,t,rid}
+  const today=ymd(new Date());
+  const lastOf=(uid)=>{const r=recs.filter(x=>x.uid===uid);return r.length?r[r.length-1]:null};
+  const gen=(p,k,rid)=>{
+    const now=new Date();const t=hm(now);const code=punchCode(p.uid,now);
+    let n;
+    if(rid){n=recs.map(r=>r.id===rid?Object.assign({},r,{t,regen:(r.regen||0)+1,by:op.name}):r)}
+    else{rid=String(Date.now());n=recs.concat([{id:rid,uid:p.uid,who:personLabel(p),role:p.tc?'teacher':'counter',k,t,by:op.name}])}
+    setRecs(n);setShow({p,k,code,t,rid});setPick(null);
+  };
+  const role=p=>p.tc?'teacher':'counter';
+  const Chip=({p})=>{const l=lastOf(p.uid);const on=l&&l.k==='in';return (
+    <button onClick={()=>{setShow(null);setPick(p)}} className={'rounded-xl border px-3 py-2 text-left min-w-[6.5rem] '+(on?'bg-sageL border-sage':'bg-card border-line')}>
+      <div className="num font-semibold">{p.tc||p.name}{p.tc&&<span className="font-normal text-xs text-mute ml-1">{p.name}</span>}</div>
+      <div className={'text-[11px] '+(on?'text-sageD':'text-mute')}>{l?PK[role(p)][l.k]+' '+l.t:'未'+PK[role(p)].in}</div>
+    </button>)};
+  return (
+    <>
+      <div className="text-xs text-mute mb-2">點人員 → 選{PK.teacher.in}／{PK.teacher.out}（櫃台為{PK.counter.in}／{PK.counter.out}）→ 產生確認碼報給對方。產生的當下即記錄時間。</div>
+      <div className="text-xs text-mute mb-1">老師</div>
+      <div className="flex flex-wrap gap-2 mb-3">{people.filter(p=>p.tc).map(p=><Chip key={p.uid} p={p}/>)}</div>
+      <div className="text-xs text-mute mb-1">櫃台人員</div>
+      <div className="flex flex-wrap gap-2">{people.filter(p=>!p.tc&&p.roles.includes('counter')).map(p=><Chip key={p.uid} p={p}/>)}</div>
+      <div className="text-sm text-mute mt-4 mb-1">今日打卡紀錄（{today.slice(5)}）</div>
+      {recs.length===0?<Ph>還沒有紀錄</Ph>:
+        <div className="max-h-56 overflow-y-auto">{recs.slice().reverse().map(r=>(
+          <div key={r.id} className="flex items-center gap-3 py-1.5 border-b border-line last:border-0 text-sm">
+            <span className="num w-12">{r.t}</span><span className="flex-1">{r.who}<span className={'ml-2 text-xs px-1.5 rounded '+(r.k==='in'?'bg-sageL text-sageD':'bg-brownL text-brown')}>{PK[r.role][r.k]}</span>{r.regen?<span className="ml-1 text-[11px] text-mute">重新產生 {r.regen} 次</span>:''}</span>
+            <span className="text-xs text-mute">由 {r.by}</span>
+          </div>))}</div>}
+
+      {pick&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setPick(null)}>
+        <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
+          <div className="text-lg mb-1">{personLabel(pick)}</div>
+          <div className="text-sm text-mute mb-4">{(l=>l?'目前：'+PK[role(pick)][l.k]+' '+l.t:'今天尚未'+PK[role(pick)].in)(lastOf(pick.uid))}</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button className="h-14 rounded-xl bg-sage text-white text-lg" onClick={()=>gen(pick,'in')}>{PK[role(pick)].in}</button>
+            <button className="h-14 rounded-xl border border-sage text-sageD text-lg" onClick={()=>gen(pick,'out')}>{PK[role(pick)].out}</button>
+          </div>
+          <button className="w-full h-10 mt-2 text-sm text-mute" onClick={()=>setPick(null)}>取消</button>
+        </div>
+      </div>}
+
+      {show&&<div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6" onClick={()=>setShow(null)}>
+        <div className="w-full max-w-sm bg-card rounded-2xl p-6 text-center" onClick={e=>e.stopPropagation()}>
+          <div className="text-sm text-mute">{personLabel(show.p)}・{PK[role(show.p)][show.k]}</div>
+          <div className="text-xs text-mute mt-1">確認碼</div>
+          <div className="serif text-7xl tracking-[0.2em] text-sageD num my-3 pl-[0.2em]">{show.code}</div>
+          <div className="text-sm">已記錄{PK[role(show.p)][show.k]}時間 <b className="num">{show.t}</b></div>
+          <div className="text-xs text-mute mt-2">請對方在自己手機輸入（{PUNCH_WIN} 分鐘內）。關閉後確認碼不再顯示。</div>
+          <div className="grid grid-cols-2 gap-2 mt-5">
+            <button className="h-12 rounded-xl border border-line bg-bg" onClick={()=>gen(show.p,show.k,show.rid)}>重新產生</button>
+            <button className="h-12 rounded-xl bg-sage text-white" onClick={()=>setShow(null)}>完成</button>
+          </div>
+        </div>
+      </div>}
+    </>
+  );
+}
+
+/* ---- 主櫃系統（店內 iPad）：操作人＋上牌打卡台＋櫃台營運畫面 ----
+   操作人：老闆模式，或由櫃台人員用 LINE（QR Code）登入。換人登入＝交班；櫃台人員須先完成上班打卡才能登入主櫃。 */
+function MainCounter({me,mode,real,member}){
+  const [people,setPeople]=useState(real?[]:DEMO_STAFF);   // 正式版：members.json 中有 teacher／counter 的人
+  useEffect(()=>{if(!real)return;fetchMembers().then(list=>setPeople(list.map(x=>{const i=memberInfo(x);return {uid:x.uid,name:x.name||'',tc:i.roles.includes('teacher')?x.tc:'',roles:i.roles}}).filter(x=>x.tc||x.roles.includes('counter')))).catch(()=>{})},[]);
+  const day=ymd(new Date());
+  const [recs,setRecsS]=useState(()=>jget('punch-'+day,[]));
+  const setRecs=n=>{setRecsS(n);jset('punch-'+day,n)};
+  const [op,setOpS]=useState(()=>{
+    if(real&&member){const i=memberInfo(member);return {name:member.name||'',kind:i.admin==='owner'?'owner':'counter',uid:member.uid,at:hm(new Date())}}
+    return jget('mainc-op',null)||{name:'老闆',kind:'owner',at:hm(new Date())};
+  });
+  const [hand,setHandS]=useState(()=>jget('handover-'+day,[]));
+  const [login,setLogin]=useState(false);
+  const [warn,setWarn]=useState('');
+  const clockedIn=uid=>{const r=recs.filter(x=>x.uid===uid);return r.length&&r[r.length-1].k==='in'};
+  const switchTo=p=>{
+    if(p&&!clockedIn(p.uid)){setWarn(p.name+' 今天還沒有上班打卡。請先由目前的主櫃（'+op.name+'）在「人員上牌／打卡」產生確認碼，'+p.name+' 在手機輸入完成上班打卡後，再登入主櫃。');return}
+    const n={name:p?p.name:'老闆',kind:p?'counter':'owner',uid:p&&p.uid,at:hm(new Date())};
+    const h=hand.concat([{from:op.name,to:n.name,t:n.at}]);setHandS(h);jset('handover-'+day,h);
+    setOpS(n);jset('mainc-op',n);setLogin(false);setWarn('');
+  };
+  const wide=mode!=='phone';
+  const opBar=(
+    <div className={'bg-brownL/70 border-b border-line'}>
+      <div className={(wide?'px-6':'max-w-md mx-auto px-4')+' py-2 flex items-center gap-3 flex-wrap'}>
+        <span className="text-xs px-2 py-0.5 rounded bg-brown text-white">主櫃系統</span>
+        <span className="text-sm">操作人：<b>{op.name}</b>{op.kind==='owner'?'（老闆模式）':'（櫃台）'}<span className="text-xs text-mute ml-1 num">{op.at} 起</span></span>
+        {hand.length>0&&<span className="text-xs text-mute">今日交班 {hand.length} 次</span>}
+        <button className="ml-auto h-8 px-3 rounded-full bg-card border border-brown text-brown text-sm" onClick={()=>{setWarn('');setLogin(true)}}>換人登入（交班）</button>
+      </div>
+    </div>
+  );
+  const desk=(
+    <Sec title="人員上牌／打卡" right={<span className="text-xs text-mute">確認碼 3 位數・關閉後不再顯示</span>}>
+      <PunchDesk op={op} people={people} recs={recs} setRecs={setRecs}/>
+    </Sec>
+  );
+  return (
+    <>
+      {opBar}
+      <CounterHome me={me} mode={mode} desk={desk}/>
+      {login&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setLogin(false)}>
+        <div className="w-full max-w-md bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
+          <div className="text-lg mb-1">換人登入主櫃</div>
+          <div className="text-sm text-mute mb-3">{real?'按下後會登出目前的 LINE 帳號，出現 LINE 登入頁；接手的人用手機 LINE 掃描頁面上的 QR Code 即可登入。':'正式版會出現 LINE 登入頁的 QR Code，接手的人用手機 LINE 掃描登入。示範模式請直接選擇是誰掃描：'}</div>
+          {!real&&<>
+            <div className="flex gap-4 items-center mb-4">
+              <div className="w-24 h-24 shrink-0 rounded-lg border border-line bg-white p-2 grid grid-cols-5 gap-0.5">{Array.from({length:25},(_,i)=><div key={i} className={((i*7+3)%5<2||i===0||i===4||i===20)?'bg-ink':'bg-white'}></div>)}</div>
+              <div className="text-xs text-mute">（示意）LINE 登入頁的 QR Code<br/>櫃台人員需先完成今天的上班打卡</div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {people.filter(p=>!p.tc&&p.roles.includes('counter')).map(p=><button key={p.uid} disabled={op.uid===p.uid} className="h-12 rounded-xl border border-sage text-sageD disabled:opacity-40" onClick={()=>switchTo(p)}>{p.name}{clockedIn(p.uid)?'':<span className="block text-[10px] text-warn leading-none">未打卡</span>}</button>)}
+              <button className="h-12 rounded-xl border border-line bg-bg" disabled={op.kind==='owner'} onClick={()=>switchTo(null)}>老闆</button>
+            </div>
+          </>}
+          {real&&<button className="w-full h-12 rounded-xl bg-sage text-white" onClick={()=>{try{localStorage.setItem('slowve.mainc','1');window.liff.logout()}catch(_e){}location.href=location.pathname+'?mainc=1'}}>登出並顯示 LINE 登入頁</button>}
+          {warn&&<div className="mt-3 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">{warn}</div>}
+          {hand.length>0&&<div className="mt-4 pt-3 border-t border-line text-xs text-mute">今日交班：{hand.map((h,i)=><span key={i} className="mr-2 num">{h.t} {h.from}→{h.to}</span>)}</div>}
+          <button className="w-full h-10 mt-2 text-sm text-mute" onClick={()=>setLogin(false)}>取消</button>
+        </div>
+      </div>}
+    </>
+  );
+}
+
+/* ---- 櫃台人員（個人）：只看自己的差勤，看不到店內營業資料 ---- */
+function CounterStaffHome({me,mode}){
+  const days=Array.from({length:6},(_,i)=>{const d=demoDay(i+1);return {d,in:['09:52','10:01','09:58','—','09:47','10:12'][i],out:['18:05','18:00','18:30','—','18:02','18:10'][i]}});
+  const late=x=>x.in!=='—'&&x.in>'10:00';
+  const B=[
+    (<Sec title="打卡" key="p"><PunchPanel me={me} kind="counter"/></Sec>),
+    (<Sec title="本月差勤" demo>
+      <div className="grid grid-cols-4 gap-2 mb-3"><KV k="出勤" v="18 天"/><KV k="遲到" v="2 次" cls="text-warn"/><KV k="請假" v="1 天"/><KV k="總時數" v="146 時"/></div>
+      <div className="grid grid-cols-[3.5rem_1fr_1fr_3rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>日期</span><span>上班</span><span>下班</span><span className="text-right">時數</span></div>
+      {days.map((x,i)=><div key={i} className="grid grid-cols-[3.5rem_1fr_1fr_3rem] gap-2 py-1.5 border-b border-line last:border-0 text-sm num">
+        <span>{(x.d.getMonth()+1)+'/'+x.d.getDate()}</span><span className={late(x)?'text-warn':''}>{x.in}{late(x)&&<span className="text-[10px] ml-1">遲到</span>}</span><span>{x.out}</span><span className="text-right">{x.in==='—'?<span className="text-mute">休</span>:'8'}</span></div>)}
+    </Sec>),
+    (<Sec title="我的班表" demo>
+      <div className="grid grid-cols-7 gap-1 text-center text-xs">
+        {Array.from({length:7},(_,i)=>{const d=demoDay(-i);const off=i===2;return <div key={i} className={'rounded-lg py-2 '+(off?'bg-bg text-mute':'bg-sageL text-sageD')}><div>{WK[d.getDay()]}</div><div className="num">{d.getDate()}</div><div className="mt-1">{off?'休':'10–18'}</div></div>})}
+      </div>
+    </Sec>),
+    (<Sec title="我的主櫃紀錄" demo>
+      {[['今天','10:05','接班（從 老闆）'],['昨天','18:02','交班給 小美'],['昨天','10:03','接班（從 老闆）']].map((r,i)=><div key={i} className="flex gap-3 py-1.5 border-b border-line last:border-0 text-sm"><span className="text-mute w-10">{r[0]}</span><span className="num w-12">{r[1]}</span><span>{r[2]}</span></div>)}
+    </Sec>),
+    (<Sec title="店家公告" demo>
+      {[['10/03','國慶連假 10/10～10/11 照常營業'],['09/28','交班時請點清現金並在主櫃按「交班」']].map((a,i)=><div key={i} className="flex gap-3 py-2 border-b border-line last:border-0 text-sm"><span className="num text-mute text-xs pt-0.5">{a[0]}</span><span>{a[1]}</span></div>)}
+    </Sec>),
+    (<Sec title="其他" soon><div className="grid grid-cols-2 gap-2"><DisBtn>請假申請</DisBtn><DisBtn>加班申請</DisBtn></div></Sec>),
+  ];
+  const head=(<><DemoNote/><div className="mt-2 text-xs text-mute px-1">這裡只顯示你個人的資料；訂單、營業額等店內資料請在店內 iPad 的「主櫃系統」操作。</div></>);
+  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4,5]} wide={{cols:[[0,2,3],[1,4,5]]}} xwide={{cols:[[0,3],[1],[2,4,5]]}}/>;
+}
+
 /* 進入某身分後的畫面（LINE 入口與示範模式共用） */
-function RoleView({view,me,mode,bar}){
+function RoleView({view,me,mode,bar,real,member}){
   if(view==='owner')return <>{bar}<App/></>;
-  const Page={teacher:TeacherHome,counter:CounterHome,guest:GuestHome,visitor:VisitorGuide}[view];
+  if(view==='mainc')return <div className="min-h-screen">{bar}<MainCounter me={me} mode={mode} real={real} member={member}/></div>;
+  const Page={teacher:TeacherHome,counter:CounterStaffHome,guest:GuestHome,visitor:VisitorGuide}[view];
   const wide=mode!=='phone';
   return (<div className="min-h-screen">{bar}
     <div className={(wide?'max-w-[1400px] px-6':'max-w-md px-4')+' mx-auto pt-4 flex items-baseline gap-2'}><span className="serif text-2xl tracking-widest text-sageD">緩緩</span><span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span><span className="text-sm text-mute ml-1">{VIEWS[view].label}</span></div>
@@ -2243,18 +2484,19 @@ function RoleView({view,me,mode,bar}){
 function RoleDemo(){
   const lay=useLayout();
   const [view,setView]=useState(()=>{try{return localStorage.getItem(VIEW_KEY+'-demo')||'counter'}catch(_e){return 'counter'}});
-  const me={name:'示範',code:'77'};
+  const ME={teacher:{name:'Ally',code:'77',uid:demoUidOf('77')},counter:{name:'麗麗',code:'',uid:demoUidOf('麗麗')}};
+  const me=ME[view]||{name:'示範',code:'77',uid:demoUidOf('77')};
   const pick=v=>{try{localStorage.setItem(VIEW_KEY+'-demo',v)}catch(_e){}setView(v)};
   const bar=(
     <div className="bg-ink text-white text-sm sticky top-0 z-30">
       <div className={(lay.mode!=='phone'?'px-6':'max-w-md mx-auto px-3')+' min-h-10 py-1.5 flex items-center gap-2 flex-wrap'}>
         <span className="text-white/70 mr-1">示範模式</span>
-        {['owner','teacher','counter','guest','visitor'].map(v=><button key={v} onClick={()=>pick(v)} className={'h-7 px-3 rounded-full '+(view===v?'bg-white text-ink':'bg-white/15')}>{VIEWS[v].label}</button>)}
+        {['owner','mainc','teacher','counter','guest','visitor'].map(v=><button key={v} onClick={()=>pick(v)} className={'h-7 px-3 rounded-full '+(view===v?'bg-white text-ink':'bg-white/15')}>{VIEWS[v].label}</button>)}
         <span className="ml-auto text-xs text-white/60 num">{MODE_LABEL[lay.mode]}・寬 {lay.w}</span>
       </div>
     </div>
   );
-  return <RoleView view={view} me={me} mode={lay.mode} bar={bar}/>;
+  return <RoleView key={view} view={view} me={me} mode={lay.mode} bar={bar}/>;
 }
 
 function LineGate(){
@@ -2277,6 +2519,10 @@ function LineGate(){
       if(!m){setSt('notmember');return}
       setMem(m);
       const mine=meGet(p.userId);setMe(mine);
+      // 這台被設為主櫃（店內 iPad）：櫃台人員或老闆登入後直接進主櫃系統，操作人＝登入的人
+      let mc=false;try{mc=localStorage.getItem('slowve.mainc')==='1'}catch(_e){}
+      const mi=memberInfo(m);
+      if(mc&&(mi.roles.includes('counter')||mi.admin==='owner')){setMe(mine||{uid:p.userId,name:m.name||p.displayName,code:m.tc||''});setView('mainc');setSt('view');return}
       setSt(mine?'welcome':'profile');
     }catch(e){setErr(String(e&&e.message||e));setSt('error')}
   };
@@ -2285,7 +2531,7 @@ function LineGate(){
   const lay=useLayout();
   const pick=v=>{try{localStorage.setItem(VIEW_KEY,v)}catch(_e){}setView(v);setSt('view')};
   if(st==='view'&&view){
-    return <RoleView view={view} me={me} mode={lay.mode} bar={<RoleBar view={view} me={me} wide={lay.mode!=='phone'} canSwitch={views.length>1} onSwitch={()=>{setView(null);setSt('welcome')}}/>}/>;
+    return <RoleView real member={mem} view={view} me={me} mode={lay.mode} bar={<RoleBar view={view} me={me} wide={lay.mode!=='phone'} canSwitch={views.length>1} onSwitch={()=>{setView(null);setSt('welcome')}}/>}/>;
   }
   return (
     <GateShell>
@@ -2304,6 +2550,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-028','10-05','櫃台分為「主櫃系統」（店內 iPad，老闆身分可切換進入，櫃台人員以 LINE 登入操作、換人登入＝交班）與「櫃台人員」（個人打卡、差勤、班表）；主櫃點人員上牌／打卡產生 3 位數確認碼並記錄時間，人員在手機輸入確認（錯 3 次提示、錯 5 次需重新打卡）'],
   ['v0.1-027','10-05','老師、櫃台、客人、未審核訪客畫面的平板版（雙欄／三欄，依寬度自動切換，跟著設定頁的畫面版型）；櫃台時段牌況平板顯示 5～6 個小時；新增示範模式 ?demo=roles，不用登入即可切換各身分畫面'],
   ['v0.1-026','10-05','平板／筆電版「每日訂單」：寬度 768 以上左右雙欄（左邊訂單、右邊直接登打），1100 以上三欄（統計／訂單／登打）；左側導覽列；設定頁新增「畫面版型」（自動／手機版／平板版，只存在這台裝置）；滑鼠操作時 N 新增訂單、Esc 關閉'],
   ['v0.1-025','09-26','櫃台新增「時段牌況」（3 個小時一頁、可前後切換，看每個時段幾張牌可排、幾點起全空）；壓牌前空檔夠 60 分可先接現場客；老師新增「我的預約情形」（上牌到下牌每小時一格，今天／明天）'],
@@ -2730,7 +2977,9 @@ const IS_LINE_TEST=!IS_JOIN&&(__q.has('linetest')||__ls.indexOf('linetest')>=0);
 const IS_SHARE_RELAY=!IS_JOIN&&!IS_LINE_TEST&&(__q.has('share')||__ls.indexOf('share')>=0);
 const IS_ROLE_DEMO=__q.get('demo')==='roles'||__ls.indexOf('demo=roles')>=0;
 // 在 LINE App 內開啟 → 入口檢查（登入＋開通名單＋身分）；外部瀏覽器直接進門店系統（老闆離線使用）。?gate=1 可在瀏覽器強制測試
-const IN_LINE=/\bLine\//i.test(navigator.userAgent)||__q.get('gate')==='1';
+let __mc=false;try{__mc=localStorage.getItem('slowve.mainc')==='1'}catch(_e){}
+// 主櫃 iPad 用 Safari 開（才能用 LINE 的 QR Code 換人登入），所以設為主櫃的裝置也走入口檢查
+const IN_LINE=/\bLine\//i.test(navigator.userAgent)||__q.get('gate')==='1'||__q.get('mainc')==='1'||__mc;
 ReactDOM.createRoot(document.getElementById('root')).render(IS_JOIN?<JoinPage/>:IS_ROLE_DEMO?<RoleDemo/>:IS_LINE_TEST?<LineTestPage/>:IS_SHARE_RELAY?<ShareRelay/>:IN_LINE?<LineGate/>:<App/>);
 </script>
 </body>
