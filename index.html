@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-024</title>
+<title>緩緩門店 v0.1-027</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-024';
+const VER='v0.1-027';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -231,10 +231,20 @@ async function exportJson(S){
 function readFileText(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result||''));r.onerror=rej;r.readAsText(file)})}
 
 /* ========== 共用 UI ========== */
-function Sheet({onClose,children,title,footer}){
+function Sheet({onClose,children,title,footer,inline}){
+  if(inline)return (   // 平板版：嵌在右側面板
+    <div className="h-full flex flex-col bg-bg">
+      <div className="flex items-center justify-between px-4 h-12 shrink-0 border-b border-line bg-card/60">
+        <div className="serif text-lg">{title}</div>
+        {onClose&&<button className="w-9 h-9 rounded-full text-mute text-xl" onClick={onClose} aria-label="關閉">×</button>}
+      </div>
+      <div className="overflow-y-auto px-4 py-3 flex-1">{children}</div>
+      {footer&&<div className="border-t border-line px-4 py-3 pb-safe bg-card shrink-0">{footer}</div>}
+    </div>
+  );
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40" onClick={onClose}>
-      <div className="sheet-in w-full max-w-md bg-bg rounded-t-2xl max-h-[92vh] flex flex-col" onClick={e=>e.stopPropagation()}>
+    <div className="fixed inset-0 z-40 flex items-end md:items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="sheet-in w-full max-w-md bg-bg rounded-t-2xl md:rounded-2xl max-h-[92vh] md:max-h-[88vh] flex flex-col overflow-hidden" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-line">
           <div className="serif text-lg">{title}</div>
           <button className="w-9 h-9 rounded-full text-mute text-xl" onClick={onClose} aria-label="關閉">×</button>
@@ -274,7 +284,7 @@ function Stat({label,value,big,tone}){
 const blankItem=()=>({svc:null,min:null,promo:false,ad:[],tc:'',ld:false,rj:[]});
 const sameItem=(a,b)=>!!a&&!!b&&a.svc===b.svc&&a.min===b.min&&!!a.promo===!!b.promo&&!!a.ld===!!b.ld
   &&[...(a.ad||[])].sort().join()===[...(b.ad||[])].sort().join();
-function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,prev,count}){
+function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,prev,count,inline}){
   const isNew=!order;
   const origItems=order?orderItems(order):[];
   const nextSn=()=>{let mx=0;dayOrders.forEach(o=>{const n=parseInt(o.sn,10);if(!isNaN(n)&&n>mx)mx=n});return String(mx+1)};
@@ -339,7 +349,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
         <div className="flex gap-2">
           {!isNew&&<button className={'px-4 h-12 rounded-xl border '+(f.void?'border-sage text-sageD':'border-warn text-warn')} onClick={()=>onToggleVoid(f)}>{f.void?'恢復':'作廢'}</button>}
           {isNew?<>
-            <button className="px-4 h-12 rounded-xl border border-sage text-sageD" onClick={()=>save(false)}>存檔關閉</button>
+            {!inline&&<button className="px-4 h-12 rounded-xl border border-sage text-sageD" onClick={()=>save(false)}>存檔關閉</button>}
             <button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(true)}>儲存，下一筆 ›</button>
           </>:<button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(false)}>儲存</button>}
         </div>}
@@ -347,7 +357,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
   );
 
   return (
-    <Sheet onClose={onClose} title={isNew?'新增訂單':(f.void?'訂單（已作廢）':'編輯訂單')} footer={footer}>
+    <Sheet inline={inline} onClose={onClose} title={isNew?'新增訂單':(f.void?'訂單（已作廢）':'編輯訂單')+(inline&&f.sn?' #'+f.sn:'')} footer={footer}>
       {prev&&<div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm num">
         <span className="float-right text-xs text-mute">連續第 {count} 筆</span>
         ✓ 已存 #{prev.sn||'-'}　{orderItems(prev).length>1?orderItems(prev).length+' 位　':''}{money(orderAmt(prev))}
@@ -498,7 +508,7 @@ function CloseSheet({S,st,ex,onSave,onClose}){
 }
 
 /* ========== 支出編輯 ========== */
-function ExpenseEditor({S,exp,locked,onSave,onDelete,onClose,ask,prev,count}){
+function ExpenseEditor({S,exp,locked,onSave,onDelete,onClose,ask,prev,count,inline}){
   const isNew=!exp;
   const [f,setF]=useState(()=>exp?Object.assign({},exp):{id:newId(S.device),cat:S.expCats[0]||'其他',name:'',amt:'',cash:true,note:''});
   const set=(k,v)=>setF(p=>Object.assign({},p,{[k]:v}));
@@ -520,7 +530,7 @@ function ExpenseEditor({S,exp,locked,onSave,onDelete,onClose,ask,prev,count}){
     </div>
   );
   return (
-    <Sheet onClose={onClose} title={isNew?'新增支出':'編輯支出'} footer={footer}>
+    <Sheet inline={inline} onClose={onClose} title={isNew?'新增支出':'編輯支出'} footer={footer}>
       {prev&&<div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm num">
         ✓ 已存 {prev.cat}{prev.name?'・'+prev.name:''}　{money(prev.amt)}
         <span className="float-right text-xs text-mute">連續第 {count} 筆</span>
@@ -553,8 +563,11 @@ function ExpenseEditor({S,exp,locked,onSave,onDelete,onClose,ask,prev,count}){
   );
 }
 
-/* ========== 日頁 ========== */
-function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
+/* ========== 日頁 ==========
+   part：'all'＝手機版與平板雙欄的左欄（全部區塊）；平板三欄時拆成 'side'（日期、統計、支出、老師、日結）與 'list'（訂單列表）
+   wide：平板版（不顯示右下「＋」，訂單在右側面板登打）；selId：右側面板正在編輯的訂單 */
+function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,wide,selId,selExpId}){
+  part=part||'all';
   const today=bizToday(S.cutoff);
   const dd=useMemo(()=>getDay(loadMonth(monKey(date)),date),[date,rev]);
   const orders=useMemo(()=>[...dd.orders].sort((a,b)=>snNum(a)-snNum(b)||(a.ca||0)-(b.ca||0)),[dd]);
@@ -564,109 +577,127 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock}){
   const closed=!!dd.close;
   const dateRef=useRef(null);
 
+  const dateNav=(<>
+    <div className="flex items-center justify-between mb-3">
+      <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>setDate(addDays(date,-1))} aria-label="前一天">◀</button>
+      <label className="relative flex flex-col items-center">
+        <span className="text-xs text-mute num">{date.slice(0,4)}</span>
+        <span className="serif text-2xl num">{fmtDate(date)}</span>
+        <input ref={dateRef} type="date" className="absolute inset-0 opacity-0" value={date} onChange={e=>e.target.value&&setDate(e.target.value)}/>
+      </label>
+      <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>setDate(addDays(date,1))} aria-label="後一天">▶</button>
+    </div>
+    <div className="h-7 mb-2 text-center">
+      {date!==today?<button className="px-3 h-7 rounded-full bg-sageL text-sageD text-sm" onClick={()=>setDate(today)}>回到今天</button>:
+        <span className="text-xs text-mute">今天的營業日</span>}
+    </div>
+  </>);
+
+  const summary=(
+    <Card className="p-4 mb-3">
+      <div className="flex items-end justify-between">
+        <Stat label="營業額" value={money(st.amt)} big tone="brown"/>
+        <div className="text-right text-sm text-mute">{st.n} 單{st.guests>st.n&&<span>・{st.guests} 位</span>}{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</div>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
+        <Stat label="老師抽成" value={money(st.cm)}/>
+        <Stat label="支出" value={money(ex.total)}/>
+        <Stat label="店家淨額" value={money(st.amt-st.cm-ex.total)} tone="sage"/>
+      </div>
+      {st.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {st.skipN} 筆・未收 {money(st.skip)}{st.skipRev>0&&<span>（其中 {money(st.skipRev)} 計入營業額）</span>}</div>}
+    </Card>
+  );
+
+  const closeCard=closed&&(
+    <Card className="p-4 mb-3 bg-sageL/60">
+      <div className="flex items-center justify-between mb-2"><div className="font-semibold text-sageD">日結</div>
+        <button className="text-sm text-warn" onClick={onUnlock}>解除日結</button></div>
+      <div className="grid grid-cols-3 gap-2 text-sm num">
+        <div><div className="text-xs text-mute">應收</div>{money(dd.close.expected)}</div>
+        <div><div className="text-xs text-mute">實收</div>{money(dd.close.cash)}</div>
+        <div><div className="text-xs text-mute">差額</div><span className={dd.close.diff===0?'text-sageD':'text-warn'}>{smoney(dd.close.diff)}</span></div>
+      </div>
+      {dd.close.expected!==st.cash-ex.cash&&<div className="text-xs text-warn mt-2">注意：目前的營業額或現金支出與日結時不同</div>}
+      {dd.close.note&&<div className="text-xs text-mute mt-2">備註：{dd.close.note}</div>}
+    </Card>
+  );
+
+  const ordersBlock=(<>
+    <div className="flex items-center justify-between mb-2 px-1">
+      <div className="text-sm text-mute">訂單{wide&&orders.length>0&&<span className="ml-2 num">{orders.length} 筆</span>}</div>
+      {wide&&!closed&&<button className={'h-8 px-3 rounded-full border text-sm '+(!selId&&!selExpId?'bg-sage border-sage text-white':'border-sage text-sageD bg-card')} onClick={()=>openEditor(null)}>＋ 新增訂單</button>}
+    </div>
+    {orders.length===0&&<Card className="p-6 text-center text-mute">這天還沒有訂單{!closed&&(wide?'，在右側登打':'，按右下「＋」新增')}</Card>}
+    <div className="space-y-2">
+      {orders.map(o=>{const its=orderItems(o);const on=selId===o.id;return (
+        <button key={o.id} className={'w-full text-left rounded-xl border px-3 py-3 flex items-start gap-3 active:bg-sageL '+(on?'bg-sageL border-sage ring-1 ring-sage ':'bg-card border-line ')+(o.void?'opacity-50':'')} onClick={()=>openEditor(o)}>
+          <div className="w-10 pt-0.5 text-center text-mute num text-sm">#{o.sn||'-'}{its.length>1&&<div className="text-[11px] text-sageD">{its.length} 位</div>}</div>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            {its.map((x,k)=>(
+              <div key={k} className={k?'pt-1.5 border-t border-line/70':''}>
+                <div className={'truncate '+(o.void?'line-through':'')}>{orderLabel(x,S)}</div>
+                <div className="text-xs text-mute num">
+                  <span className="text-ink">{x.tc}</span> 老師{zhiOf(x,S)>0&&<span className="ml-1">・{zhiOf(x,S)} 支</span>}
+                  {x.ld&&<span className="ml-1 px-1.5 rounded bg-brownL text-brown">老點</span>}
+                  {(x.rj||[]).length>0&&<span className="ml-2 text-warn">打槍 {x.rj.join('、')}</span>}
+                  {its.length>1&&<span className="ml-2">{money(x.amt)}</span>}
+                </div>
+              </div>))}
+            {(o.t||o.void||o.skip||o.note)&&<div className="text-xs text-mute num">
+              {o.t&&<span className="mr-2">{o.t}</span>}
+              {o.void&&<span className="mr-2 text-warn">已作廢</span>}
+              {o.skip&&<span className="mr-2 px-1.5 rounded bg-warn text-white">跳單・{SKIP_BY[o.skipBy||'store']}{o.skipRev?'・計入':''}</span>}
+              {o.note&&<span>{o.note}</span>}
+            </div>}
+          </div>
+          <div className={'num text-right pt-0.5 '+(o.void||(o.skip&&!o.skipRev)?'line-through ':'')+(o.skip?'text-warn':'')}>{money(orderAmt(o))}</div>
+        </button>);})}
+    </div>
+  </>);
+
+  const expBlock=(<>
+    <div className={'flex items-center justify-between mb-2 px-1 '+(part==='side'?'mt-2':'mt-5')}>
+      <div className="text-sm text-mute">支出{ex.total>0&&<span className="ml-2 num">{money(ex.total)}</span>}</div>
+      {!closed&&<button className="h-8 px-3 rounded-full border border-brown text-brown text-sm bg-card" onClick={()=>openExp(null)}>＋ 新增支出</button>}
+    </div>
+    {exps.length===0&&<div className="text-xs text-mute px-1">這天沒有支出</div>}
+    {exps.length>0&&<Card className="overflow-hidden">
+      {exps.map((e,i)=>(
+        <button key={e.id} className={'w-full flex items-center gap-3 px-3 py-3 text-left active:bg-sageL '+(i?'border-t border-line ':'')+(selExpId===e.id?'bg-sageL':'')} onClick={()=>openExp(e)}>
+          <span className="px-2 py-0.5 rounded bg-brownL text-brown text-xs whitespace-nowrap">{e.cat}</span>
+          <div className="flex-1 min-w-0 truncate">{e.name||<span className="text-mute">（未填名稱）</span>}
+            {e.cash===false&&<span className="ml-2 text-xs text-mute">非現金</span>}
+            {e.note&&<span className="ml-2 text-xs text-mute">・{e.note}</span>}</div>
+          <div className="num text-warn">-{money(e.amt)}</div>
+        </button>))}
+    </Card>}
+  </>);
+
+  const tStats=st.n>0&&(<>
+    <div className="text-sm text-mute mt-5 mb-2 px-1">老師統計</div>
+    <Card className="overflow-hidden">
+      <table className="w-full text-sm num">
+        <thead className="text-xs text-mute bg-brownL/50"><tr>
+          <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">支數</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">抽成</th>
+        </tr></thead>
+        <tbody>{sortT(st.byT).map(t=>(
+          <tr key={t.tc} className="border-t border-line">
+            <td className="px-3 py-2">{t.tc}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
+          </tr>))}</tbody>
+      </table>
+    </Card>
+  </>);
+
+  const closeBtn=!closed&&(st.n>0||exps.length>0)&&<button className="w-full h-12 mt-5 rounded-xl border border-sage text-sageD bg-card" onClick={()=>openClose(st,ex)}>日結</button>;
+
+  if(part==='side')return (<div className="pb-8">{dateNav}{summary}{closeCard}{expBlock}{tStats}{closeBtn}</div>);
+  if(part==='list')return (<div className="pb-8">{ordersBlock}</div>);
   return (
-    <div className="pb-28">
-      <div className="flex items-center justify-between mb-3">
-        <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>setDate(addDays(date,-1))} aria-label="前一天">◀</button>
-        <label className="relative flex flex-col items-center">
-          <span className="text-xs text-mute num">{date.slice(0,4)}</span>
-          <span className="serif text-2xl num">{fmtDate(date)}</span>
-          <input ref={dateRef} type="date" className="absolute inset-0 opacity-0" value={date} onChange={e=>e.target.value&&setDate(e.target.value)}/>
-        </label>
-        <button className="w-11 h-11 rounded-full bg-card border border-line text-lg" onClick={()=>setDate(addDays(date,1))} aria-label="後一天">▶</button>
-      </div>
-      <div className="h-7 mb-2 text-center">
-        {date!==today?<button className="px-3 h-7 rounded-full bg-sageL text-sageD text-sm" onClick={()=>setDate(today)}>回到今天</button>:
-          <span className="text-xs text-mute">今天的營業日</span>}
-      </div>
-
-      <Card className="p-4 mb-3">
-        <div className="flex items-end justify-between">
-          <Stat label="營業額" value={money(st.amt)} big tone="brown"/>
-          <div className="text-right text-sm text-mute">{st.n} 單{st.guests>st.n&&<span>・{st.guests} 位</span>}{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</div>
-        </div>
-        <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
-          <Stat label="老師抽成" value={money(st.cm)}/>
-          <Stat label="支出" value={money(ex.total)}/>
-          <Stat label="店家淨額" value={money(st.amt-st.cm-ex.total)} tone="sage"/>
-        </div>
-        {st.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {st.skipN} 筆・未收 {money(st.skip)}{st.skipRev>0&&<span>（其中 {money(st.skipRev)} 計入營業額）</span>}</div>}
-      </Card>
-
-      {closed&&<Card className="p-4 mb-3 bg-sageL/60">
-        <div className="flex items-center justify-between mb-2"><div className="font-semibold text-sageD">日結</div>
-          <button className="text-sm text-warn" onClick={onUnlock}>解除日結</button></div>
-        <div className="grid grid-cols-3 gap-2 text-sm num">
-          <div><div className="text-xs text-mute">應收</div>{money(dd.close.expected)}</div>
-          <div><div className="text-xs text-mute">實收</div>{money(dd.close.cash)}</div>
-          <div><div className="text-xs text-mute">差額</div><span className={dd.close.diff===0?'text-sageD':'text-warn'}>{smoney(dd.close.diff)}</span></div>
-        </div>
-        {dd.close.expected!==st.cash-ex.cash&&<div className="text-xs text-warn mt-2">注意：目前的營業額或現金支出與日結時不同</div>}
-        {dd.close.note&&<div className="text-xs text-mute mt-2">備註：{dd.close.note}</div>}
-      </Card>}
-
-      <div className="text-sm text-mute mb-2 px-1">訂單</div>
-      {orders.length===0&&<Card className="p-6 text-center text-mute">這天還沒有訂單{!closed&&'，按右下「＋」新增'}</Card>}
-      <div className="space-y-2">
-        {orders.map(o=>{const its=orderItems(o);return (
-          <button key={o.id} className={'w-full text-left bg-card rounded-xl border border-line px-3 py-3 flex items-start gap-3 active:bg-sageL '+(o.void?'opacity-50':'')} onClick={()=>openEditor(o)}>
-            <div className="w-10 pt-0.5 text-center text-mute num text-sm">#{o.sn||'-'}{its.length>1&&<div className="text-[11px] text-sageD">{its.length} 位</div>}</div>
-            <div className="flex-1 min-w-0 space-y-1.5">
-              {its.map((x,k)=>(
-                <div key={k} className={k?'pt-1.5 border-t border-line/70':''}>
-                  <div className={'truncate '+(o.void?'line-through':'')}>{orderLabel(x,S)}</div>
-                  <div className="text-xs text-mute num">
-                    <span className="text-ink">{x.tc}</span> 老師{zhiOf(x,S)>0&&<span className="ml-1">・{zhiOf(x,S)} 支</span>}
-                    {x.ld&&<span className="ml-1 px-1.5 rounded bg-brownL text-brown">老點</span>}
-                    {(x.rj||[]).length>0&&<span className="ml-2 text-warn">打槍 {x.rj.join('、')}</span>}
-                    {its.length>1&&<span className="ml-2">{money(x.amt)}</span>}
-                  </div>
-                </div>))}
-              {(o.t||o.void||o.skip||o.note)&&<div className="text-xs text-mute num">
-                {o.t&&<span className="mr-2">{o.t}</span>}
-                {o.void&&<span className="mr-2 text-warn">已作廢</span>}
-                {o.skip&&<span className="mr-2 px-1.5 rounded bg-warn text-white">跳單・{SKIP_BY[o.skipBy||'store']}{o.skipRev?'・計入':''}</span>}
-                {o.note&&<span>{o.note}</span>}
-              </div>}
-            </div>
-            <div className={'num text-right pt-0.5 '+(o.void||(o.skip&&!o.skipRev)?'line-through ':'')+(o.skip?'text-warn':'')}>{money(orderAmt(o))}</div>
-          </button>);})}
-      </div>
-
-      <div className="flex items-center justify-between mt-5 mb-2 px-1">
-        <div className="text-sm text-mute">支出{ex.total>0&&<span className="ml-2 num">{money(ex.total)}</span>}</div>
-        {!closed&&<button className="h-8 px-3 rounded-full border border-brown text-brown text-sm bg-card" onClick={()=>openExp(null)}>＋ 新增支出</button>}
-      </div>
-      {exps.length===0&&<div className="text-xs text-mute px-1">這天沒有支出</div>}
-      {exps.length>0&&<Card className="overflow-hidden">
-        {exps.map((e,i)=>(
-          <button key={e.id} className={'w-full flex items-center gap-3 px-3 py-3 text-left active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>openExp(e)}>
-            <span className="px-2 py-0.5 rounded bg-brownL text-brown text-xs whitespace-nowrap">{e.cat}</span>
-            <div className="flex-1 min-w-0 truncate">{e.name||<span className="text-mute">（未填名稱）</span>}
-              {e.cash===false&&<span className="ml-2 text-xs text-mute">非現金</span>}
-              {e.note&&<span className="ml-2 text-xs text-mute">・{e.note}</span>}</div>
-            <div className="num text-warn">-{money(e.amt)}</div>
-          </button>))}
-      </Card>}
-
-      {st.n>0&&<>
-        <div className="text-sm text-mute mt-5 mb-2 px-1">老師統計</div>
-        <Card className="overflow-hidden">
-          <table className="w-full text-sm num">
-            <thead className="text-xs text-mute bg-brownL/50"><tr>
-              <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">支數</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">抽成</th>
-            </tr></thead>
-            <tbody>{sortT(st.byT).map(t=>(
-              <tr key={t.tc} className="border-t border-line">
-                <td className="px-3 py-2">{t.tc}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
-              </tr>))}</tbody>
-          </table>
-        </Card>
-      </>}
-
-      {!closed&&(st.n>0||exps.length>0)&&<button className="w-full h-12 mt-5 rounded-xl border border-sage text-sageD bg-card" onClick={()=>openClose(st,ex)}>日結</button>}
-
-      {!closed&&<button className="fixed z-30 right-5 bottom-24 w-16 h-16 rounded-full bg-sage text-white text-4xl shadow-lg active:bg-sageD" style={{marginBottom:'env(safe-area-inset-bottom)'}} onClick={()=>openEditor(null)} aria-label="新增訂單">＋</button>}
+    <div className={wide?'pb-8':'pb-28'}>
+      {dateNav}{summary}{closeCard}
+      <div className="mt-0">{ordersBlock}</div>
+      {expBlock}{tStats}{closeBtn}
+      {!wide&&!closed&&<button className="fixed z-30 right-5 bottom-24 w-16 h-16 rounded-full bg-sage text-white text-4xl shadow-lg active:bg-sageD" style={{marginBottom:'env(safe-area-inset-bottom)'}} onClick={()=>openEditor(null)} aria-label="新增訂單">＋</button>}
     </div>
   );
 }
@@ -1610,10 +1641,10 @@ function Welcome({me,views,onPick,onEdit}){
     </>
   );
 }
-function RoleBar({view,me,canSwitch,onSwitch}){
+function RoleBar({view,me,canSwitch,onSwitch,wide}){
   return (
     <div className="bg-sageD text-white text-sm">
-      <div className="max-w-md mx-auto px-4 h-10 flex items-center justify-between">
+      <div className={(wide?'px-6':'max-w-md mx-auto px-4')+' h-10 flex items-center justify-between'}>
         <span>{VIEWS[view].label}檢視・{me.name}{me.code?<span className="num opacity-80">（{me.code}）</span>:''}</span>
         {canSwitch&&<button className="h-7 px-3 rounded-full bg-white/15" onClick={onSwitch}>切換身分</button>}
       </div>
@@ -1645,37 +1676,56 @@ function demoCalc(S,x){
   return Object.assign({},x,{zh,fee:zh*S.comm.per30+(x.ld?S.comm.laodian:0),amt:price+ad.reduce((s,a)=>s+a.price,0),adName:ad.map(a=>a.name).join('、')});
 }
 const DEMO_TEACHER=[
-  {off:0,t:'15:10',sn:'0421',svc:'oil',min:90,ld:1,ad:['guasha']},
-  {off:0,t:'13:40',sn:'0417',svc:'foot',min:60},
-  {off:0,t:'11:05',sn:'0409',svc:'dry',min:90,promo:1,ld:1},
+  {off:0,t:'12:55',sn:'0417',svc:'oil',min:90,ld:1,ad:['guasha']},
+  {off:0,t:'11:45',sn:'0413',svc:'foot',min:60},
+  {off:0,t:'10:05',sn:'0409',svc:'dry',min:90,promo:1,ld:1},
   {off:1,t:'22:30',sn:'0396',svc:'oil',min:120,ld:1},
   {off:1,t:'20:15',sn:'0388',svc:'dry',min:60,ad:['bagua']},
   {off:2,t:'23:50',sn:'0371',svc:'foot',min:90},
   {off:2,t:'18:20',sn:'0362',svc:'oil',min:60,ld:1,ad:['eoil']},
 ];
 
-function TeacherHome({me}){
+/* 身分畫面的版型：手機一欄；平板雙欄／三欄（top＝整列，cols＝每欄放哪些區塊，數字是 B 的索引） */
+function RolePage({mode,head,B,phone,wide,xwide}){
+  const L=mode==='xwide'?xwide:mode==='wide'?wide:null;
+  const put=list=>(list||[]).map(i=><React.Fragment key={i}>{B[i]}</React.Fragment>);
+  if(!L)return <div className="max-w-md mx-auto px-4 pb-16">{head}{put(phone)}</div>;
+  return (
+    <div className="max-w-[1400px] mx-auto px-6 pb-16">
+      {head}{put(L.top)}
+      <div className="grid gap-x-6 items-start" style={{gridTemplateColumns:'repeat('+L.cols.length+',minmax(0,1fr))'}}>
+        {L.cols.map((c,k)=><div key={k} className="min-w-0">{put(c)}</div>)}
+      </div>
+    </div>
+  );
+}
+
+function TeacherHome({me,mode}){
+  mode=mode||'phone';
   const S=loadSettings();
   const [per,setPer]=useState(()=>new Date().getDate()<=15?'h1':'h2');
+  const [day,setDay]=useState('today');
+  const myTc=DEMO_SHIFT[me&&me.code]?me.code:'77';
   const ym=ymd(new Date()).slice(0,7);
   const rows=DEMO_TEACHER.map(x=>demoCalc(S,x));
   const today=rows.filter(r=>r.off===0);
   const sum=(a,k)=>a.reduce((s,r)=>s+(k==='ld'?(r.ld?1:0):r[k]),0);
   const P={h1:{zh:86,ld:11,adv:1000},h2:{zh:41,ld:5,adv:0}}[per];
   const pfee=P.zh*S.comm.per30+P.ld*S.comm.laodian;
-  return (
-    <div className="max-w-md mx-auto px-4 pb-16">
-      <DemoNote/>
-      <Sec title="今日服務" demo>
+  const B=[
+    (<Sec title="我的預約情形" demo right={<div className="flex rounded-lg border border-line overflow-hidden text-xs">{[['today','今天'],['tomorrow','明天']].map(([k,l])=><button key={k} className={'px-3 h-7 '+(day===k?'bg-sage text-white':'bg-card')} onClick={()=>setDay(k)}>{l}</button>)}</div>}>
+        <MyDayStrip tc={myTc} day={day}/>
+      </Sec>),
+    (<Sec title="今日服務" demo>
         <div className="grid grid-cols-4 gap-2"><KV k="單數" v={today.length}/><KV k="支數" v={sum(today,'zh')}/><KV k="老點" v={sum(today,'ld')}/><KV k="費用" v={money(sum(today,'fee'))} cls="text-brown"/></div>
-      </Sec>
-      <Sec title="本期累計" demo right={<div className="flex rounded-lg border border-line overflow-hidden text-xs">{['h1','h2'].map(h=><button key={h} className={'px-3 h-7 '+(per===h?'bg-sage text-white':'bg-card')} onClick={()=>setPer(h)}>{PERIOD_LABEL[h]}</button>)}</div>}>
+      </Sec>),
+    (<Sec title="本期累計" demo right={<div className="flex rounded-lg border border-line overflow-hidden text-xs">{['h1','h2'].map(h=><button key={h} className={'px-3 h-7 '+(per===h?'bg-sage text-white':'bg-card')} onClick={()=>setPer(h)}>{PERIOD_LABEL[h]}</button>)}</div>}>
         <div className="text-xs text-mute mb-2 num">{periodText(ym,per)}・發薪日 {fmtPayDay(payDay(ym,per))}</div>
         <div className="grid grid-cols-3 gap-2 mb-3"><KV k="支數" v={P.zh}/><KV k="老點" v={P.ld}/><KV k="費用合計" v={money(pfee)}/></div>
         {P.adv>0&&<div className="flex justify-between text-sm py-1"><span className="text-mute">預支</span><span className="num text-warn">-{money(P.adv)}</span></div>}
         <div className="flex justify-between pt-2 border-t border-line"><span className="text-mute">預估應領</span><span className="serif text-2xl text-brown">{money(pfee-P.adv)}</span></div>
-      </Sec>
-      <Sec title="我的服務明細" demo>
+      </Sec>),
+    (<Sec title="我的服務明細" demo>
         <div className="grid grid-cols-[3.2rem_2.6rem_1fr_1.6rem_3.6rem] gap-1 text-xs text-mute pb-1 border-b border-line"><span>日期</span><span>單號</span><span>項目</span><span className="text-center">支</span><span className="text-right">費用</span></div>
         {rows.map((r,i)=>{const d=demoDay(r.off);return (
           <div key={i} className="grid grid-cols-[3.2rem_2.6rem_1fr_1.6rem_3.6rem] gap-1 py-2 border-b border-line text-sm items-center">
@@ -1685,52 +1735,58 @@ function TeacherHome({me}){
             <span className="num text-center">{r.zh}</span>
             <span className="num text-right">{money(r.fee)}</span>
           </div>);})}
-      </Sec>
-      <Sec title="打卡" demo>
-        <div className="flex justify-between text-sm mb-3"><span>今日上班 <span className="num">12:58</span></span><span className="text-mute">下班 —</span></div>
+      </Sec>),
+    (<Sec title="打卡" demo>
+        <div className="flex justify-between text-sm mb-3"><span>今日上班 <span className="num">09:55</span></span><span className="text-mute">下班 —</span></div>
         <div className="grid grid-cols-2 gap-2"><DisBtn>✓ 已上班</DisBtn><DisBtn>下班打卡</DisBtn></div>
-      </Sec>
-      <Sec title="店家公告" demo>
+      </Sec>),
+    (<Sec title="店家公告" demo>
         {[['09/24','國慶連假 10/10～10/11 照常營業，請提早排班'],['09/20','新增「修腳皮」加購，算 1 支']].map((a,i)=><div key={i} className="flex gap-3 py-2 border-b border-line last:border-0 text-sm"><span className="num text-mute text-xs pt-0.5">{a[0]}</span><span>{a[1]}</span></div>)}
-      </Sec>
-      <Sec title="我的班表" demo>
+      </Sec>),
+    (<Sec title="我的班表" demo>
         <div className="grid grid-cols-7 gap-1 text-center text-xs">
           {Array.from({length:7},(_,i)=>{const d=demoDay(-i);const off=i===3;return <div key={i} className={'rounded-lg py-2 '+(off?'bg-bg text-mute':'bg-sageL text-sageD')}><div>{WK[d.getDay()]}</div><div className="num">{d.getDate()}</div><div className="mt-1">{off?'休':'13–01'}</div></div>})}
         </div>
-      </Sec>
-      <Sec title="其他" soon>
+      </Sec>),
+    (<Sec title="其他" soon>
         <div className="grid grid-cols-2 gap-2"><DisBtn>請假申請</DisBtn><DisBtn>下載薪資條</DisBtn></div>
-      </Sec>
-    </div>
-  );
+      </Sec>)
+  ];
+  const head=(<><DemoNote/>
+      <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span>{myTc!==(me&&me.code)?'・以老師 77 的資料示範':''}</div></>);
+  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4,5,6,7]} wide={{cols:[[0,1,2,4],[3,5,6,7]]}} xwide={{top:[0],cols:[[1,2,4],[3],[6,5,7]]}}/>;
 }
 
 /* 櫃台範例情境（範例時間 14:50）：
-   5 位老師在班；3 個預約＋1 位現場候位 → 4 位老師已被「壓牌」（保留給某位客人），只剩 1 位未壓牌（休息中）。
-   訂單分「服務中（未結帳）」與「已結帳」；營業額、應有現金只算已結帳。 */
+   5 位老師在班；3 個預約＋1 位現場候位 → 4 位老師已被「壓牌」（保留給某位客人）。
+   訂單分「服務中（未結帳）」與「已結帳」；營業額、應有現金只算已結帳。
+   空檔規則：被壓牌的老師，只要壓牌前的空檔 ≥ 服務時間（預設 60 分），仍可先接現場客。 */
 const DEMO_NOW='14:50';
 const DEMO_ORDERS=[
   {t:'14:25',sn:'0424',st:'serving',g:[{svc:'foot',min:60,tc:'58'}]},
   {t:'13:30',sn:'0423',st:'serving',g:[{svc:'dry',min:120,tc:'122',ld:1}]},
+  {t:'12:55',sn:'0417',st:'paid',pay:'14:30',g:[{svc:'oil',min:90,tc:'77',ld:1,ad:['guasha']}]},
   {t:'13:00',sn:'0419',st:'paid',pay:'14:05',g:[{svc:'foot',min:60,tc:'58'},{svc:'foot',min:60,tc:'36'}]},
-  {t:'12:10',sn:'0417',st:'paid',pay:'13:45',g:[{svc:'oil',min:90,tc:'77',ld:1,ad:['guasha']}]},
-  {t:'11:20',sn:'0413',st:'paid',pay:'12:25',g:[{svc:'foot',min:60,tc:'77'}]},
+  {t:'11:45',sn:'0413',st:'paid',pay:'12:50',g:[{svc:'foot',min:60,tc:'77'}]},
   {t:'10:05',sn:'0409',st:'paid',pay:'11:40',g:[{svc:'dry',min:90,tc:'77',promo:1,ld:1}]},
   {t:'09:15',sn:'0402',st:'paid',pay:'10:20',g:[{svc:'dry',min:60,tc:'122'}]},
 ];
-// 預約／候位：hold＝壓到哪位老師的牌
+// 預約／候位：hold＝壓到哪位老師的牌；at＝開始服務時間；min＝服務分鐘
 const DEMO_BOOK=[
-  {id:'b1',kind:'book',t:'15:00',who:'陳先生',item:'油壓 90',hold:'77',how:'指定',st:'已確認'},
-  {id:'b2',kind:'book',t:'15:30',who:'林小姐',item:'腳底 60',hold:'36',how:'不指定・依輪班排入',st:'已確認'},
-  {id:'b3',kind:'book',t:'19:00',who:'王小姐',item:'指壓 120',hold:'122',how:'指定',st:'待確認'},
-  {id:'w1',kind:'walk',t:'14:40',who:'張先生',item:'指壓 60',hold:'58',how:'等最快下鐘',st:'約 15:25 可開始'},
+  {id:'b1',kind:'book',t:'15:00',at:'15:00',min:90,who:'陳先生',item:'油壓 90',hold:'77',how:'指定',st:'已確認'},
+  {id:'b2',kind:'book',t:'15:30',at:'15:30',min:60,who:'林小姐',item:'腳底 60',hold:'36',how:'不指定・依輪班排入',st:'已確認'},
+  {id:'b3',kind:'book',t:'19:00',at:'19:00',min:120,who:'王小姐',item:'指壓 120',hold:'122',how:'指定',st:'待確認'},
+  {id:'w1',kind:'walk',t:'14:40',at:'15:25',min:60,who:'張先生',item:'指壓 60',hold:'58',how:'等最快下鐘',st:'約 15:25 可開始'},
 ];
-// 老師狀態：avail 可接客（rot＝輪班順位）／serving 服務中（end＝預計下鐘）／rest 休息中
+// 班表（上牌～下牌）。25 號是晚班，18:00 才上牌
+const DEMO_SHIFT={'122':['09:00','21:00'],'77':['10:00','20:00'],'36':['12:00','22:00'],'58':['13:00','23:00'],'12':['14:00','24:00'],'25':['18:00','02:00']};
+const DEMO_REST=[{tc:'12',s:'14:30',e:'15:40'}];
+// 老師狀態：avail 可接客（rot＝輪班順位，先下鐘先輪）／serving 服務中（end＝預計下鐘）／rest 休息中
 const DEMO_TSTAT=[
   {tc:'122',st:'serving',sn:'0423',note:'指壓 120',start:'13:30',end:'15:30'},
-  {tc:'77',st:'avail',rot:1,since:'13:45'},
+  {tc:'77',st:'avail',rot:2,since:'14:30'},
   {tc:'58',st:'serving',sn:'0424',note:'腳底 60',start:'14:25',end:'15:25'},
-  {tc:'36',st:'avail',rot:2,since:'14:05'},
+  {tc:'36',st:'avail',rot:1,since:'14:05'},
   {tc:'12',st:'rest',note:'15:40 回來'},
 ];
 const TST={avail:{label:'可接客',tone:'sage'},serving:{label:'服務中',tone:'brown'},rest:{label:'休息中',tone:''}};
@@ -1747,7 +1803,149 @@ function sortTeachers(list,by){
     return num(x)-num(y);
   });
 }
-function CounterHome({me}){
+
+/* ---- 時間軸模型：分鐘數（跨午夜 +1440，例 02:00＝1560） ---- */
+const tm=s=>{const a=String(s).split(':').map(Number);let m=a[0]*60+(a[1]||0);if(a[0]<6)m+=1440;return m};
+const tf=m=>pad(Math.floor(m/60)%24)+':'+pad(m%60);
+const SLOT_LEN=60;                 // 空檔至少要能做 60 分鐘
+const BK={done:{label:'已服務',cls:'bg-sageL text-sageD'},serve:{label:'服務中',cls:'bg-brownL text-brown'},book:{label:'預約',cls:'bg-warnL text-warn'},walk:{label:'現場',cls:'bg-warnL text-warn'},rest:{label:'休息',cls:'bg-bg text-mute border border-line'}};
+function demoBlocks(){
+  const b=[];
+  DEMO_ORDERS.forEach(o=>o.g.forEach(x=>{const s=tm(o.t);b.push({tc:x.tc,s,e:s+x.min,kind:o.st==='paid'?'done':'serve',who:'#'+o.sn,item:SVC_SHORT[x.svc]+' '+x.min})}));
+  DEMO_BOOK.forEach(k=>{const s=tm(k.at);b.push({tc:k.hold,s,e:s+k.min,kind:k.kind,who:k.who,item:k.item,how:k.how})});
+  DEMO_REST.forEach(r=>b.push({tc:r.tc,s:tm(r.s),e:tm(r.e),kind:'rest',who:'',item:'休息'}));
+  return b.sort((x,y)=>x.s-y.s);
+}
+// 從 t0 起（在 [t0, until) 內，每 5 分鐘找一次）最早可連續空 len 分鐘的時間；找不到回 null
+function freeAt(tc,blocks,t0,until,len){
+  const sh=DEMO_SHIFT[tc];if(!sh)return null;
+  const on=tm(sh[0]),off=tm(sh[1]);len=len||SLOT_LEN;
+  for(let t=Math.ceil(Math.max(t0,on)/5)*5;t<until;t+=5){
+    if(t+len>off)return null;
+    if(!blocks.some(b=>b.tc===tc&&b.s<t+len&&b.e>t))return t;
+  }
+  return null;
+}
+// 從 t 起的空檔到什麼時候（下一個占用或下牌）
+function gapEnd(tc,blocks,t){
+  const off=tm(DEMO_SHIFT[tc][1]);
+  const nx=blocks.filter(b=>b.tc===tc&&b.s>=t).sort((x,y)=>x.s-y.s)[0];
+  return nx?{e:Math.min(nx.s,off),next:nx}:{e:off,next:null};
+}
+
+/* 時段牌況：橫排＝時段（預設現在這小時起 3 個小時，可前後切換）；直排＝這個時段在班的每一張牌。
+   每格顯示這張牌在該小時內的占用（服務中／預約／現場／休息）；排序：整小時都不能排的在上、可排的在下。 */
+function SlotBoard({n}){
+  n=n||3;
+  const blocks=useMemo(demoBlocks,[]);
+  const NOW=tm(DEMO_NOW);const nowH=Math.floor(NOW/60)*60;
+  const [h0,setH0]=useState(nowH);
+  const MIN_H=9*60,MAX_H=25*60;   // 09:00～01:00 開始的時段
+  const hours=Array.from({length:n},(_,i)=>h0+i*60);
+  const col=H=>{
+    const E=H+60;const t0=Math.max(H,NOW);
+    const on=Object.keys(DEMO_SHIFT).filter(tc=>{const s=DEMO_SHIFT[tc];return tm(s[0])<E&&tm(s[1])>H});
+    const cards=on.map(tc=>{
+      const bs=blocks.filter(b=>b.tc===tc&&b.s<E&&b.e>H);
+      const fs=E<=NOW?null:freeAt(tc,blocks,t0,E);
+      const sh=DEMO_SHIFT[tc];
+      return {tc,bs,fs,in:tm(sh[0])>H?tm(sh[0]):null,out:tm(sh[1])<E?tm(sh[1]):null};
+    });
+    cards.sort((a,b)=>(b.fs==null?1e9:b.fs)-(a.fs==null?1e9:a.fs)||Number(a.tc)-Number(b.tc));
+    const avail=cards.filter(c=>c.fs!=null);
+    const atStart=avail.filter(c=>c.fs===t0).length;
+    const last=avail.length?Math.max.apply(null,avail.map(c=>c.fs)):null;
+    return {H,E,past:E<=NOW,cards,atStart,all:avail.length,last,t0};
+  };
+  const cols=hours.map(col);
+  const span=(b,H,E)=>b.s<=H&&b.e>=E?'整小時':b.s<=H?'～'+tf(b.e):b.e>=E?tf(b.s)+'～':tf(b.s)+'-'+tf(b.e);
+  // 下一小時內即將開始的壓牌（說明為什麼這張牌現在不能排 60 分）
+  const soon=(tc,E)=>blocks.find(b=>b.tc===tc&&(b.kind==='book'||b.kind==='walk')&&b.s>=E&&b.s<E+SLOT_LEN);
+  return (
+    <>
+      <div className="flex items-center gap-2 mb-3">
+        <button className="w-9 h-9 rounded-lg border border-line bg-card text-lg disabled:opacity-30" disabled={h0<=MIN_H} onClick={()=>setH0(h0-60)}>‹</button>
+        <div className="flex-1 text-center text-sm"><span className="num">{tf(h0)}～{tf(h0+n*60)}</span>{h0!==nowH&&<button className="ml-2 text-xs text-sageD underline" onClick={()=>setH0(nowH)}>回到現在</button>}</div>
+        <button className="w-9 h-9 rounded-lg border border-line bg-card text-lg disabled:opacity-30" disabled={h0>=MAX_H-(n-1)*60} onClick={()=>setH0(h0+60)}>›</button>
+      </div>
+      <div className="grid gap-2" style={{gridTemplateColumns:'repeat('+n+',minmax(0,1fr))'}}>
+        {cols.map(c=>(
+          <div key={c.H} className={c.past?'opacity-50':''}>
+            <div className={'text-center text-sm num mb-1 '+(c.H===nowH?'text-brown font-semibold':'')}>{tf(c.H)}{c.H===nowH&&<span className="text-[10px] font-normal"> 現在</span>}</div>
+            <div className="text-center text-[11px] text-mute mb-1.5">{c.cards.length} 張牌</div>
+            <div className="space-y-1">
+              {c.cards.map((k,i)=>{
+                const full=k.fs!=null&&k.fs===c.t0,part=k.fs!=null&&!full;
+                return (
+                  <div key={k.tc} className={'rounded-lg px-1.5 py-1 text-[11px] leading-tight border '+(full?'border-sage bg-sageL/60':part?'border-sage/50 bg-card':'border-line bg-bg')}>
+                    <div className="flex justify-between"><span className="text-mute">牌{i+1}</span><span className="num font-semibold">{k.tc}</span></div>
+                    {k.in!=null&&<div className="text-mute">{tf(k.in)} 上牌</div>}
+                    {k.bs.map((b,j)=><div key={j} className="mt-0.5 flex gap-1 items-center"><span className={'shrink-0 px-1 rounded '+BK[b.kind].cls}>{b.kind==='book'||b.kind==='walk'?'壓':BK[b.kind].label.slice(0,1)}</span><span className="num truncate">{span(b,c.H,c.E)}{(b.kind==='book'||b.kind==='walk')?' '+b.who.slice(0,1):''}</span></div>)}
+                    {k.out!=null&&<div className="text-mute">{tf(k.out)} 下牌</div>}
+                    {!c.past&&k.fs==null&&(()=>{const n=soon(k.tc,c.E);return n?<div className="mt-0.5 text-warn">→ <span className="num">{tf(n.s)}</span> 壓 {n.who.slice(0,1)}</div>:null})()}
+                    {!c.past&&<div className={'mt-0.5 '+(full?'text-sageD font-semibold':part?'text-sageD':'text-mute')}>{full?'可排':part?tf(k.fs)+' 起可排':'不可排'}</div>}
+                  </div>);})}
+            </div>
+            {!c.past&&<div className="mt-1.5 rounded-lg bg-card border border-line px-1.5 py-1 text-[11px] leading-snug">
+              <div>{c.t0===c.H?'整點':tf(c.t0)+' '}可排 <b className={'num '+(c.atStart?'text-sageD':'text-warn')}>{c.atStart}</b> 張</div>
+              {c.all>c.atStart&&<div className="text-sageD"><span className="num">{tf(c.last)}</span> 起 <b className="num">{c.all}</b> 張</div>}
+            </div>}
+          </div>))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-mute">
+        <span><span className={'px-1 rounded '+BK.serve.cls}>服</span> 服務中</span>
+        <span><span className={'px-1 rounded '+BK.book.cls}>壓</span> 預約／現場壓牌</span>
+        <span><span className={'px-1 rounded '+BK.rest.cls}>休</span> 休息</span>
+        <span><span className={'px-1 rounded '+BK.done.cls}>已</span> 已服務</span>
+      </div>
+      <div className="text-[11px] text-mute mt-1">「可排」＝該時段內能連續空出 {SLOT_LEN} 分鐘（壓牌前的空檔夠 {SLOT_LEN} 分也算）。</div>
+    </>
+  );
+}
+
+/* 老師個人：今日預約情形（上牌到下牌，每小時一格） */
+function MyDayStrip({tc,day}){
+  const blocks=useMemo(demoBlocks,[]);
+  const NOW=tm(DEMO_NOW);
+  const sh=DEMO_SHIFT[tc]||['10:00','20:00'];
+  const on=tm(sh[0]),off=tm(sh[1]);
+  const TOMORROW=[{tc,s:tm('11:00'),e:tm('12:30'),kind:'book',who:'王先生',item:'油壓 90',how:'指定'},{tc,s:tm('17:00'),e:tm('18:00'),kind:'book',who:'林小姐',item:'腳底 60',how:'不指定・依輪班排入'}];
+  const mine=day==='today'?blocks.filter(b=>b.tc===tc):TOMORROW;
+  const now=day==='today'?NOW:-1;
+  const hrs=[];for(let h=on;h<off;h+=60)hrs.push(h);
+  const cls=h=>{const bs=mine.filter(b=>b.s<h+60&&b.e>h);if(bs.some(b=>b.kind==='book'||b.kind==='walk'))return 'book';if(bs.some(b=>b.kind==='serve'))return 'serve';if(bs.some(b=>b.kind==='done'))return 'done';if(bs.some(b=>b.kind==='rest'))return 'rest';return 'free'};
+  const cnt=k=>hrs.filter(h=>cls(h)===k).length;
+  const bk=mine.filter(b=>b.kind==='book'||b.kind==='walk');
+  const COL={done:'#6f7d62',serve:'#a0784f',book:'#b5543c',walk:'#b5543c',rest:'#cfc6b8'};
+  return (
+    <>
+      <div className="text-xs text-mute mb-2">上牌 <span className="num">{tf(on)}～{tf(off)}</span>・共 {hrs.length} 格（1 小時 1 格）</div>
+      <div className="grid gap-[3px]" style={{gridTemplateColumns:'repeat('+hrs.length+',minmax(0,1fr))'}}>
+        {hrs.map(h=>(
+          <div key={h}>
+            <div className="text-[10px] text-center text-mute num">{Math.floor(h/60)%24}</div>
+            <div className={'relative h-11 rounded-md overflow-hidden border '+(cls(h)==='book'?'border-warn/50':'border-line')+' bg-card'}>
+              {mine.filter(b=>b.s<h+60&&b.e>h).map((b,j)=>{const a=Math.max(b.s,h)-h,z=Math.min(b.e,h+60)-h;
+                return <div key={j} className="absolute top-0 bottom-0" style={{left:(a/60*100)+'%',width:((z-a)/60*100)+'%',background:COL[b.kind],opacity:b.kind==='done'?0.55:0.9}}></div>})}
+              {now>=h&&now<h+60&&<div className="absolute top-0 bottom-0 w-[2px] bg-ink" style={{left:((now-h)/60*100)+'%'}}></div>}
+            </div>
+          </div>))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-mute">
+        {[['book','預約'],['serve','服務中'],['done','已服務'],['rest','休息']].map(([k,l])=><span key={k} className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{background:COL[k],opacity:k==='done'?0.55:0.9}}></span>{l}</span>)}
+        {day==='today'&&<span className="flex items-center gap-1"><span className="inline-block w-[2px] h-3 bg-ink"></span>現在</span>}
+      </div>
+      <div className="grid grid-cols-4 gap-2 mt-3 text-center">
+        {[['有預約','book','text-warn'],['服務中','serve','text-brown'],['已服務','done','text-sageD'],['空','free','']].map(([l,k,c])=><div key={k} className="rounded-lg bg-bg py-1.5"><div className={'text-lg num '+c}>{cnt(k)}</div><div className="text-[11px] text-mute">{l}（格）</div></div>)}
+      </div>
+      <div className="mt-3 pt-2 border-t border-line">
+        {bk.length?bk.map((b,i)=><div key={i} className="flex items-center gap-2 py-1.5 text-sm"><span className="num text-warn w-24 shrink-0">{tf(b.s)}～{tf(b.e)}</span><span className="flex-1">{b.who}・{b.item}<span className="block text-xs text-mute">{b.kind==='walk'?'現場候位・':''}{b.how}</span></span></div>):<Ph>沒有預約</Ph>}
+      </div>
+    </>
+  );
+}
+function CounterHome({me,mode}){
+  mode=mode||'phone';
   const S=loadSettings();
   const [tsort,setTsort]=useState('rot');
   const [of,setOf]=useState('all');
@@ -1762,20 +1960,18 @@ function CounterHome({me}){
   const tlist=sortTeachers(DEMO_TSTAT,tsort);
   const cnt=k=>DEMO_TSTAT.filter(t=>t.st===k).length;
   const held=DEMO_TSTAT.filter(t=>holdOf(t.tc).length).length;
-  const free=DEMO_TSTAT.filter(t=>t.st==='avail'&&!holdOf(t.tc).length).length;
+  const blocks=useMemo(demoBlocks,[]);const NOWM=tm(DEMO_NOW);
+  const nextFree=tc=>{const t=freeAt(tc,blocks,NOWM,tm(DEMO_SHIFT[tc][1]));return t==null?null:Object.assign({t},gapEnd(tc,blocks,t))};
+  const free=DEMO_TSTAT.filter(t=>{const f=nextFree(t.tc);return f&&f.t<=Math.ceil(NOWM/5)*5}).length;
   const shown=orders.filter(o=>of==='all'||o.st===of);
   const Seg=({opts,val,set})=><div className="flex rounded-lg border border-line overflow-hidden text-xs">{opts.map(o=><button key={o.id} className={'px-2.5 h-7 '+(val===o.id?'bg-sage text-white':'bg-card')} onClick={()=>set(o.id)}>{o.label}</button>)}</div>;
-  return (
-    <div className="max-w-md mx-auto px-4 pb-16">
-      <DemoNote/>
-      <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span></div>
-      <Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
+  const B=[
+    (<Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
         <div className="grid grid-cols-3 gap-2 mb-1"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="已結帳營業額" v={money(rev)} cls="text-brown"/></div>
         <div className="text-xs text-mute mb-3">服務中 {serving.length} 單・未結帳 <span className="num">{money(unpaid)}</span></div>
         <DisBtn cls="w-full">＋ 登打訂單</DisBtn>
-      </Sec>
-
-      <Sec title="訂單" demo right={<Seg opts={[{id:'all',label:'全部'},{id:'serving',label:'服務中'},{id:'paid',label:'已結帳'}]} val={of} set={setOf}/>}>
+      </Sec>),
+    (<Sec title="訂單" demo right={<Seg opts={[{id:'all',label:'全部'},{id:'serving',label:'服務中'},{id:'paid',label:'已結帳'}]} val={of} set={setOf}/>}>
         {shown.map((o,i)=>(
           <div key={i} className={'flex items-start gap-3 py-2 border-b border-line last:border-0 text-sm '+(o.st==='paid'?'':'')}>
             <span className="num text-xs text-mute w-12 shrink-0 pt-0.5">#{o.sn}<br/><span className="whitespace-nowrap">{o.t} 開</span></span>
@@ -1787,10 +1983,9 @@ function CounterHome({me}){
           </div>))}
         {!shown.length&&<Ph>沒有訂單</Ph>}
         {of!=='paid'&&serving.length>0&&<DisBtn cls="w-full mt-3">結帳（選擇服務中訂單）</DisBtn>}
-      </Sec>
-
-      <Sec title="老師狀態" demo right={<Seg opts={T_SORTS} val={tsort} set={setTsort}/>}>
-        <div className="text-xs text-mute mb-2">在班 {DEMO_TSTAT.length} 位・可接 {cnt('avail')}・服務中 {cnt('serving')}・休息 {cnt('rest')}　|　<span className="text-warn">已壓牌 {held} 位</span>・可接且未壓牌 <b className={free?'text-sageD':'text-warn'}>{free}</b> 位</div>
+      </Sec>),
+    (<Sec title="老師狀態" demo right={<Seg opts={T_SORTS} val={tsort} set={setTsort}/>}>
+        <div className="text-xs text-mute mb-2">在班 {DEMO_TSTAT.length} 位・可接 {cnt('avail')}・服務中 {cnt('serving')}・休息 {cnt('rest')}　|　<span className="text-warn">已壓牌 {held} 位</span>・現在可接 {SLOT_LEN} 分 <b className={free?'text-sageD':'text-warn'}>{free}</b> 位</div>
         <div className="grid grid-cols-[2.5rem_1fr_2.5rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>編號</span><span>狀態</span><span className="text-right">今日支</span></div>
         {tlist.map(t=>{const h=holdOf(t.tc);return (
           <div key={t.tc} className="grid grid-cols-[2.5rem_1fr_2.5rem] gap-2 py-2 border-b border-line last:border-0 text-sm items-start">
@@ -1803,14 +1998,19 @@ function CounterHome({me}){
                 {t.st==='avail'&&<>等待中（<span className="num">{t.since}</span> 起）</>}
                 {t.st==='rest'&&t.note}
               </span>
+              {(()=>{const f=nextFree(t.tc);if(!f)return <span className="block text-xs text-mute mt-1">今日已無 {SLOT_LEN} 分空檔</span>;
+                const nowOk=f.t<=Math.ceil(NOWM/5)*5;
+                return <span className={'block text-xs mt-1 '+(nowOk?'text-sageD font-semibold':'text-sageD')}>{nowOk?'現在':<span className="num">{tf(f.t)} 起</span>}可接現場 {SLOT_LEN} 分・空檔到 <span className="num">{tf(f.e)}</span>{f.next&&(f.next.kind==='book'||f.next.kind==='walk')?'（'+f.next.who+'前）':f.next?'':'（下牌）'}</span>})()}
               {h.map(b=><span key={b.id} className="mt-1.5 block rounded-lg bg-warnL/60 px-2 py-1 text-xs text-warn"><span className="whitespace-nowrap font-semibold">壓牌 <span className="num">{b.t}</span> {b.who}</span><span className="ml-1 text-[10px] px-1 rounded bg-white/70">{b.kind==='walk'?'現場':'預約'}</span><span className="block text-mute">{b.item}・{b.how}</span></span>)}
             </span>
             <span className="num text-right pt-0.5">{zhOf(t.tc)}</span>
           </div>);})}
-        <div className="text-xs text-mute mt-2">排序：按編號＝小到大；輪班優先＝可接客（依輪班順位）→服務中（先下鐘在前）→休息；服務中優先＝服務中（先下鐘在前）→可接客→休息。</div>
-      </Sec>
-
-      <Sec title="預約／候位" demo>
+        <div className="text-xs text-mute mt-2">空檔規則：壓牌前的空檔夠 {SLOT_LEN} 分鐘，就可以先接現場客。<br/>排序：按編號＝小到大；輪班優先＝可接客（依輪班順位）→服務中（先下鐘在前）→休息；服務中優先＝服務中（先下鐘在前）→可接客→休息。</div>
+      </Sec>),
+    (<Sec title="時段牌況" demo>
+        <SlotBoard n={mode==='xwide'?6:mode==='wide'?5:3}/>
+      </Sec>),
+    (<Sec title="預約／候位" demo>
         <div className="grid grid-cols-[3rem_1fr_3.5rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>時間</span><span>客人・項目</span><span className="text-right">壓牌老師</span></div>
         {DEMO_BOOK.map(b=>
           <div key={b.id} className="grid grid-cols-[3rem_1fr_3.5rem] gap-2 py-2 border-b border-line last:border-0 text-sm items-center">
@@ -1820,36 +2020,45 @@ function CounterHome({me}){
           </div>)}
         <div className="text-xs text-mute mt-2">預約 {DEMO_BOOK.filter(b=>b.kind==='book').length} 組＋現場候位 {DEMO_BOOK.filter(b=>b.kind==='walk').length} 組，共壓 {held} 位老師的牌。</div>
         <div className="grid grid-cols-2 gap-2 mt-3"><DisBtn>＋ 新增預約</DisBtn><DisBtn>＋ 現場候位</DisBtn></div>
-      </Sec>
-
-      <Sec title="交班／日結" demo>
+      </Sec>),
+    (<Sec title="交班／日結" demo>
         <div className="grid grid-cols-3 gap-2 mb-3"><KV k="已結帳現金" v={money(rev)}/><KV k="支出" v={'-'+money(exp)}/><KV k="應有現金" v={money(rev-exp)} cls="text-brown"/></div>
         <div className="text-xs text-mute mb-3">支出：耗材（毛巾洗滌）{money(exp)}・另有服務中未結帳 {money(unpaid)}，結帳後才計入</div>
         <div className="grid grid-cols-2 gap-2"><DisBtn>登記支出</DisBtn><DisBtn>交班</DisBtn></div>
-      </Sec>
-      <Sec title="打卡" demo>
+      </Sec>),
+    (<Sec title="打卡" demo>
         <div className="text-sm mb-3">今日上班 <span className="num">08:55</span></div>
         <div className="grid grid-cols-2 gap-2"><DisBtn>✓ 已上班</DisBtn><DisBtn>下班打卡</DisBtn></div>
-      </Sec>
-    </div>
-  );
+      </Sec>),
+    (<Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
+        <div className="flex items-center gap-6 flex-wrap">
+          <KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="已結帳營業額" v={money(rev)} cls="text-brown"/>
+          <KV k="服務中・未結帳" v={serving.length+' 單・'+money(unpaid)}/><KV k="應有現金" v={money(rev-exp)}/>
+          <div className="flex-1"></div>
+          <DisBtn cls="px-8">＋ 登打訂單</DisBtn>
+        </div>
+      </Sec>)
+  ];
+  const head=(<><DemoNote/>
+      <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span></div></>);
+  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4,5,6]} wide={{top:[7,3],cols:[[2,4],[1,5,6]]}} xwide={{top:[7,3],cols:[[2],[1],[4,5,6]]}}/>;
 }
-function GuestHome({me}){
+
+function GuestHome({me,mode}){
+  mode=mode||'phone';
   const S=loadSettings();
   const hist=[{off:3,svc:'oil',min:90,tc:'77',ad:['eoil']},{off:17,svc:'dry',min:90,promo:1,tc:'122'},{off:33,svc:'foot',min:60,tc:'77'}].map(x=>demoCalc(S,x));
   const nd=demoDay(-2);
   const Field=({k,v,span})=><div className={'h-12 rounded-xl border border-line px-3 flex flex-col justify-center '+(span?'col-span-2':'')}><span className="text-[10px] text-mute leading-none">{k}</span><span className="text-sm mt-0.5">{v}</span></div>;
-  return (
-    <div className="max-w-md mx-auto px-4 pb-16">
-      <DemoNote/>
-      <Sec title="我的預約" demo>
+  const B=[
+    (<Sec title="我的預約" demo>
         <div className="flex items-center gap-3">
           <div className="w-14 h-14 rounded-xl bg-sageL text-sageD flex flex-col items-center justify-center"><span className="text-xs">{nd.getMonth()+1}月</span><span className="serif text-xl leading-none">{nd.getDate()}</span></div>
           <div className="flex-1 text-sm"><div>（{WK[nd.getDay()]}）<span className="num">15:00</span>・油壓 90 分</div><div className="text-xs text-mute">指定老師 77・1 位</div></div>
           <Pill tone="sage">已確認</Pill>
         </div>
-      </Sec>
-      <Sec title="價目表">
+      </Sec>),
+    (<Sec title="價目表">
         <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-2 text-sm num">
           <div></div>{MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}
           {SVCS.map(s=>(<React.Fragment key={s.id}><div>{s.short}</div>{MINS.map((m,i)=><div key={m} className="text-center">{(S.prices[s.id]||[])[i]}</div>)}</React.Fragment>))}
@@ -1857,34 +2066,35 @@ function GuestHome({me}){
         <div className="mt-3 pt-3 border-t border-line text-sm flex justify-between"><span className="text-brown">平日限定 {S.promo.min} 分{SVC_SHORT[S.promo.svc]}</span><span className="num text-brown">{money(S.promo.price)}</span></div>
         <div className="text-xs text-mute mt-1">平日 09:00～14:00、21:00～02:00</div>
         <div className="mt-2 text-sm">{S.addons.map(a=><span key={a.id} className="inline-block mr-3">{a.name} <span className="num">{a.id==='eoil'?'+':''}{a.price}</span></span>)}</div>
-      </Sec>
-      <Sec title="線上預約" soon>
+      </Sec>),
+    (<Sec title="線上預約" soon>
         <div className="grid grid-cols-2 gap-2 mb-3">
           <Field k="日期" v={(nd.getMonth()+1)+'/'+nd.getDate()+'（'+WK[nd.getDay()]+'）'}/><Field k="時間" v="15:00"/>
           <Field k="人數" v="1 位"/><Field k="項目" v="油壓 90 分"/>
           <Field k="指定老師（可不選）" v="77" span/>
         </div>
         <DisBtn cls="w-full">送出預約</DisBtn>
-      </Sec>
-      <Sec title="我的消費紀錄" demo>
+      </Sec>),
+    (<Sec title="我的消費紀錄" demo>
         {hist.map((h,i)=>{const d=demoDay(h.off);return <div key={i} className="flex justify-between py-2 border-b border-line last:border-0 text-sm">
           <span><span className="num text-xs text-mute mr-2">{(d.getMonth()+1)+'/'+d.getDate()}</span>{SVC_SHORT[h.svc]} {h.min} 分{h.promo?<span className="text-brown text-xs"> 平日</span>:''}{h.adName?<span className="text-xs text-mute"> ＋{h.adName}</span>:''}<span className="block text-xs text-mute ml-9">老師 {h.tc}</span></span>
           <span className="num">{money(h.amt)}</span></div>})}
-      </Sec>
-      <Sec title="會員點數" demo>
+      </Sec>),
+    (<Sec title="會員點數" demo>
         <div className="grid grid-cols-2 gap-2 mb-2"><KV k="目前點數" v="1,280 點" cls="text-sageD"/><KV k="儲值餘額" v={money(3000)}/></div>
         <div className="h-2 rounded-full bg-bg overflow-hidden"><div className="h-full bg-sage" style={{width:'64%'}}></div></div>
         <div className="text-xs text-mute mt-1">再 720 點可兌換 60 分鐘腳底按摩</div>
-      </Sec>
-      <Sec title="店家資訊">
+      </Sec>),
+    (<Sec title="店家資訊">
         <div className="text-sm space-y-1">
           <div>營業時間　09:00～02:00</div>
           <div>電話　<a className="underline text-sageD" href="tel:0282571199">02-8257-1199</a></div>
           <div>地址　新北市板橋區雙十路三段 10 巷 1 號 1 樓</div>
         </div>
-      </Sec>
-    </div>
-  );
+      </Sec>)
+  ];
+  const head=(<><DemoNote/></>);
+  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4,5]} wide={{cols:[[0,2,4],[1,3,5]]}} xwide={{cols:[[0,4,5],[1,3],[2]]}}/>;
 }
 
 /* ---- 未審核訪客：預覽開通流程各階段，員工協助訪客加入 ---- */
@@ -1899,12 +2109,14 @@ function PhoneFrame({children}){
     </div>
   </div>);
 }
-function VisitorGuide({me}){
+function VisitorGuide({me,mode}){
+  mode=mode||'phone';const wideM=mode!=='phone';
   const V=DEMO_VISITOR;
   const [i,setI]=useState(0);
   const topRef=useRef(null);const first=useRef(true);
   useEffect(()=>{  // 換步驟時捲回步驟列，並把目前的步驟按鈕捲進可視範圍
     if(first.current){first.current=false;return}
+    if(wideM)return;   // 平板版步驟是直排清單，不用捲動
     try{topRef.current.scrollIntoView({block:'start'});const b=topRef.current.querySelector('[data-on="1"]');b&&b.scrollIntoView({inline:'center',block:'nearest'})}catch(_e){}
   },[i]);
   const [f,setF]=useState({uid:'',name:'',roles:['guest'],tc:''});
@@ -1939,26 +2151,22 @@ function VisitorGuide({me}){
   const uidOk=/^U[0-9a-f]{32}$/.test(f.uid.trim());
   const entry=(()=>{const o={uid:f.uid.trim(),name:f.name.trim()||'（姓名）',roles:f.roles};if(f.roles.includes('teacher')&&f.tc.trim())o.tc=f.tc.trim();return JSON.stringify(o)})();
   const joinUrl='https://liff.line.me/'+LIFF_ID+'?mode=join';
-  return (
-    <div className="max-w-md mx-auto px-4 pb-16">
-      <div className="mt-4 text-sm text-mute">訪客開通共 {STAGES.length} 個階段。點下方步驟可以看訪客當時的畫面，方便在旁邊引導。</div>
-      <div ref={topRef} className="mt-3 flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scroll-mt-12">
-        {STAGES.map((x,k)=><button key={k} data-on={k===i?'1':'0'} onClick={()=>setI(k)} className={'shrink-0 h-9 px-3 rounded-full text-sm border '+(k===i?'bg-sage text-white border-sage':'bg-card border-line')}><span className="num mr-1">{k+1}</span>{x.t}</button>)}
-      </div>
-      <div className="mt-4 flex items-baseline justify-between px-1"><div><span className="num text-brown mr-1">{i+1}/{STAGES.length}</span><span className="text-lg">{s.t}</span></div><span className="text-xs text-mute">訪客看到：{s.sub}</span></div>
-      <div className="mt-2 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm">💡 {s.tip}</div>
-      <div className="mt-3"><PhoneFrame>{s.ui}</PhoneFrame></div>
-      <div className="grid grid-cols-2 gap-2 mt-3">
-        <button className="h-11 rounded-xl border border-line bg-card disabled:opacity-40" disabled={i===0} onClick={()=>setI(i-1)}>‹ 上一步</button>
-        <button className="h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={i===STAGES.length-1} onClick={()=>setI(i+1)}>下一步 ›</button>
-      </div>
-
+  const intro=<div className="mt-4 text-sm text-mute">訪客開通共 {STAGES.length} 個階段。{wideM?'點左邊的步驟':'點下方步驟'}可以看訪客當時的畫面，方便在旁邊引導。</div>;
+  const navBtns=(
+    <div className="grid grid-cols-2 gap-2 mt-3">
+      <button className="h-11 rounded-xl border border-line bg-card disabled:opacity-40" disabled={i===0} onClick={()=>setI(i-1)}>‹ 上一步</button>
+      <button className="h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={i===STAGES.length-1} onClick={()=>setI(i+1)}>下一步 ›</button>
+    </div>
+  );
+  const phoneUi=<PhoneFrame>{s.ui}</PhoneFrame>;
+  const linkBlock=(
       <Sec title="給訪客的開通連結">
         <div className="text-sm text-mute mb-2">訪客還沒加官方帳號、或找不到圖文選單時，把這個連結傳給他：</div>
         <div className="rounded-lg bg-bg px-3 py-2 text-xs num break-all mb-2">{joinUrl}</div>
         <button className="w-full h-11 rounded-xl border border-sage text-sageD" onClick={()=>copyStr(joinUrl,()=>flash('url'))}>{copied==='url'?'✓ 已複製':'複製開通連結'}</button>
       </Sec>
-
+  );
+  const genBlock=(
       <Sec title="產生名單資料（老闆／主管用）">
         <div className="text-sm text-mute mb-3">收到申請碼後填入，複製產生的一行，貼到 GitHub 上 members.json 的 <span className="num">members</span> 清單裡（前一筆後面要加逗號）。</div>
         <label className="block mb-2"><div className="text-xs text-mute mb-1">帳號申請碼（U 開頭，共 33 碼）</div>
@@ -1974,8 +2182,79 @@ function VisitorGuide({me}){
         <button className="w-full h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={!uidOk||!f.roles.length} onClick={()=>copyStr(entry,()=>flash('entry'))}>{copied==='entry'?'✓ 已複製':'複製這一行'}</button>
         <div className="text-xs text-mute mt-2">老闆、主管權限（admin）請直接在 GitHub 上加，這裡不提供。</div>
       </Sec>
+  );
+  if(wideM){
+    // 平板版：左邊直排步驟清單（目前步驟展開說明），中間手機畫面，工具放右邊（三欄）或下方（雙欄）
+    const steps=(
+      <div className="mt-5 space-y-2">
+        {STAGES.map((x,k)=>(
+          <button key={k} onClick={()=>setI(k)} className={'w-full text-left rounded-2xl border px-4 py-3 '+(k===i?'bg-sageL border-sage':'bg-card border-line')}>
+            <div className="flex items-center gap-3">
+              <span className={'w-7 h-7 rounded-full flex items-center justify-center text-sm num shrink-0 '+(k===i?'bg-sage text-white':k<i?'bg-sageL text-sageD border border-sage/40':'bg-bg text-mute border border-line')}>{k<i?'✓':k+1}</span>
+              <span className="flex-1"><span className="block">{x.t}</span><span className="block text-xs text-mute">訪客看到：{x.sub}</span></span>
+            </div>
+            {k===i&&<div className="mt-2 ml-10 text-sm text-sageD">💡 {x.tip}</div>}
+          </button>))}
+      </div>
+    );
+    const phoneCol=(
+      <div className="mt-5 max-w-[24rem] mx-auto w-full">
+        <div className="text-center text-sm text-mute mb-2"><span className="num text-brown mr-1">{i+1}/{STAGES.length}</span>{s.t}</div>
+        {phoneUi}{navBtns}
+      </div>
+    );
+    return (
+      <div className="max-w-[1400px] mx-auto px-6 pb-16">
+        {intro}
+        {mode==='xwide'?
+          <div className="grid grid-cols-3 gap-x-6 items-start"><div>{steps}</div><div>{phoneCol}</div><div>{linkBlock}{genBlock}</div></div>:
+          <><div className="grid grid-cols-2 gap-x-6 items-start"><div>{steps}</div><div>{phoneCol}</div></div>
+            <div className="grid grid-cols-2 gap-x-6 items-start"><div>{linkBlock}</div><div>{genBlock}</div></div></>}
+      </div>
+    );
+  }
+  return (
+    <div className="max-w-md mx-auto px-4 pb-16">
+      {intro}
+      <div ref={topRef} className="mt-3 flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scroll-mt-12">
+        {STAGES.map((x,k)=><button key={k} data-on={k===i?'1':'0'} onClick={()=>setI(k)} className={'shrink-0 h-9 px-3 rounded-full text-sm border '+(k===i?'bg-sage text-white border-sage':'bg-card border-line')}><span className="num mr-1">{k+1}</span>{x.t}</button>)}
+      </div>
+      <div className="mt-4 flex items-baseline justify-between px-1"><div><span className="num text-brown mr-1">{i+1}/{STAGES.length}</span><span className="text-lg">{s.t}</span></div><span className="text-xs text-mute">訪客看到：{s.sub}</span></div>
+      <div className="mt-2 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm">💡 {s.tip}</div>
+      <div className="mt-3">{phoneUi}</div>
+      {navBtns}
+      {linkBlock}
+      {genBlock}
     </div>
   );
+}
+
+/* 進入某身分後的畫面（LINE 入口與示範模式共用） */
+function RoleView({view,me,mode,bar}){
+  if(view==='owner')return <>{bar}<App/></>;
+  const Page={teacher:TeacherHome,counter:CounterHome,guest:GuestHome,visitor:VisitorGuide}[view];
+  const wide=mode!=='phone';
+  return (<div className="min-h-screen">{bar}
+    <div className={(wide?'max-w-[1400px] px-6':'max-w-md px-4')+' mx-auto pt-4 flex items-baseline gap-2'}><span className="serif text-2xl tracking-widest text-sageD">緩緩</span><span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span><span className="text-sm text-mute ml-1">{VIEWS[view].label}</span></div>
+    <Page key={view+mode} me={me} mode={mode}/></div>);
+}
+
+/* 示範模式：?demo=roles，不用 LINE 登入，直接切換各身分畫面（看手機／平板版面用） */
+function RoleDemo(){
+  const lay=useLayout();
+  const [view,setView]=useState(()=>{try{return localStorage.getItem(VIEW_KEY+'-demo')||'counter'}catch(_e){return 'counter'}});
+  const me={name:'示範',code:'77'};
+  const pick=v=>{try{localStorage.setItem(VIEW_KEY+'-demo',v)}catch(_e){}setView(v)};
+  const bar=(
+    <div className="bg-ink text-white text-sm sticky top-0 z-30">
+      <div className={(lay.mode!=='phone'?'px-6':'max-w-md mx-auto px-3')+' min-h-10 py-1.5 flex items-center gap-2 flex-wrap'}>
+        <span className="text-white/70 mr-1">示範模式</span>
+        {['owner','teacher','counter','guest','visitor'].map(v=><button key={v} onClick={()=>pick(v)} className={'h-7 px-3 rounded-full '+(view===v?'bg-white text-ink':'bg-white/15')}>{VIEWS[v].label}</button>)}
+        <span className="ml-auto text-xs text-white/60 num">{MODE_LABEL[lay.mode]}・寬 {lay.w}</span>
+      </div>
+    </div>
+  );
+  return <RoleView view={view} me={me} mode={lay.mode} bar={bar}/>;
 }
 
 function LineGate(){
@@ -2003,14 +2282,10 @@ function LineGate(){
   };
   useEffect(()=>{run()},[]);
   const views=mem?viewsOf(mem):[];
+  const lay=useLayout();
   const pick=v=>{try{localStorage.setItem(VIEW_KEY,v)}catch(_e){}setView(v);setSt('view')};
   if(st==='view'&&view){
-    const bar=<RoleBar view={view} me={me} canSwitch={views.length>1} onSwitch={()=>{setView(null);setSt('welcome')}}/>;
-    if(view==='owner')return <>{bar}<App/></>;
-    const Page={teacher:TeacherHome,counter:CounterHome,guest:GuestHome,visitor:VisitorGuide}[view];
-    return (<div className="min-h-screen">{bar}
-      <div className="max-w-md mx-auto px-4 pt-4 flex items-baseline gap-2"><span className="serif text-2xl tracking-widest text-sageD">緩緩</span><span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span><span className="text-sm text-mute ml-1">{VIEWS[view].label}</span></div>
-      <Page me={me}/></div>);
+    return <RoleView view={view} me={me} mode={lay.mode} bar={<RoleBar view={view} me={me} wide={lay.mode!=='phone'} canSwitch={views.length>1} onSwitch={()=>{setView(null);setSt('welcome')}}/>}/>;
   }
   return (
     <GateShell>
@@ -2029,6 +2304,9 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-027','10-05','老師、櫃台、客人、未審核訪客畫面的平板版（雙欄／三欄，依寬度自動切換，跟著設定頁的畫面版型）；櫃台時段牌況平板顯示 5～6 個小時；新增示範模式 ?demo=roles，不用登入即可切換各身分畫面'],
+  ['v0.1-026','10-05','平板／筆電版「每日訂單」：寬度 768 以上左右雙欄（左邊訂單、右邊直接登打），1100 以上三欄（統計／訂單／登打）；左側導覽列；設定頁新增「畫面版型」（自動／手機版／平板版，只存在這台裝置）；滑鼠操作時 N 新增訂單、Esc 關閉'],
+  ['v0.1-025','09-26','櫃台新增「時段牌況」（3 個小時一頁、可前後切換，看每個時段幾張牌可排、幾點起全空）；壓牌前空檔夠 60 分可先接現場客；老師新增「我的預約情形」（上牌到下牌每小時一格，今天／明天）'],
   ['v0.1-024','09-26','櫃台範例調整：訂單分服務中（未結帳）／已結帳、營業額只算已結帳；老師狀態可排序（按編號／輪班優先／服務中優先）；3 個預約＋1 位現場候位壓 4 位老師的牌，老師列表標示壓牌'],
   ['v0.1-023','09-25','選身分新增「未審核訪客」（老師／櫃台／老闆／主管可見）：逐步預覽訪客開通 7 個階段畫面與引導說明，附開通連結、名單資料產生器；老師、櫃台、客人畫面放入範例資料'],
   ['v0.1-022','09-25','LINE 內開啟時新增入口檢查：LINE 登入→開通名單→首次設定編號姓名→「歡迎○○進入緩緩門店系統」→選身分（老闆／老師／櫃台／客人）；新增老師、櫃台、客人預設畫面（欄位先放、尚未運作）'],
@@ -2073,7 +2351,7 @@ function ChangelogList(){
 function NumIn({value,onChange,className}){
   return <input className={'h-10 px-2 rounded-lg border border-line bg-card num text-center '+(className||'w-full')} inputMode="numeric" value={value} onChange={e=>onChange(e.target.value.replace(/[^\d]/g,''))}/>;
 }
-function SettingsPage({S,saveS,ask,toast,onImported}){
+function SettingsPage({S,saveS,ask,toast,onImported,lay}){
   const [dr,setDr]=useState(()=>clone(S));
   const [newT,setNewT]=useState('');
   const [newC,setNewC]=useState('');
@@ -2115,7 +2393,19 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
 
   return (
     <div className="pb-40">
-      <div className={sec.replace('mt-5','mt-0')}>價目表</div>
+      {lay&&<>
+        <div className={sec.replace('mt-5','mt-0')}>畫面版型（這台裝置）</div>
+        <Card className="p-3 text-sm mb-1">
+          <div className="flex rounded-xl border border-line overflow-hidden bg-card">
+            {LAYOUT_PREFS.map(x=><button key={x.id} className={'flex-1 h-11 '+(lay.pref===x.id?'bg-sage text-white':'')} onClick={()=>lay.setPref(x.id)}>{x.label}</button>)}
+          </div>
+          <div className="text-xs text-mute mt-2 num">目前畫面寬 {lay.w}・顯示「{MODE_LABEL[lay.mode]}」{lay.pref==='auto'?'（自動）':'（手動指定）'}</div>
+          <div className="text-xs text-mute mt-1">自動：寬度 768 以上顯示雙欄、1100 以上顯示三欄；轉向或分割畫面時會自動切換。這個選項只存在這台裝置，不會進入備份。</div>
+          {lay.pref==='tablet'&&lay.w<768&&<div className="text-xs text-warn mt-1">目前畫面不到 768 寬，平板版可能會很擠。</div>}
+          {lay.fine&&lay.mode!=='phone'&&<div className="text-xs text-mute mt-1">鍵盤快捷鍵：N 新增訂單、Esc 關閉編輯中的訂單／支出。</div>}
+        </Card>
+      </>}
+      <div className={lay?sec:sec.replace('mt-5','mt-0')}>價目表</div>
       <Card className="p-3">
         <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-2 items-center">
           <div></div>{MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}
@@ -2227,7 +2517,7 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
 
       <div className="text-center text-xs text-mute mt-6 num">緩緩門店 {VER}　裝置 {S.device}</div>
 
-      {dirty&&<div className="fixed left-0 right-0 bottom-[4.5rem] z-30 px-4" style={{marginBottom:'env(safe-area-inset-bottom)'}}>
+      {dirty&&<div className={'fixed right-0 z-30 px-4 '+(lay&&lay.mode!=='phone'?'left-20 bottom-4':'left-0 bottom-[4.5rem]')} style={{marginBottom:'env(safe-area-inset-bottom)'}}>
         <div className="max-w-md mx-auto flex gap-2">
           <button className="flex-1 h-12 rounded-xl border border-line bg-card" onClick={()=>setDr(clone(S))}>取消變更</button>
           <button className="flex-[2] h-12 rounded-xl bg-sage text-white shadow-lg" onClick={doSave}>儲存設定</button>
@@ -2237,8 +2527,30 @@ function SettingsPage({S,saveS,ask,toast,onImported}){
   );
 }
 
+/* ========== 版型（依畫面寬度；設定頁可手動指定，只存在這台裝置、不進備份） ==========
+   phone：未滿 768｜wide：768 以上（雙欄）｜xwide：1100 以上（三欄）
+   fine：主要輸入是滑鼠（筆電）→ 啟用鍵盤快捷鍵 */
+const LAYOUT_KEY='slowve.layout';   // 不用 slowve- 開頭，避免被匯出／匯入備份
+const LAYOUT_PREFS=[{id:'auto',label:'自動'},{id:'phone',label:'手機版'},{id:'tablet',label:'平板版'}];
+function useLayout(){
+  const [pref,setPref]=useState(()=>{try{return localStorage.getItem(LAYOUT_KEY)||'auto'}catch(_e){return 'auto'}});
+  const [w,setW]=useState(()=>window.innerWidth);
+  useEffect(()=>{
+    const f=()=>setW(window.innerWidth);
+    window.addEventListener('resize',f);window.addEventListener('orientationchange',f);
+    return ()=>{window.removeEventListener('resize',f);window.removeEventListener('orientationchange',f)};
+  },[]);
+  const auto=w>=1100?'xwide':w>=768?'wide':'phone';
+  const mode=pref==='phone'?'phone':pref==='tablet'?(w>=1100?'xwide':'wide'):auto;
+  let fine=false;try{fine=window.matchMedia('(pointer: fine)').matches}catch(_e){}
+  const save=p=>{try{localStorage.setItem(LAYOUT_KEY,p)}catch(_e){}setPref(p)};
+  return {mode,pref,setPref:save,w,auto,fine};
+}
+const MODE_LABEL={phone:'手機版',wide:'平板雙欄',xwide:'平板三欄'};
+
 /* ========== App ========== */
 function App(){
+  const lay=useLayout();const wide=lay.mode!=='phone';
   const [S,setS]=useState(()=>{const s=loadSettings();ls.set('settings',s);return s});
   const [date,setDate]=useState(()=>bizToday(loadSettings().cutoff));
   const [tab,setTab]=useState(()=>{   // LINE 登入測試導回時，直接回到設定頁顯示結果
@@ -2302,24 +2614,101 @@ function App(){
   const NAV=[{id:'day',label:'每日',icon:'◷'},{id:'month',label:'月報',icon:'▤'},{id:'set',label:'設定',icon:'⚙'}];
   const TITLE={day:'每日訂單',month:'月報',set:'設定'};
 
+  // 平板版：訂單／支出編輯固定在右側面板；同時只開一個
+  const openOrder=o=>{setXe(null);setEd({order:o,k:0})};
+  const openExpense=e=>{setEd(null);setXe({exp:e,k:0})};
+  const endEd=()=>{if(ed&&ed.count)toast('已連續新增 '+ed.count+' 筆');setEd(null)};
+  const endXe=()=>{if(xe&&xe.count)toast('已連續新增 '+xe.count+' 筆支出');setXe(null)};
+  // 筆電（滑鼠）快捷鍵：N 新增訂單、Esc 關閉編輯
+  useEffect(()=>{
+    if(!wide||!lay.fine)return;
+    const h=e=>{
+      const t=e.target,typing=t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable);
+      if(dlg||pay||closeSt)return;
+      if(e.key==='Escape'&&(ed||xe)){if(typing)t.blur();if(ed)endEd();else endXe();e.preventDefault();return}
+      if(!typing&&tab==='day'&&(e.key==='n'||e.key==='N')&&!e.metaKey&&!e.ctrlKey&&!e.altKey){setXe(null);setEd({order:null,k:Date.now()});e.preventDefault()}
+    };
+    window.addEventListener('keydown',h);return ()=>window.removeEventListener('keydown',h);
+  });
+
+  const dayProps={S,date,setDate:d=>{setDate(d);setEd(null);setXe(null)},rev,openClose:(st,ex)=>setCloseSt({st,ex}),onUnlock};
+  const locked=!!dayData().close;
+  const panel=wide&&tab==='day'&&(
+    xe?<ExpenseEditor inline key={'x'+date+xe.k} S={S} exp={xe.exp} locked={locked} prev={xe.prev} count={xe.count}
+        onSave={onSaveExp} onDelete={onDeleteExp} onClose={endXe} ask={ask}/>:
+    (ed||!locked)?<OrderEditor inline key={'o'+date+(ed?ed.k+'-'+(ed.order?ed.order.id:'new'):'auto')} S={S} order={ed?ed.order:null} dayOrders={dayData().orders} locked={locked} prev={ed&&ed.prev} count={ed&&ed.count}
+        onSave={onSaveOrder} onToggleVoid={onToggleVoid} onClose={ed?endEd:null} ask={ask}/>:
+    <div className="h-full flex flex-col items-center justify-center text-center px-8 text-mute">
+      <div className="text-4xl mb-3 text-sageD">✓</div>
+      <div className="text-lg text-ink mb-1">{fmtDate(date)} 已日結</div>
+      <div className="text-sm">點左側訂單或支出可查看內容。要修改請先「解除日結」。</div>
+    </div>
+  );
+
+  const header=(
+    <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-line" style={{paddingTop:'env(safe-area-inset-top)'}}>
+      <div className={(wide?'':'max-w-md mx-auto ')+'flex items-center justify-between px-4 h-14'}>
+        <div className="flex items-baseline gap-2">
+          {!wide&&<><span className="serif text-2xl tracking-widest text-sageD">緩緩</span>
+          <span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span></>}
+          <span className={wide?'text-lg':'text-sm text-mute ml-1'}>{TITLE[tab]}</span>
+        </div>
+        <button className={'text-xs px-2.5 h-7 rounded-full '+(backupOld?'bg-warnL text-warn':'bg-sageL text-sageD')} onClick={()=>setTab('set')}>{agoText(S.lastBackupAt)}</button>
+      </div>
+    </header>
+  );
+  const otherTabs=(<>
+    {tab==='month'&&<MonthPage S={S} rev={rev} goDay={d=>{setDate(d);setTab('day')}} openPay={(ym,tc,per)=>setPay({ym,tc,per})}/>}
+    {tab==='set'&&<SettingsPage S={S} saveS={saveS} ask={ask} toast={toast} lay={lay} onImported={()=>{setS(loadSettings());bump()}}/>}
+  </>);
+  const H='calc(100dvh - 3.5rem - env(safe-area-inset-top))';   // 平板版內容區高度（扣掉頂部標題列）
+
+  const modals=(<>
+    {!wide&&ed&&<OrderEditor key={'o'+ed.k} S={S} order={ed.order} dayOrders={dayData().orders} locked={locked} prev={ed.prev} count={ed.count}
+      onSave={onSaveOrder} onToggleVoid={onToggleVoid} onClose={endEd} ask={ask}/>}
+    {!wide&&xe&&<ExpenseEditor key={'x'+xe.k} S={S} exp={xe.exp} locked={locked} prev={xe.prev} count={xe.count}
+      onSave={onSaveExp} onDelete={onDeleteExp} onClose={endXe} ask={ask}/>}
+    {pay&&<TeacherPaySheet S={S} ym={pay.ym} tc={pay.tc} per={pay.per} rev={rev} bump={bump} onClose={()=>setPay(null)} toast={toast} ask={ask}/>}
+    {closeSt&&<CloseSheet S={S} st={closeSt.st} ex={closeSt.ex} onSave={onClose} onClose={()=>setCloseSt(null)}/>}
+    <Dialog dlg={dlg} onDone={v=>{const r=dlg.res;setDlg(null);r(v)}}/>
+    {toastMsg&&<div className={'fixed left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-ink/90 text-white text-sm shadow-lg '+(wide?'bottom-6':'bottom-24')}>{toastMsg}</div>}
+  </>);
+
+  if(wide){
+    const sel=ed&&ed.order?ed.order.id:null,selX=xe&&xe.exp?xe.exp.id:null;
+    return (
+      <div className="flex min-h-screen">
+        {/* 左側導覽列（平板版取代底部導覽） */}
+        <nav className="sticky top-0 h-[100dvh] w-20 shrink-0 bg-card border-r border-line flex flex-col items-center pt-3" style={{paddingTop:'calc(env(safe-area-inset-top) + 0.75rem)'}}>
+          <div className="serif text-xl tracking-widest text-sageD leading-tight text-center mb-1">緩緩</div>
+          <div className="text-[9px] tracking-[0.2em] text-brown mb-5">SLOWVE</div>
+          {NAV.map(n=><button key={n.id} className={'w-16 h-16 mb-2 rounded-2xl flex flex-col items-center justify-center gap-0.5 '+(tab===n.id?'bg-sageL text-sageD':'text-mute')} onClick={()=>setTab(n.id)}>
+            <span className="text-xl leading-none">{n.icon}</span><span className="text-xs">{n.label}</span>
+          </button>)}
+        </nav>
+        <div className="flex-1 min-w-0">
+          {header}
+          {tab==='day'?(
+            <div className="flex" style={{height:H}}>
+              {lay.mode==='xwide'&&<div className="w-[21rem] shrink-0 overflow-y-auto px-4 pt-4 border-r border-line">
+                <DayPage {...dayProps} part="side" wide openEditor={openOrder} openExp={openExpense} selExpId={selX}/></div>}
+              <div className="flex-1 min-w-0 overflow-y-auto px-4 pt-4">
+                <DayPage {...dayProps} part={lay.mode==='xwide'?'list':'all'} wide openEditor={openOrder} openExp={openExpense} selId={sel} selExpId={selX}/></div>
+              <div className={(lay.mode==='xwide'?'w-[27rem]':'w-[24rem]')+' shrink-0 border-l border-line bg-card/40'}>{panel}</div>
+            </div>
+          ):<main className="max-w-2xl mx-auto px-4 pt-4">{otherTabs}</main>}
+        </div>
+        {modals}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-line" style={{paddingTop:'env(safe-area-inset-top)'}}>
-        <div className="max-w-md mx-auto flex items-center justify-between px-4 h-14">
-          <div className="flex items-baseline gap-2">
-            <span className="serif text-2xl tracking-widest text-sageD">緩緩</span>
-            <span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span>
-            <span className="text-sm text-mute ml-1">{TITLE[tab]}</span>
-          </div>
-          <button className={'text-xs px-2.5 h-7 rounded-full '+(backupOld?'bg-warnL text-warn':'bg-sageL text-sageD')} onClick={()=>setTab('set')}>{agoText(S.lastBackupAt)}</button>
-        </div>
-      </header>
-
+      {header}
       <main className="max-w-md mx-auto px-4 pt-4">
-        {tab==='day'&&<DayPage S={S} date={date} setDate={setDate} rev={rev}
-          openEditor={o=>setEd({order:o,k:0})} openExp={e=>setXe({exp:e,k:0})} openClose={(st,ex)=>setCloseSt({st,ex})} onUnlock={onUnlock}/>}
-        {tab==='month'&&<MonthPage S={S} rev={rev} goDay={d=>{setDate(d);setTab('day')}} openPay={(ym,tc,per)=>setPay({ym,tc,per})}/>}
-        {tab==='set'&&<SettingsPage S={S} saveS={saveS} ask={ask} toast={toast} onImported={()=>{setS(loadSettings());bump()}}/>}
+        {tab==='day'&&<DayPage {...dayProps} openEditor={openOrder} openExp={openExpense}/>}
+        {otherTabs}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 z-20 bg-card border-t border-line pb-safe">
@@ -2330,15 +2719,7 @@ function App(){
           </button>)}
         </div>
       </nav>
-
-      {ed&&<OrderEditor key={'o'+ed.k} S={S} order={ed.order} dayOrders={dayData().orders} locked={!!dayData().close} prev={ed.prev} count={ed.count}
-        onSave={onSaveOrder} onToggleVoid={onToggleVoid} onClose={()=>{if(ed.count)toast('已連續新增 '+ed.count+' 筆');setEd(null)}} ask={ask}/>}
-      {xe&&<ExpenseEditor key={'x'+xe.k} S={S} exp={xe.exp} locked={!!dayData().close} prev={xe.prev} count={xe.count}
-        onSave={onSaveExp} onDelete={onDeleteExp} onClose={()=>{if(xe.count)toast('已連續新增 '+xe.count+' 筆支出');setXe(null)}} ask={ask}/>}
-      {pay&&<TeacherPaySheet S={S} ym={pay.ym} tc={pay.tc} per={pay.per} rev={rev} bump={bump} onClose={()=>setPay(null)} toast={toast} ask={ask}/>}
-      {closeSt&&<CloseSheet S={S} st={closeSt.st} ex={closeSt.ex} onSave={onClose} onClose={()=>setCloseSt(null)}/>}
-      <Dialog dlg={dlg} onDone={v=>{const r=dlg.res;setDlg(null);r(v)}}/>
-      {toastMsg&&<div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 px-4 py-2 rounded-full bg-ink/90 text-white text-sm shadow-lg">{toastMsg}</div>}
+      {modals}
     </div>
   );
 }
@@ -2347,9 +2728,10 @@ const __q=new URLSearchParams(location.search);const __ls=__q.get('liff.state')|
 const IS_JOIN=__q.get('mode')==='join'||__ls.indexOf('mode=join')>=0;
 const IS_LINE_TEST=!IS_JOIN&&(__q.has('linetest')||__ls.indexOf('linetest')>=0);
 const IS_SHARE_RELAY=!IS_JOIN&&!IS_LINE_TEST&&(__q.has('share')||__ls.indexOf('share')>=0);
+const IS_ROLE_DEMO=__q.get('demo')==='roles'||__ls.indexOf('demo=roles')>=0;
 // 在 LINE App 內開啟 → 入口檢查（登入＋開通名單＋身分）；外部瀏覽器直接進門店系統（老闆離線使用）。?gate=1 可在瀏覽器強制測試
 const IN_LINE=/\bLine\//i.test(navigator.userAgent)||__q.get('gate')==='1';
-ReactDOM.createRoot(document.getElementById('root')).render(IS_JOIN?<JoinPage/>:IS_LINE_TEST?<LineTestPage/>:IS_SHARE_RELAY?<ShareRelay/>:IN_LINE?<LineGate/>:<App/>);
+ReactDOM.createRoot(document.getElementById('root')).render(IS_JOIN?<JoinPage/>:IS_ROLE_DEMO?<RoleDemo/>:IS_LINE_TEST?<LineTestPage/>:IS_SHARE_RELAY?<ShareRelay/>:IN_LINE?<LineGate/>:<App/>);
 </script>
 </body>
 </html>
