@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-033</title>
+<title>緩緩門店 v0.1-034</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-033';
+const VER='v0.1-034';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -2793,6 +2793,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-034','10-06','GAS 網址寫進程式（GAS_URL）；雲端同步改用 LINE 登入：GAS 向 LINE 驗證身分並查開通名單，老闆／主管才可同步，登入一次通行 30 天、到期前自動換新；連線金鑰改為進階選項（沒有 LINE 的裝置用）'],
   ['v0.1-033','10-06','多位主管同時登打：每台裝置記住各天的雲端版本，上傳或下載時發現同一天已被別人改過且內容不同，跳出提醒比較本機與雲端營業額，選「上傳本機資料」或「以雲端為主（下載覆蓋本機）」；設定自動合併；開啟時與每 3 分鐘自動下載其他主管的更新；可設定裝置名稱'],
   ['v0.1-032','10-06','雲端同步上線：老闆頁的訂單、支出、日結、交班小計、薪資加扣項、設定，修改後幾秒內自動上傳到 GAS／Google 試算表（離線先存本機、恢復後補傳）；設定頁「雲端同步」可設定網址與金鑰、立即上傳、從雲端下載、全部上傳；頂部顯示同步狀態'],
   ['v0.1-031','10-06','加鐘改放在價目格第 4 欄、依項目計價（指壓／腳底 500、油壓 600／30 分）；新增員工按摩 8 折（老師費用照算）；每日訂單可插入「交班小計」（選第幾筆之後，算營業額小計、應有現金、實點差額）；主櫃輪班：休息中的人保留順位、來客時略過'],
@@ -3031,9 +3032,15 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay}){
    - 衝突時跳出提醒，比較本機與雲端的營業額：選「上傳本機資料」→ 覆蓋雲端；選「以雲端為主」→ 下載雲端資料覆蓋本機。
    - 設定（老師編號清單等）衝突時自動合併，不詢問。
    - 開啟時與每 3 分鐘自動下載別人的更新；本機沒有未上傳修改的日子直接更新，有的話一樣跳提醒。 */
+/* GAS 網址（公開沒關係）：部署後把 /exec 網址貼在下面這行。
+   權限不靠網址：老闆／主管用 LINE 登入，GAS 向 LINE 驗證身分並查 members.json 的 admin（owner／manager），
+   通過後發 30 天的通行證（tok）存在這台裝置；沒有 LINE 的裝置可在設定頁「進階」改用連線金鑰。 */
+const GAS_URL='https://script.google.com/macros/s/AKfycbzUwtSI4pmPtJaXMEQzzjwMwzXdc1zKJflTD8RYISNBvhz4G-lrH3jUASq-TSXDIQc/exec';
 const CLOUD_KEY='slowve.cloud',SYNC_KEY='slowve.sync';
-const cloudCfg=()=>{try{return JSON.parse(localStorage.getItem(CLOUD_KEY)||'null')||{}}catch(_e){return {}}};
-const cloudOn=()=>{const c=cloudCfg();return !!(c.url&&c.key)};
+const cloudCfg=()=>{let c={};try{c=JSON.parse(localStorage.getItem(CLOUD_KEY)||'null')||{}}catch(_e){}return Object.assign({},c,{url:(c.url||GAS_URL||'').trim()})};
+const cloudSave=patch=>{let c={};try{c=JSON.parse(localStorage.getItem(CLOUD_KEY)||'null')||{}}catch(_e){}try{localStorage.setItem(CLOUD_KEY,JSON.stringify(Object.assign(c,patch)))}catch(_e){}};
+const tokValid=c=>!!(c.tok&&c.tokExp>Date.now());
+const cloudOn=()=>{const c=cloudCfg();return !!(c.url&&(c.key||tokValid(c)))};
 const syncGet=()=>{try{return Object.assign({dirty:{},rev:{}},JSON.parse(localStorage.getItem(SYNC_KEY)||'null')||{})}catch(_e){return {dirty:{},rev:{}}}};
 const syncSet=x=>{try{localStorage.setItem(SYNC_KEY,JSON.stringify(x))}catch(_e){}};
 const SETTINGS_LOCAL=['device','lastBackupAt','backupPwd'];   // 各裝置自己的設定，不上傳
@@ -3044,22 +3051,43 @@ const ckey=c=>c.type==='day'?'d:'+c.date:c.type==='pay'?'p:'+c.ym:'s';
 const cloud={
   busy:false,timer:null,subs:new Set(),pend:[],dataVer:0,
   emit(){const st=this.state();this.subs.forEach(f=>{try{f(st)}catch(_e){}})},
-  state(){const s=syncGet();return {on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,pend:this.pend.slice(),dataVer:this.dataVer}},
+  state(){const s=syncGet();const c=cloudCfg();return {url:!!c.url,who:tokValid(c)?c.who:null,tokExp:c.tokExp,keyMode:!!c.key,on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,pend:this.pend.slice(),dataVer:this.dataVer}},
   mark(k){const s=syncGet();s.dirty[k]=Date.now();if(k==='s')s.sUa=Date.now();syncSet(s);this.emit();this.soon()},
   soon(ms){if(!cloudOn())return;clearTimeout(this.timer);this.timer=setTimeout(()=>this.push(),ms==null?3000:ms)},
   async call(body,ms){
-    const c=cloudCfg();if(!c.url||!c.key)throw new Error('尚未設定雲端網址與金鑰');
+    const c=cloudCfg();if(!c.url)throw new Error('尚未設定 GAS 網址');
+    const auth=body.action==='auth'?{}:c.key?{key:c.key}:tokValid(c)?{tok:c.tok}:null;
+    if(!auth)throw new Error('NEED_LOGIN：請先用 LINE 登入');
     const ctl=typeof AbortController!=='undefined'?new AbortController():null;
     const t=ctl&&setTimeout(()=>ctl.abort(),ms||25000);
     try{
-      const r=await fetch(c.url,{method:'POST',body:JSON.stringify(Object.assign({key:c.key,device:loadSettings().device,dname:c.name||''},body)),
+      const r=await fetch(c.url,{method:'POST',body:JSON.stringify(Object.assign(auth,{device:loadSettings().device,dname:c.name||(c.who&&c.who.name)||''},body)),
         headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow',signal:ctl?ctl.signal:undefined});
       const txt=await r.text();let j=null;try{j=JSON.parse(txt)}catch(_e){}
       if(!j)throw new Error(r.ok?'GAS 回傳格式不正確（請確認網址是 /exec 結尾的網頁應用程式）':'連線失敗（HTTP '+r.status+'）');
-      if(!j.ok)throw new Error(j.error||'GAS 發生錯誤');
+      if(!j.ok){const m=j.error||'GAS 發生錯誤';if(/^NEED_LOGIN/.test(m)){cloudSave({tok:'',tokExp:0});this.emit()}throw new Error(m.replace(/^NEED_LOGIN：/,''))}
       return j;
     }catch(e){if(e&&e.name==='AbortError')throw new Error('連線逾時，請稍後再試');throw e}
     finally{t&&clearTimeout(t)}
+  },
+  // LINE 登入 → 取得 ID Token → GAS 驗證並發通行證。interactive＝沒登入時導到 LINE 登入頁
+  async login(interactive){
+    const c=cloudCfg();if(!c.url)throw new Error('尚未設定 GAS 網址');
+    const L=await liffReady();
+    if(!L.isLoggedIn()){if(interactive)L.login({redirectUri:location.href.replace(/[?&](code|state|liffClientId|liffRedirectUri)=[^&]*/g,'')});return null}
+    const idToken=L.getIDToken&&L.getIDToken();
+    if(!idToken)throw new Error('取不到 LINE 身分，請確認 LIFF 已勾選 openid 權限');
+    const j=await this.call({action:'auth',idToken},30000);
+    cloudSave({tok:j.tok,tokExp:j.exp,who:{uid:j.uid,name:j.name,role:j.role,roleLabel:j.roleLabel}});
+    const s=syncGet();s.err='';syncSet(s);this.emit();
+    return j;
+  },
+  logout(){cloudSave({tok:'',tokExp:0,who:null});this.emit()},
+  // 開啟時：還沒有有效通行證、但 LINE 已登入 → 自動取得；通行證剩不到 7 天也自動換新
+  async autoLogin(){
+    const c=cloudCfg();if(!c.url||c.key)return;
+    if(tokValid(c)&&c.tokExp-Date.now()>7*864e5)return;
+    try{await this.login(false)}catch(_e){}
   },
   localData(k){
     if(k==='s')return cloudSettings(loadSettings());
@@ -3216,14 +3244,21 @@ function CloudConflict({S}){
 
 function CloudCard({toast,ask,onPulled}){
   const st=useCloud();
-  const [cfg,setCfg]=useState(()=>cloudCfg());
+  const [name,setName]=useState(()=>cloudCfg().name||'');
+  const [adv,setAdv]=useState(()=>!!cloudCfg().key);
+  const [akey,setAkey]=useState(()=>cloudCfg().key||'');
+  const [aurl,setAurl]=useState(()=>{const c=cloudCfg();return c.url!==GAS_URL?c.url:''});
   const [msg,setMsg]=useState('');
-  const saveCfg=async()=>{
-    const c={url:String(cfg.url||'').trim(),key:String(cfg.key||'').trim(),name:String(cfg.name||'').trim()};
-    try{localStorage.setItem(CLOUD_KEY,JSON.stringify(c))}catch(_e){}
-    setCfg(c);setMsg('連線中…');
-    try{const j=await cloud.call({action:'ping'});setMsg('✓ 連線成功：'+j.name);cloud.emit();cloud.pull(false).then(()=>{onPulled&&onPulled();cloud.soon(500)}).catch(()=>{})}
+  const afterOn=()=>{cloud.pull(false).then(()=>{onPulled&&onPulled();cloud.soon(500)}).catch(()=>{})};
+  const doLogin=async()=>{
+    setMsg('LINE 登入中…');
+    try{const j=await cloud.login(true);if(!j){setMsg('正在前往 LINE 登入…');return}
+      setMsg('✓ 已登入：'+j.name+'（'+j.roleLabel+'）');if(!name){setName(j.name);cloudSave({name:j.name})}afterOn()}
     catch(e){setMsg('✗ '+e.message)}
+  };
+  const saveAdv=async()=>{
+    cloudSave({key:akey.trim(),url:aurl.trim()});setMsg('連線中…');
+    try{const j=await cloud.call({action:'ping'});setMsg('✓ 連線成功：'+j.name);cloud.emit();afterOn()}catch(e){setMsg('✗ '+e.message)}
   };
   const pushAll=async()=>{
     if(!await ask({title:'全部上傳（以本機為準）？',msg:'會把這台裝置上所有日期的資料上傳，並覆蓋雲端上同一天的資料（其他主管登打的同一天也會被蓋掉）。',okText:'全部上傳',danger:true}))return;
@@ -3237,18 +3272,22 @@ function CloudCard({toast,ask,onPulled}){
       setMsg('✓ 已下載：更新 '+r.nd+' 天'+(r.np?'、'+r.np+' 個月的加扣項':'')+(r.ns?'、設定':'')+(r.nc?'；'+r.nc+' 筆與本機不同，請確認':'')+'（雲端共 '+r.total+' 天）');onPulled&&onPulled();cloud.soon(500)}
     catch(e){setMsg('✗ '+e.message)}
   };
-  const on=!!(cfg.url&&cfg.key)&&st.on;
+  if(!st.url)return <div className="text-sm text-warn">尚未設定 GAS 網址：請在 index.html 的 <span className="num">GAS_URL</span> 填入部署後的 /exec 網址。</div>;
   return (
     <div className="text-sm">
-      <label className="block mb-2"><div className="text-xs text-mute mb-1">GAS 網址（網頁應用程式 /exec）</div>
-        <input className="w-full h-10 px-3 rounded-lg border border-line bg-card text-xs" placeholder="https://script.google.com/macros/s/…/exec" value={cfg.url||''} onChange={e=>setCfg(Object.assign({},cfg,{url:e.target.value}))}/></label>
-      <label className="block mb-2"><div className="text-xs text-mute mb-1">連線金鑰（與 GAS 指令碼屬性 API_KEY 相同）</div>
-        <input type="password" className="w-full h-10 px-3 rounded-lg border border-line bg-card" value={cfg.key||''} onChange={e=>setCfg(Object.assign({},cfg,{key:e.target.value}))}/></label>
-      <label className="block mb-2"><div className="text-xs text-mute mb-1">這台裝置的名稱（其他主管看到「由誰上傳」用）</div>
-        <input className="w-full h-10 px-3 rounded-lg border border-line bg-card" placeholder="例：小美主管" value={cfg.name||''} onChange={e=>setCfg(Object.assign({},cfg,{name:e.target.value}))}/></label>
-      <button className="w-full h-10 rounded-lg bg-sage text-white mb-2" onClick={saveCfg}>儲存並測試連線</button>
+      {st.who?
+        <div className="rounded-lg bg-sageL px-3 py-2 mb-2 flex items-center gap-2">
+          <span className="flex-1">✓ 已用 LINE 登入：<b>{st.who.name}</b>（{st.who.roleLabel}）<span className="block text-xs text-mute num">通行證有效到 {clockText(st.tokExp)}，到期前開啟會自動換新</span></span>
+          <button className="text-xs text-mute underline" onClick={()=>{cloud.logout();setMsg('')}}>登出</button>
+        </div>:
+        !st.keyMode&&<>
+          <button className="w-full h-11 rounded-lg bg-[#06C755] text-white mb-1" onClick={doLogin}>用 LINE 登入，啟用雲端同步</button>
+          <div className="text-xs text-mute mb-2">只有開通名單（members.json）中「老闆」或「主管」可以同步門店資料；登入一次可用 30 天。</div>
+        </>}
+      {st.on&&<label className="block mb-2"><div className="text-xs text-mute mb-1">這台裝置的名稱（其他主管看到「由誰上傳」用）</div>
+        <input className="w-full h-10 px-3 rounded-lg border border-line bg-card" placeholder={st.who?st.who.name+'（預設用開通名單上的姓名）':'例：小美主管'} value={name} onChange={e=>setName(e.target.value)} onBlur={()=>cloudSave({name:name.trim()})}/></label>}
       {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-sageD')}>{msg}</div>}
-      {on&&<>
+      {st.on&&<>
         <div className="rounded-lg bg-bg border border-line px-3 py-2 mb-2 text-xs num space-y-0.5">
           <div className="flex justify-between"><span className="text-mute">狀態</span><span>{cloudChip(st).t}</span></div>
           <div className="flex justify-between"><span className="text-mute">待上傳</span><span>{st.n} 筆</span></div>
@@ -3262,7 +3301,16 @@ function CloudCard({toast,ask,onPulled}){
           <button className="h-10 rounded-lg border border-line disabled:opacity-40" disabled={st.busy} onClick={pushAll}>全部上傳</button>
         </div>
       </>}
-      <div className="text-xs text-mute mt-2">設定後，每次登打、修改、日結都會在幾秒內自動上傳；每 3 分鐘也會自動下載其他主管的更新。同一天若其他主管已上傳、而且和你這台不一樣，會跳出提醒讓你選擇以哪一邊為主。網址、金鑰、裝置名稱只存在這台裝置，不會進入備份檔。</div>
+      <div className="text-xs text-mute mt-2">啟用後，每次登打、修改、日結都會在幾秒內自動上傳；每 3 分鐘也會自動下載其他主管的更新。同一天若其他主管已上傳、而且和你這台不一樣，會跳出提醒讓你選擇以哪一邊為主。</div>
+      <button className="mt-3 text-xs text-mute underline" onClick={()=>setAdv(!adv)}>{adv?'收起進階設定':'進階：沒有 LINE 的裝置改用連線金鑰'}</button>
+      {adv&&<div className="mt-2 rounded-lg border border-line px-3 py-2">
+        <label className="block mb-2"><div className="text-xs text-mute mb-1">連線金鑰（GAS 指令碼屬性 API_KEY）</div>
+          <input type="password" className="w-full h-10 px-3 rounded-lg border border-line bg-card" value={akey} onChange={e=>setAkey(e.target.value)}/></label>
+        <label className="block mb-2"><div className="text-xs text-mute mb-1">GAS 網址（留空＝使用程式內建網址）</div>
+          <input className="w-full h-10 px-3 rounded-lg border border-line bg-card text-xs" placeholder="https://script.google.com/macros/s/…/exec" value={aurl} onChange={e=>setAurl(e.target.value)}/></label>
+        <button className="w-full h-10 rounded-lg border border-sage text-sageD" onClick={saveAdv}>儲存並測試連線</button>
+        <div className="text-xs text-mute mt-1">金鑰只存在這台裝置；有填金鑰時以金鑰連線，清空並儲存即改回 LINE 登入。</div>
+      </div>}
     </div>
   );
 }
@@ -3311,7 +3359,7 @@ function App(){
   const saveS=ns=>{setS(ns);if(!ls.set('settings',ns)){toast('設定儲存失敗：空間不足');return}
     if(JSON.stringify(cloudSettings(ns))!==JSON.stringify(cloudSettings(S)))cloud.mark('s')};
   const cst=useCloud();
-  useEffect(()=>{if(cloudOn())cloud.pull(false).catch(()=>{}).then(()=>cloud.soon(500))},[]);   // 開啟時先下載其他主管的更新，再上傳
+  useEffect(()=>{cloud.autoLogin().then(()=>{if(cloudOn())cloud.pull(false).catch(()=>{}).then(()=>cloud.soon(500))})},[]);   // 開啟時：LINE 已登入就自動取得通行證；先下載其他主管的更新，再上傳
   useEffect(()=>{if(cst.dataVer){setS(loadSettings());bump()}},[cst.dataVer]);                   // 雲端資料寫入本機後重新整理畫面
 
   const dayData=()=>getDay(loadMonth(monKey(date)),date);
