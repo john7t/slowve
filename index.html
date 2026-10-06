@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-041</title>
+<title>緩緩門店 v0.1-042</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-041';
+const VER='v0.1-042';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -61,6 +61,7 @@ const SVC_SHORT={dry:'指壓',oil:'油壓',foot:'腳底'};
 const MINS=[60,90,120];
 const WK='日一二三四五六';
 const STORAGE_LIMIT=5*1024*1024;
+const JOIN_MIN=10,JOIN_HARD_MAX=100;   // 線上開通可選的編號範圍（老闆可設定上限，最多 100）
 const DEFAULT_SETTINGS={
   prices:{dry:[1000,1400,1800],oil:[1200,1600,2000],foot:[1000,1400,1800]},
   promo:{svc:'dry',min:90,price:1300},
@@ -76,6 +77,7 @@ const DEFAULT_SETTINGS={
   zhiMin:30,                      // 幾分鐘算 1 支
   cutoff:'05:00',
   teachers:[],
+  joinMax:50,                     // 線上開通：老師可選的編號 10～joinMax（最多 100）
   support:[],                     // 支援老師編號：每日下班向櫃台領現金（現結），不走月薪
   expCats:['耗材','清潔用品','水電瓦斯','房租','餐費','雜支','其他'],
   expNames:[],
@@ -110,6 +112,7 @@ function mergeSettings(s){
   if(r.empRate==null)r.empRate=d.empRate;
   r.teachers=Array.isArray(s.teachers)?s.teachers:[];
   r.support=Array.isArray(s.support)?s.support.map(String):[];
+  r.joinMax=Math.max(JOIN_MIN,Math.min(JOIN_HARD_MAX,Number(r.joinMax)||50));
   r.expCats=(Array.isArray(s.expCats)&&s.expCats.length)?s.expCats:d.expCats;
   r.expNames=Array.isArray(s.expNames)?s.expNames:[];
   if(!r.device)r.device=Math.random().toString(36).slice(2,6).toUpperCase();
@@ -1638,7 +1641,9 @@ function JoinCard({name,role,uid}){
     </div>
   );
 }
-function JoinPage(){
+/* 線上開通（v0.1-042）：有 GAS 時走線上申請；沒有 GAS 才用舊的「傳申請卡到聊天室」 */
+function JoinPage(){return GAS_URL?<JoinOnline/>:<JoinPageOld/>}
+function JoinPageOld(){
   const [st,setSt]=useState('loading');   // loading / pick / sending / done / error
   const [err,setErr]=useState('');
   const [prof,setProf]=useState(null);
@@ -1738,6 +1743,212 @@ function JoinPage(){
         </div>
         {inClient&&<button className="w-full h-11 mt-2 rounded-xl bg-sage text-white" onClick={close}>回到聊天室</button>}
       </>}
+    </div>
+  );
+}
+
+/* ========== 線上開通（v0.1-042） ==========
+   申請人 LINE 登入 → GAS joinInfo（是否已開通、申請狀態、已用編號、開放到幾號）→ 填表 apply →
+   老闆／主管在老闆頁審核 → GAS 把這個人寫進 GitHub 上的 members.json → 申請人重新檢查即進入系統 */
+const MEMBER_HINT='slowve.memberHint';   // 剛核准、GitHub Pages 還沒更新時，先用 GAS 回傳的資料進入（只存在這支手機）
+function hintSet(m){try{localStorage.setItem(MEMBER_HINT,JSON.stringify({m,at:Date.now()}))}catch(_e){}}
+function hintGet(uid){try{const x=JSON.parse(localStorage.getItem(MEMBER_HINT)||'null');return x&&x.m&&x.m.uid===uid&&Date.now()-x.at<6*36e5?x.m:null}catch(_e){return null}}
+// 頁碼：第 1 頁 10～50 號，之後每頁 50 個，到老闆設定的上限為止（最多 100）
+function numPages(min,max){const out=[];let a=min,b=Math.min(max,50);while(a<=max){out.push([a,b]);a=b+1;b=Math.min(max,a+49)}return out}
+function NumberPicker({min,max,taken,value,onPick}){
+  const pages=numPages(min,max);
+  const [pg,setPg]=useState(()=>{const v=Number(value);const i=pages.findIndex(r=>v>=r[0]&&v<=r[1]);return i<0?0:i});
+  const r=pages[Math.min(pg,pages.length-1)]||[min,max];
+  const nums=[];for(let n=r[0];n<=r[1];n++)nums.push(n);
+  const free=pages.reduce((a,x)=>{for(let n=x[0];n<=x[1];n++)if(!taken[String(n)])a++;return a},0);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <button type="button" className="h-9 px-3 rounded-lg border border-line bg-card disabled:opacity-30" disabled={pg<=0} onClick={()=>setPg(pg-1)} aria-label="上一頁">‹ 上一頁</button>
+        <span className="text-sm num">{r[0]}～{r[1]} 號<span className="text-xs text-mute ml-1">（{pg+1}／{pages.length}）</span></span>
+        <button type="button" className="h-9 px-3 rounded-lg border border-line bg-card disabled:opacity-30" disabled={pg>=pages.length-1} onClick={()=>setPg(pg+1)} aria-label="下一頁">下一頁 ›</button>
+      </div>
+      <div className="grid grid-cols-6 gap-1.5">
+        {nums.map(n=>{const t=taken[String(n)];const on=String(value)===String(n);return (
+          <button key={n} type="button" disabled={!!t} onClick={()=>onPick(String(n))} aria-label={n+' 號'+(t?'（已使用）':'')}
+            className={'h-11 rounded-lg border num leading-none '+(on?'bg-sage border-sage text-white font-semibold':t?'bg-bg border-line text-mute/50':'bg-card border-line active:bg-sageL')}>
+            {n}{t&&<span className="block text-[9px] mt-0.5">{t==='pending'?'申請中':'已使用'}</span>}
+          </button>);})}
+      </div>
+      <div className="text-xs text-mute mt-2">可選 {free} 個號碼（灰色為已使用或別人申請中）</div>
+    </div>
+  );
+}
+const tLabel=role=>role==='teacher'?['上牌','下牌']:['上班','下班'];
+function JoinOnline(){
+  const [st,setSt]=useState('loading');   // loading / error / form / status / approved
+  const [err,setErr]=useState('');
+  const [prof,setProf]=useState(null);
+  const [info,setInfo]=useState(null);
+  const [f,setF]=useState({role:'',name:'',in:'',out:'',tc:'',support:false});
+  const [busy,setBusy]=useState(false);
+  const [fe,setFe]=useState('');
+  const [inClient,setInClient]=useState(false);
+  const set=(k,v)=>{setF(p=>Object.assign({},p,{[k]:v}));setFe('')};
+  const idt=()=>{const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請確認 LIFF 已勾選 openid 權限，或關閉後重新開啟');return t};
+  const goHome=()=>setTimeout(()=>{location.replace('https://liff.line.me/'+LIFF_ID)},1500);
+  const load=async(p)=>{
+    const j=await cloud.call({action:'joinInfo',idToken:idt()},30000);
+    setInfo(j);
+    if(j.member){hintSet(j.member);setSt('approved');goHome();return j}
+    if(j.app&&j.app.status==='pending'){setSt('status');return j}
+    if(j.app)setF({role:j.app.role,name:j.app.name,in:j.app.in||'',out:j.app.out||'',tc:'',support:!!j.app.support});
+    else setF(x=>Object.assign({},x,{name:x.name||(p&&p.displayName)||''}));
+    setSt(j.app?'status':'form');return j;
+  };
+  useEffect(()=>{(async()=>{
+    try{
+      const L=await liffReady();
+      if(new URLSearchParams(location.search).has('liff.state'))return;
+      if(!L.isLoggedIn()){L.login({redirectUri:location.href});return}
+      const p=await L.getProfile();setProf(p);setInClient(L.isInClient());
+      await load(p);
+    }catch(e){setErr(String(e&&e.message||e));setSt('error')}
+  })()},[]);
+  const recheck=async()=>{setBusy(true);try{await load(prof)}catch(e){setFe(e.message)}setBusy(false)};
+  const submit=async()=>{
+    const L=tLabel(f.role);
+    if(!f.role)return setFe('請選擇身分');
+    if(!f.name.trim())return setFe('請輸入姓名');
+    if(f.role!=='guest'&&(!f.in||!f.out))return setFe('請選擇'+L[0]+'、'+L[1]+'時間');
+    if(f.role==='teacher'&&!f.tc)return setFe('請選擇編號');
+    setBusy(true);
+    try{
+      await cloud.call({action:'apply',idToken:idt(),lineName:prof.displayName,role:f.role,name:f.name.trim(),in:f.in,out:f.out,tc:f.tc,support:f.support},30000);
+      await load(prof);
+    }catch(e){setFe(e.message);try{const j=await cloud.call({action:'joinInfo',idToken:idt()});setInfo(j)}catch(_e){}}
+    setBusy(false);
+  };
+  const close=()=>{try{window.liff.closeWindow()}catch(_e){}};
+  const app=info&&info.app;
+  const Row=({k,v})=><div className="flex justify-between py-1 border-b border-line last:border-0"><span className="text-mute">{k}</span><span className="num">{v}</span></div>;
+  return (
+    <GateShell>
+      {st==='loading'&&<div className="text-center text-mute">載入中…</div>}
+      {st==='error'&&<Card className="p-4 text-center"><div className="text-warn text-sm whitespace-pre-line mb-3">{err}</div><button className="h-11 px-6 rounded-xl bg-sage text-white" onClick={()=>location.reload()}>重試</button></Card>}
+      {st==='approved'&&info&&<Card className="p-5 text-center bg-sageL">
+        <div className="text-lg text-sageD font-semibold">✓ 帳號已開通（{memberInfo(info.member).label}）</div>
+        <div className="text-sm mt-1">正在進入系統…</div></Card>}
+      {st==='status'&&app&&<>
+        {app.status==='pending'&&<div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown">
+          <div className="font-semibold">申請已送出，等待老闆／主管審核</div>
+          <div className="text-sm mt-1">審核通過後，再按「重新檢查」或重新開啟就能進入系統。</div></div>}
+        {app.status==='rejected'&&<div className="mb-3 px-4 py-3 rounded-xl bg-warnL text-warn">
+          <div className="font-semibold">申請未通過</div>
+          {app.note&&<div className="text-sm mt-1">原因：{app.note}</div>}
+          <div className="text-sm mt-1">可修改後重新申請，或聯繫店家。</div></div>}
+        <Card className="p-4 text-sm mb-3">
+          <Row k="身分" v={joinRoleLabel(app.role)+(app.role==='teacher'?(app.support?'・兼職（支援）':'・正職'):'')}/>
+          <Row k="姓名" v={app.name}/>
+          {app.tc&&<Row k="編號" v={app.tc+' 號'}/>}
+          {app.in&&<Row k={tLabel(app.role).join('／')+'時間'} v={app.in+'～'+app.out}/>}
+          <Row k="申請時間" v={clockText(app.at)}/>
+        </Card>
+        {fe&&<div className="mb-2 text-sm text-warn">{fe}</div>}
+        <button className="w-full h-12 mb-2 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={recheck}>{busy?'檢查中…':'重新檢查'}</button>
+        <button className="w-full h-11 rounded-xl border border-line bg-card" onClick={()=>{setF({role:app.role,name:app.name,in:app.in||'',out:app.out||'',tc:app.status==='pending'?app.tc||'':'',support:!!app.support});setSt('form')}}>{app.status==='pending'?'修改申請內容':'重新申請'}</button>
+        {inClient&&<button className="w-full h-11 mt-2 rounded-xl border border-line bg-card" onClick={close}>回到聊天室</button>}
+      </>}
+      {st==='form'&&info&&<>
+        <div className="text-center text-lg mb-1">帳號開通申請</div>
+        <div className="text-center text-sm text-mute mb-4">{prof&&prof.displayName}，請填寫以下資料，送出後由老闆／主管審核</div>
+        <div className="text-xs text-mute mb-1">身分</div>
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {JOIN_ROLES.map(r=><button key={r.id} type="button" className={'h-12 rounded-xl border text-lg '+(f.role===r.id?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('role',r.id)}>{r.label}</button>)}
+        </div>
+        {f.role&&<>
+          <label className="block mb-4"><div className="text-xs text-mute mb-1">姓名</div>
+            <input className="w-full h-12 px-3 rounded-xl border border-line bg-card text-lg" value={f.name} maxLength={20} onChange={e=>set('name',e.target.value)}/></label>
+          {f.role!=='guest'&&<div className="mb-4"><div className="text-xs text-mute mb-1">{tLabel(f.role)[0]}／{tLabel(f.role)[1]}時間</div>
+            <div className="flex items-center gap-2">
+              <input type="time" step="1800" aria-label={tLabel(f.role)[0]+'時間'} className="w-0 flex-1 min-w-0 h-12 px-3 rounded-xl border border-line bg-card text-lg num" value={f.in} onChange={e=>set('in',e.target.value)}/>
+              <span className="text-mute">～</span>
+              <input type="time" step="1800" aria-label={tLabel(f.role)[1]+'時間'} className="w-0 flex-1 min-w-0 h-12 px-3 rounded-xl border border-line bg-card text-lg num" value={f.out} onChange={e=>set('out',e.target.value)}/>
+            </div></div>}
+          {f.role==='teacher'&&<>
+            <div className="text-xs text-mute mb-1">工作型態</div>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {[[false,'正職'],[true,'兼職（支援）']].map(([v,l])=><button key={l} type="button" className={'h-12 rounded-xl border '+(f.support===v?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('support',v)}>{l}</button>)}
+            </div>
+            {f.support&&<div className="-mt-2 mb-4 text-xs text-mute">兼職（支援）老師每天下班時向櫃台領現金。</div>}
+            <div className="text-xs text-mute mb-1">選擇編號{f.tc&&<b className="ml-2 text-sageD num text-sm">{f.tc} 號</b>}</div>
+            <div className="mb-4"><NumberPicker min={info.min} max={info.max} taken={info.taken||{}} value={f.tc} onPick={v=>set('tc',v)}/></div>
+          </>}
+          {fe&&<div className="mb-2 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">{fe}</div>}
+          <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={submit}>{busy?'送出中…':'送出申請'}</button>
+          {app&&<button className="w-full h-11 mt-2 rounded-xl border border-line bg-card" onClick={()=>setSt('status')}>取消</button>}
+        </>}
+      </>}
+    </GateShell>
+  );
+}
+
+/* 老闆頁：審核線上開通申請（核准 → GAS 寫入 GitHub 上的 members.json） */
+function JoinReview({S,saveS,toast,ask}){
+  const st=useCloud();
+  const [list,setList]=useState(null);
+  const [meta,setMeta]=useState({});
+  const [msg,setMsg]=useState('');
+  const [ed,setEd]=useState({});      // uid → 修改內容
+  const [busy,setBusy]=useState('');
+  const load=async()=>{setMsg('讀取中…');try{const j=await cloud.call({action:'applist'});setList(j.list||[]);setMeta(j);setMsg('');const s=syncGet();s.joinN=(j.list||[]).filter(a=>a.status==='pending').length;syncSet(s);cloud.emit()}catch(e){setMsg('✗ '+e.message)}};
+  useEffect(()=>{if(st.on)load()},[st.on]);
+  if(!st.on)return <div className="text-sm text-mute">請先在下方「雲端同步」用 LINE 登入（老闆／主管），才能審核開通申請。</div>;
+  const E=a=>Object.assign({},a,ed[a.uid]||{});
+  const setE=(uid,k,v)=>setEd(p=>Object.assign({},p,{[uid]:Object.assign({},p[uid]||{},{[k]:v})}));
+  const approve=async a=>{
+    const x=E(a);
+    if(!await ask({title:'核准 '+x.name+'？',msg:joinRoleLabel(x.role)+(x.tc?' '+x.tc+' 號':'')+(x.role==='teacher'?(x.support?'・兼職（支援）':'・正職'):'')+'\n核准後會寫入 GitHub 上的開通名單（members.json），約 1 分鐘後生效。',okText:'核准'}))return;
+    setBusy(a.uid);
+    try{
+      await cloud.call({action:'approve',uid:a.uid,edit:{name:x.name,tc:x.tc,in:x.in,out:x.out,support:x.support}},40000);
+      if(x.role==='teacher'&&x.tc){const n=clone(S);n.teachers=[String(x.tc),...n.teachers.filter(t=>String(t)!==String(x.tc))];if(x.support&&!n.support.includes(String(x.tc)))n.support=n.support.concat([String(x.tc)]);saveS(mergeSettings(n))}
+      toast('已核准，已寫入開通名單');await load();
+    }catch(e){setMsg('✗ '+e.message)}
+    setBusy('');
+  };
+  const reject=async a=>{
+    const note=window.prompt('退回原因（會顯示給申請人，可留空）','');if(note===null)return;
+    setBusy(a.uid);try{await cloud.call({action:'reject',uid:a.uid,note});await load()}catch(e){setMsg('✗ '+e.message)}setBusy('');
+  };
+  const pend=(list||[]).filter(a=>a.status==='pending'),done=(list||[]).filter(a=>a.status!=='pending');
+  const inp='h-9 px-2 rounded-lg border border-line bg-card num';
+  return (
+    <div className="text-sm">
+      <div className="flex items-center justify-between mb-2">
+        <span>待審核 <b className={pend.length?'text-warn':''}>{list?pend.length:'—'}</b> 筆</span>
+        <button className="h-8 px-3 rounded-full border border-line text-xs" onClick={load}>重新整理</button>
+      </div>
+      {meta.github===false&&<div className="mb-2 px-3 py-2 rounded-lg bg-warnL text-warn text-xs">GAS 尚未設定 GITHUB_TOKEN，核准時無法寫入開通名單。</div>}
+      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{msg}</div>}
+      {list&&!pend.length&&<div className="text-xs text-mute mb-2">目前沒有待審核的申請。</div>}
+      {pend.map(a=>{const x=E(a);const L=tLabel(a.role);return (
+        <div key={a.uid} className="rounded-xl border border-brown/40 bg-brownL/30 p-3 mb-2">
+          <div className="flex items-baseline justify-between gap-2 mb-2">
+            <span><b className="text-base">{a.name}</b><span className="ml-2 px-1.5 rounded bg-sage text-white text-xs">{joinRoleLabel(a.role)}</span></span>
+            <span className="text-xs text-mute">LINE：{a.lineName||'—'}・{clockText(a.at)}</span>
+          </div>
+          <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1.5 items-center">
+            <span className="text-xs text-mute">姓名</span><input className={inp+' w-full min-w-0'} value={x.name} onChange={e=>setE(a.uid,'name',e.target.value)}/>
+            {a.role==='teacher'&&<><span className="text-xs text-mute">編號</span><input className={inp+' w-24'} inputMode="numeric" value={x.tc||''} onChange={e=>setE(a.uid,'tc',e.target.value.replace(/\D/g,''))}/></>}
+            {a.role!=='guest'&&<><span className="text-xs text-mute">{L[0]}／{L[1]}</span>
+              <span className="flex items-center gap-1 min-w-0"><input type="time" className={inp+' w-0 flex-1 min-w-0'} value={x.in||''} onChange={e=>setE(a.uid,'in',e.target.value)}/>～<input type="time" className={inp+' w-0 flex-1 min-w-0'} value={x.out||''} onChange={e=>setE(a.uid,'out',e.target.value)}/></span></>}
+            {a.role==='teacher'&&<><span className="text-xs text-mute">工作型態</span>
+              <span className="flex rounded-lg border border-line overflow-hidden w-fit">{[[false,'正職'],[true,'兼職（支援）']].map(([v,l])=><button key={l} className={'h-8 px-3 text-xs '+(!!x.support===v?'bg-sage text-white':'bg-card')} onClick={()=>setE(a.uid,'support',v)}>{l}</button>)}</span></>}
+          </div>
+          <div className="grid grid-cols-[1fr_2fr] gap-2 mt-3">
+            <button className="h-10 rounded-lg border border-warn text-warn disabled:opacity-40" disabled={!!busy} onClick={()=>reject(a)}>退回</button>
+            <button className="h-10 rounded-lg bg-sage text-white disabled:opacity-40" disabled={!!busy} onClick={()=>approve(a)}>{busy===a.uid?'處理中…':'核准並寫入開通名單'}</button>
+          </div>
+        </div>);})}
+      {done.length>0&&<details className="mt-1"><summary className="text-xs text-mute">最近 30 天已處理 {done.length} 筆</summary>
+        {done.map(a=><div key={a.uid} className="flex justify-between py-1.5 border-b border-line last:border-0 text-xs"><span>{a.name}・{joinRoleLabel(a.role)}{a.tc?' '+a.tc:''}</span><span className={a.status==='approved'?'text-sageD':'text-warn'}>{a.status==='approved'?'✓ 已核准':'已退回'}{a.by?'（'+a.by+'）':''}</span></div>)}
+      </details>}
     </div>
   );
 }
@@ -2874,10 +3085,13 @@ function LineGate(){
       const p=await L.getProfile();setProf(p);
       let list=[];
       try{list=await fetchMembers()}catch(e){if(String(e.message)!=='nofile')throw new Error('讀取開通名單失敗，請檢查網路後重試')}
-      const m=list.find(x=>x&&x.uid===p.userId);
+      const m=list.find(x=>x&&x.uid===p.userId)||hintGet(p.userId);   // 剛核准、GitHub Pages 還沒更新：先用核准時的資料
       if(!m){setSt('notmember');return}
       setMem(m);
-      const mine=meGet(p.userId);setMe(mine);
+      let mine=meGet(p.userId);
+      // 線上開通的人：名單上已有姓名（老師還有編號）→ 不用再設定，直接進歡迎畫面
+      if(!mine&&m.name&&(m.tc||!memberInfo(m).roles.includes('teacher'))){mine={uid:p.userId,code:m.tc||'',name:m.name,at:Date.now()};meSet(mine)}
+      setMe(mine);
       // 這台被設為主櫃（店內 iPad）：櫃台人員或老闆登入後直接進主櫃系統，操作人＝登入的人
       let mc=false;try{mc=localStorage.getItem('slowve.mainc')==='1'}catch(_e){}
       const mi=memberInfo(m);
@@ -2909,6 +3123,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-042','10-07','線上開通（需 GAS gas-4）：申請頁改為線上填寫（身分、姓名、上下牌時間、正職／兼職（支援）、選編號 10～50 號可翻頁，老闆可開放到 100 號），送出後老闆／主管在設定頁「人員開通申請」審核，核准時 GAS 用 GITHUB_TOKEN 寫入 GitHub 上的 members.json；老闆頁頂部提醒待審核筆數；線上開通的人第一次進入不用再設定編號姓名'],
   ['v0.1-041','10-07','支援老師現結改列為支出：每日訂單、月報、日結的「支出」包含支援老師現結；「老師抽成」只算正職老師（5／20 號發薪）；現金結餘＝現金收入 − 現金支出'],
   ['v0.1-040','10-07','每日訂單、月報在營業額下方新增「現金結餘」＝現金收入（不含跳單）－ 現金支出 － 支援老師現結，跟日結的應有現金同一個算法；並列出 5／20 號才發、尚未扣除的正職老師費用'],
   ['v0.1-039','10-06','支援老師（下班現結）：設定頁點老師編號可標記「支援」；每日訂單在支出下方列出支援老師的支數與應付，日結從應有現金扣除（責任歸老師的跳單直接扣）；主櫃「今日支援老師 N 人」清單，點編號確認付現並從本班現金扣除；月報、薪資明細標示「已現結」'],
@@ -3100,6 +3315,19 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay}){
         <div className="text-xs text-mute mt-2">移除類別不影響已記錄的支出</div>
       </Card>
 
+      <div className={sec}>人員開通申請（線上審核）</div>
+      <Card className="p-3">
+        <JoinReview S={S} saveS={saveS} toast={toast} ask={ask}/>
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-line text-sm">
+          <span className="flex-1">老師可選的編號</span>
+          <span className="num text-mute">{JOIN_MIN} ～</span>
+          <select className="h-10 px-2 rounded-lg border border-line bg-card num" value={dr.joinMax} onChange={e=>up(n=>{n.joinMax=Number(e.target.value)})}>
+            {[20,30,40,50,60,70,80,90,100].map(v=><option key={v} value={v}>{v}</option>)}
+          </select><span>號</span>
+        </div>
+        <div className="text-xs text-mute mt-1">申請頁第 1 頁顯示 10～50 號，超過 50 號的在下一頁；最多開放到 100 號。改完按下方「儲存設定」，上傳雲端後生效。</div>
+      </Card>
+
       <div className={sec}>雲端同步（Google 試算表）</div>
       <Card className="p-3"><CloudCard toast={toast} ask={ask} onPulled={onImported}/></Card>
 
@@ -3178,7 +3406,7 @@ const ckey=c=>c.type==='day'?'d:'+c.date:c.type==='pay'?'p:'+c.ym:'s';
 const cloud={
   busy:false,timer:null,subs:new Set(),pend:[],dataVer:0,
   emit(){const st=this.state();this.subs.forEach(f=>{try{f(st)}catch(_e){}})},
-  state(){const s=syncGet();const c=cloudCfg();return {url:!!c.url,who:tokValid(c)?c.who:null,tokExp:c.tokExp,keyMode:!!c.key,on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,pend:this.pend.slice(),dataVer:this.dataVer}},
+  state(){const s=syncGet();const c=cloudCfg();return {url:!!c.url,who:tokValid(c)?c.who:null,tokExp:c.tokExp,keyMode:!!c.key,on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,joinN:s.joinN||0,pend:this.pend.slice(),dataVer:this.dataVer}},
   mark(k){const s=syncGet();s.dirty[k]=Date.now();if(k==='s')s.sUa=Date.now();syncSet(s);this.emit();this.soon()},
   soon(ms){if(!cloudOn())return;clearTimeout(this.timer);this.timer=setTimeout(()=>this.push(),ms==null?3000:ms)},
   // 呼叫 GAS：同一台裝置一次只送一個請求（排隊），遇到暫時性錯誤（HTTP 404／5xx、網路中斷、回傳不是 JSON）自動重試 2 次
@@ -3197,7 +3425,7 @@ const cloud={
   },
   async callOnce(body,ms){
     const c=cloudCfg();if(!c.url)throw new Error('尚未設定 GAS 網址');
-    const auth=body.action==='auth'?{}:c.key?{key:c.key}:tokValid(c)?{tok:c.tok}:null;
+    const auth=(body.action==='auth'||body.idToken)?{}:c.key?{key:c.key}:tokValid(c)?{tok:c.tok}:null;   // 申請開通用 LINE ID Token，不需要通行證
     if(!auth)throw new Error('NEED_LOGIN：請先用 LINE 登入');
     const ctl=typeof AbortController!=='undefined'?new AbortController():null;
     const t=ctl&&setTimeout(()=>ctl.abort(),ms||25000);
@@ -3322,7 +3550,7 @@ const cloud={
       (j.days||[]).forEach(x=>handle('d:'+x.date,x));
       (j.pay||[]).forEach(x=>handle('p:'+x.ym,x));
       if(j.settings)handle('s',j.settings);
-      const s=syncGet();s.cursor=j.at||Date.now();s.pullAt=Date.now();s.err='';syncSet(s);
+      const s=syncGet();s.cursor=j.at||Date.now();s.pullAt=Date.now();s.err='';if(j.joinN!=null)s.joinN=j.joinN;syncSet(s);
       this.busy=false;this.emit();
       return {nd,np,ns,nc,total:(j.days||[]).length};
     }catch(e){const s=syncGet();s.err=String(e.message||e);syncSet(s);this.busy=false;this.emit();throw e}
@@ -3601,6 +3829,7 @@ function App(){
         {cst.on?(()=>{const c=cloudChip(cst);return <button className={'text-xs px-2.5 h-7 rounded-full '+c.c} onClick={()=>setTab('set')}>{c.t}</button>})():
           <button className={'text-xs px-2.5 h-7 rounded-full '+(backupOld?'bg-warnL text-warn':'bg-sageL text-sageD')} onClick={()=>setTab('set')}>{agoText(S.lastBackupAt)}</button>}
       </div>
+      {cst.on&&cst.joinN>0&&tab!=='set'&&<button className="w-full h-9 bg-brownL text-brown text-sm" onClick={()=>setTab('set')}>有 {cst.joinN} 筆人員開通申請待審核 ›</button>}
     </header>
   );
   const otherTabs=(<>
