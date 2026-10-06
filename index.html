@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-039</title>
+<title>緩緩門店 v0.1-041</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-039';
+const VER='v0.1-041';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -240,13 +240,22 @@ function statsOf(orders,S){
   });
   return r;
 }
+/* 現金結餘（v0.1-040）：手上應該有的現金＝現金收入（不含跳單）－ 現金支出 － 支援老師現結。
+   正職老師的費用 5 號／20 號才發，這裡還沒扣，所以會比店家淨額多；跟日結的「應有現金」是同一個算法。
+   v0.1-041：支援老師現結當作支出（雜項現金支出）顯示；「老師抽成」只算正職老師（月結），店家淨額不重複扣。 */
+const CashBox=({cashIn,expCash,sup,unpaidT})=>(
+  <div className="mt-3 pt-3 border-t border-line">
+    <div className="flex items-baseline justify-between"><span className="text-sm">現金結餘</span><span className="serif text-2xl text-sageD num">{money(cashIn-expCash-sup)}</span></div>
+    <div className="text-xs text-mute num mt-0.5">現金收入 {money(cashIn)} − 現金支出 {money(expCash+sup)}{sup>0?'（含支援老師 '+money(sup)+'）':''}</div>
+    {unpaidT>0&&<div className="text-xs text-brown num">正職老師費用 {money(unpaidT)} 於 5／20 號發薪，這裡未扣除</div>}
+  </div>);
 /* 支援老師（v0.1-039）：編號列在設定 support，每天下班向櫃台領現金。
    應付＝當天老師費用（支數×每支費用＋老點，含加鐘、修腳皮）－ 責任歸他的跳單金額。
    現結從櫃台現金付出，所以日結的應有現金要扣掉；費用本來就算在老師抽成裡，店家淨額不重複扣。 */
 const isSup=(S,tc)=>(S.support||[]).some(x=>String(x)===String(tc));
 function supportOf(st,S){
   const list=sortT(st.byT).filter(t=>isSup(S,t.tc)).map(t=>{const ded=t.skipDed||0;return {tc:String(t.tc),n:t.n,zh:t.zh,cm:t.cm,ded,pay:Math.max(0,t.cm-ded)}});
-  return {list,n:list.length,zh:list.reduce((s,t)=>s+t.zh,0),pay:list.reduce((s,t)=>s+t.pay,0)};
+  return {list,n:list.length,zh:list.reduce((s,t)=>s+t.zh,0),cm:list.reduce((s,t)=>s+t.cm,0),pay:list.reduce((s,t)=>s+t.pay,0)};
 }
 function expStatsOf(expenses){
   const r={total:0,cash:0,byCat:{}};
@@ -548,8 +557,8 @@ function CloseSheet({S,st,ex,onSave,onClose}){
       <Card className="p-3 mb-4 num">
         <div className="flex justify-between py-1"><span className="text-mute">營業額（{st.n} 單）</span><span>{money(st.amt)}</span></div>
         {st.skipRev>0&&<div className="flex justify-between py-1 text-warn"><span>－ 跳單未收（已計入營業額）</span><span>{money(st.skipRev)}</span></div>}
-        <div className="flex justify-between py-1"><span className="text-mute">－ 現金支出</span><span>{money(ex.cash)}</span></div>
-        {sup.n>0&&<div className="flex justify-between py-1"><span className="text-mute">－ 支援老師現結（{sup.list.map(t=>t.tc).join('、')}）</span><span>{money(sup.pay)}</span></div>}
+        <div className="flex justify-between py-1"><span className="text-mute">－ 現金支出</span><span>{money(ex.cash+sup.pay)}</span></div>
+        {sup.n>0&&<div className="flex justify-between pl-4 text-xs text-mute"><span>其中支援老師現結（{sup.list.map(t=>t.tc).join('、')}）</span><span>{money(sup.pay)}</span></div>}
         <div className="flex justify-between pt-2 mt-1 border-t border-line"><span>應有現金</span><span className="serif text-2xl text-brown">{money(expected)}</span></div>
       </Card>
       {st.skipN>0&&<Card className="p-3 mb-4 border-warn">
@@ -744,10 +753,11 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
         <Stat label="營業額" value={money(st.amt)} big tone="brown"/>
         <div className="text-right text-sm text-mute">{st.n} 單{st.guests>st.n&&<span>・{st.guests} 位</span>}{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</div>
       </div>
+      <CashBox cashIn={st.cash} expCash={ex.cash} sup={sup.pay} unpaidT={st.cm-sup.cm}/>
       <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
-        <Stat label="老師抽成" value={money(st.cm)}/>
-        <Stat label="支出" value={money(ex.total)}/>
-        <Stat label="店家淨額" value={money(st.amt-st.cm-ex.total)} tone="sage"/>
+        <Stat label={sup.n?'老師抽成（正職）':'老師抽成'} value={money(st.cm-sup.cm)}/>
+        <Stat label="支出" value={money(ex.total+sup.pay)}/>
+        <Stat label="店家淨額" value={money(st.amt-(st.cm-sup.cm)-ex.total-sup.pay)} tone="sage"/>
       </div>
       {st.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {st.skipN} 筆・未收 {money(st.skip)}{st.skipRev>0&&<span>（其中 {money(st.skipRev)} 計入營業額）</span>}</div>}
     </Card>
@@ -809,10 +819,10 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
 
   const expBlock=(<>
     <div className={'flex items-center justify-between mb-2 px-1 '+(part==='side'?'mt-2':'mt-5')}>
-      <div className="text-sm text-mute">支出{ex.total>0&&<span className="ml-2 num">{money(ex.total)}</span>}</div>
+      <div className="text-sm text-mute">支出{ex.total+sup.pay>0&&<span className="ml-2 num">{money(ex.total+sup.pay)}</span>}{sup.pay>0&&<span className="ml-1 text-xs">（含支援老師）</span>}</div>
       {!closed&&<button className="h-8 px-3 rounded-full border border-brown text-brown text-sm bg-card" onClick={()=>openExp(null)}>＋ 新增支出</button>}
     </div>
-    {exps.length===0&&<div className="text-xs text-mute px-1">這天沒有支出</div>}
+    {exps.length===0&&!sup.n&&<div className="text-xs text-mute px-1">這天沒有支出</div>}
     {exps.length>0&&<Card className="overflow-hidden">
       {exps.map((e,i)=>(
         <button key={e.id} className={'w-full flex items-center gap-3 px-3 py-3 text-left active:bg-sageL '+(i?'border-t border-line ':'')+(selExpId===e.id?'bg-sageL':'')} onClick={()=>openExp(e)}>
@@ -837,7 +847,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
             <div className="num text-warn">-{money(t.pay)}</div>
           </div>);})}
       </Card>
-      <div className="text-xs text-mute px-1 mt-1">日結時從應有現金扣除；這筆已含在老師抽成內，店家淨額不重複扣。</div>
+      <div className="text-xs text-mute px-1 mt-1">算在當天的現金支出，日結時從應有現金扣除；不列入正職老師的抽成（月結）。</div>
     </>}
   </>);
 
@@ -883,13 +893,13 @@ const adjSumOf=list=>list.reduce((s,x)=>s+(Number(x.amt)||0),0);
 
 function monthData(ym,S,p){
   const md=loadMonth(ym);const [from,to]=periodRange(ym,p||'all');
-  const rows=[];const tot={n:0,amt:0,cm:0,exp:0,zh:0,sup:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{}};
+  const rows=[];const tot={n:0,amt:0,cash:0,expCash:0,cm:0,exp:0,zh:0,sup:0,supCm:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{}};
   for(let d=from;d<=to;d++){
     const dd=md.days[pad(d)];
     if(!dd||(!(dd.orders||[]).length&&!(dd.expenses||[]).length&&!dd.close))continue;
     const st=statsOf(dd.orders||[],S);const ex=expStatsOf(dd.expenses);
-    rows.push({date:ym+'-'+pad(d),st,ex,closed:!!dd.close});
-    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;tot.sup+=supportOf(st,S).pay;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;
+    rows.push({date:ym+'-'+pad(d),st,ex,sup:supportOf(st,S).pay,closed:!!dd.close});
+    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;const sp=supportOf(st,S);tot.sup+=sp.pay;tot.supCm+=sp.cm;tot.cash+=st.cash;tot.expCash+=ex.cash;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;
     Object.keys(st.skipBy).forEach(k=>{tot.skipBy[k]=(tot.skipBy[k]||0)+st.skipBy[k]});st.skipList.forEach(o=>tot.skipList.push(Object.assign({date:ym+'-'+pad(d)},o)));
     Object.keys(st.rj).forEach(c=>{tot.rj[c]=(tot.rj[c]||0)+st.rj[c]});
     Object.keys(ex.byCat).forEach(c=>{tot.byCat[c]=(tot.byCat[c]||0)+ex.byCat[c]});
@@ -941,19 +951,20 @@ function MonthPage({S,rev,goDay,openPay}){
           <Stat label={(per==='all'?'本月':PERIOD_LABEL[per])+'營業額'} value={money(data.tot.amt)} big tone="brown"/>
           <div className="text-sm text-mute text-right">{data.tot.n} 單・{data.tot.zh} 支{pd&&<div className="text-xs text-brown">發薪日 {fmtPayDay(pd)}</div>}</div>
         </div>
+        <CashBox cashIn={data.tot.cash} expCash={data.tot.expCash} sup={data.tot.sup} unpaidT={data.tot.cm-data.tot.supCm}/>
         <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
-          <Stat label="老師抽成" value={money(data.tot.cm)}/>
-          <Stat label="支出" value={money(data.tot.exp)}/>
-          <Stat label="店家淨額" value={money(data.tot.amt-data.tot.cm-data.tot.exp)} tone="sage"/>
+          <Stat label={data.tot.sup||data.tot.supCm?'老師抽成（正職）':'老師抽成'} value={money(data.tot.cm-data.tot.supCm)}/>
+          <Stat label="支出" value={money(data.tot.exp+data.tot.sup)}/>
+          <Stat label="店家淨額" value={money(data.tot.amt-(data.tot.cm-data.tot.supCm)-data.tot.exp-data.tot.sup)} tone="sage"/>
         </div>
         {data.tot.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {data.tot.skipN} 筆・未收 {money(data.tot.skip)}{data.tot.skipRev>0&&<span>（其中 {money(data.tot.skipRev)} 計入營業額）</span>}</div>}
-        {data.tot.sup>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-brown num">支援老師現結 {money(data.tot.sup)}<span className="text-xs text-mute ml-1">（已含在老師抽成內，每日從櫃台現金付出）</span></div>}
+        {data.tot.sup>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-brown num">支出含支援老師現結 {money(data.tot.sup)}<span className="text-xs text-mute ml-1">（每日從櫃台現金付出，不列入正職老師抽成）</span></div>}
         {per==='all'&&<div className="mt-3 pt-3 border-t border-line grid grid-cols-2 gap-2 num">
           {['h1','h2'].map(h=>(
             <button key={h} className="text-left rounded-xl bg-bg border border-line px-3 py-2 active:bg-sageL" onClick={()=>setPer(h)}>
               <div className="text-xs text-mute">{PERIOD_LABEL[h]} {periodText(ym,h)}</div>
               <div className="text-lg">{money(halves[h].amt)}</div>
-              <div className="text-xs text-mute">抽成 {money(halves[h].cm)}</div>
+              <div className="text-xs text-mute">抽成 {money(halves[h].cm-halves[h].supCm)}</div>
               <div className="text-xs text-brown">{fmtPayDay(payDay(ym,h))} 發薪</div>
             </button>))}
         </div>}
@@ -966,7 +977,7 @@ function MonthPage({S,rev,goDay,openPay}){
           <button key={r.date} className={'w-full flex items-center px-3 py-3 text-left num active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>goDay(r.date)}>
             <div className="w-24">{fmtDate(r.date)}</div>
             <div className="flex-1 text-sm text-mute">{r.st.n} 單{r.closed?<span className="ml-2 text-sageD">✓ 日結</span>:<span className="ml-2 text-warn/80">未日結</span>}</div>
-            <div className="text-right">{money(r.st.amt)}{r.ex.total>0&&<div className="text-xs text-warn">支出 -{money(r.ex.total)}</div>}</div>
+            <div className="text-right">{money(r.st.amt)}{r.ex.total+r.sup>0&&<div className="text-xs text-warn">支出 -{money(r.ex.total+r.sup)}</div>}</div>
           </button>
         ))}
       </Card>}
@@ -2898,6 +2909,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-041','10-07','支援老師現結改列為支出：每日訂單、月報、日結的「支出」包含支援老師現結；「老師抽成」只算正職老師（5／20 號發薪）；現金結餘＝現金收入 − 現金支出'],
+  ['v0.1-040','10-07','每日訂單、月報在營業額下方新增「現金結餘」＝現金收入（不含跳單）－ 現金支出 － 支援老師現結，跟日結的應有現金同一個算法；並列出 5／20 號才發、尚未扣除的正職老師費用'],
   ['v0.1-039','10-06','支援老師（下班現結）：設定頁點老師編號可標記「支援」；每日訂單在支出下方列出支援老師的支數與應付，日結從應有現金扣除（責任歸老師的跳單直接扣）；主櫃「今日支援老師 N 人」清單，點編號確認付現並從本班現金扣除；月報、薪資明細標示「已現結」'],
   ['v0.1-038','10-06','雲端同步更穩定：同一台裝置的請求改為排隊一次送一個（不再同時打 GAS）；遇到 HTTP 404／5xx、網路中斷等暫時性錯誤自動重試 2 次'],
   ['v0.1-037','10-06','雲端同步一律使用程式內建的 GAS 網址（舊版設定頁留下的網址不再覆蓋），修正部分手機出現 HTTP 404；404 時顯示目前使用的網址結尾方便核對'],
