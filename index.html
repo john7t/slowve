@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-036</title>
+<title>緩緩門店 v0.1-039</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-036';
+const VER='v0.1-039';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -76,6 +76,7 @@ const DEFAULT_SETTINGS={
   zhiMin:30,                      // 幾分鐘算 1 支
   cutoff:'05:00',
   teachers:[],
+  support:[],                     // 支援老師編號：每日下班向櫃台領現金（現結），不走月薪
   expCats:['耗材','清潔用品','水電瓦斯','房租','餐費','雜支','其他'],
   expNames:[],
   device:'',
@@ -108,6 +109,7 @@ function mergeSettings(s){
   r.extra.price=Object.assign({},d.extra.price,r.extra.price);
   if(r.empRate==null)r.empRate=d.empRate;
   r.teachers=Array.isArray(s.teachers)?s.teachers:[];
+  r.support=Array.isArray(s.support)?s.support.map(String):[];
   r.expCats=(Array.isArray(s.expCats)&&s.expCats.length)?s.expCats:d.expCats;
   r.expNames=Array.isArray(s.expNames)?s.expNames:[];
   if(!r.device)r.device=Math.random().toString(36).slice(2,6).toUpperCase();
@@ -230,12 +232,21 @@ function statsOf(orders,S){
     orderLines(o).forEach(l=>{
       const z=zhiOf(l,S);const a=l.amt||0;const rev=o.skip?(o.skipRev?a:0):a;
       if(!l.xsOf)r.guests++;r.amt+=rev;r.cash+=o.skip?0:a;r.cm+=l.cm||0;r.zh+=z;
-      const t=r.byT[l.tc]||(r.byT[l.tc]={tc:l.tc,n:0,zh:0,ld:0,cm:0,amt:0});
+      const t=r.byT[l.tc]||(r.byT[l.tc]={tc:l.tc,n:0,zh:0,ld:0,cm:0,amt:0,skipDed:0});
       t.n++;t.zh+=z;t.ld+=l.ld?1:0;t.cm+=l.cm||0;t.amt+=rev;
+      if(o.skip&&o.skipBy==='teacher'&&!l.xsOf)t.skipDed+=a;   // 責任歸老師的跳單：老師吸收自己服務那位客人的金額
       (l.rj||[]).forEach(c=>{r.rj[c]=(r.rj[c]||0)+1});
     });
   });
   return r;
+}
+/* 支援老師（v0.1-039）：編號列在設定 support，每天下班向櫃台領現金。
+   應付＝當天老師費用（支數×每支費用＋老點，含加鐘、修腳皮）－ 責任歸他的跳單金額。
+   現結從櫃台現金付出，所以日結的應有現金要扣掉；費用本來就算在老師抽成裡，店家淨額不重複扣。 */
+const isSup=(S,tc)=>(S.support||[]).some(x=>String(x)===String(tc));
+function supportOf(st,S){
+  const list=sortT(st.byT).filter(t=>isSup(S,t.tc)).map(t=>{const ded=t.skipDed||0;return {tc:String(t.tc),n:t.n,zh:t.zh,cm:t.cm,ded,pay:Math.max(0,t.cm-ded)}});
+  return {list,n:list.length,zh:list.reduce((s,t)=>s+t.zh,0),pay:list.reduce((s,t)=>s+t.pay,0)};
 }
 function expStatsOf(expenses){
   const r={total:0,cash:0,byCat:{}};
@@ -524,12 +535,13 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onClose,ask,p
 function CloseSheet({S,st,ex,onSave,onClose}){
   const [cash,setCash]=useState('');
   const [note,setNote]=useState('');
-  const expected=st.cash-ex.cash;
+  const sup=supportOf(st,S);
+  const expected=st.cash-ex.cash-sup.pay;
   const c=cash===''?null:Number(cash);
   const diff=c==null||isNaN(c)?null:c-expected;
   const footer=(
     <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-40" disabled={diff==null}
-      onClick={()=>onSave({revenue:st.amt,skip:st.skip,skipN:st.skipN,skipRev:st.skipRev,cashExp:ex.cash,expected,cash:c,diff,note:note.trim(),at:Date.now()})}>確認日結</button>
+      onClick={()=>onSave({revenue:st.amt,skip:st.skip,skipN:st.skipN,skipRev:st.skipRev,cashExp:ex.cash,sup:sup.pay,supList:sup.list.map(t=>({tc:t.tc,zh:t.zh,ded:t.ded,pay:t.pay})),expected,cash:c,diff,note:note.trim(),at:Date.now()})}>確認日結</button>
   );
   return (
     <Sheet onClose={onClose} title="日結" footer={footer}>
@@ -537,6 +549,7 @@ function CloseSheet({S,st,ex,onSave,onClose}){
         <div className="flex justify-between py-1"><span className="text-mute">營業額（{st.n} 單）</span><span>{money(st.amt)}</span></div>
         {st.skipRev>0&&<div className="flex justify-between py-1 text-warn"><span>－ 跳單未收（已計入營業額）</span><span>{money(st.skipRev)}</span></div>}
         <div className="flex justify-between py-1"><span className="text-mute">－ 現金支出</span><span>{money(ex.cash)}</span></div>
+        {sup.n>0&&<div className="flex justify-between py-1"><span className="text-mute">－ 支援老師現結（{sup.list.map(t=>t.tc).join('、')}）</span><span>{money(sup.pay)}</span></div>}
         <div className="flex justify-between pt-2 mt-1 border-t border-line"><span>應有現金</span><span className="serif text-2xl text-brown">{money(expected)}</span></div>
       </Card>
       {st.skipN>0&&<Card className="p-3 mb-4 border-warn">
@@ -703,6 +716,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
   const orders=useMemo(()=>[...dd.orders].sort((a,b)=>snNum(a)-snNum(b)||(a.ca||0)-(b.ca||0)),[dd]);
   const st=useMemo(()=>statsOf(dd.orders,S),[dd,S]);
   const ex=useMemo(()=>expStatsOf(dd.expenses),[dd]);
+  const sup=useMemo(()=>supportOf(st,S),[st,S]);
   const exps=useMemo(()=>[...(dd.expenses||[])].sort((a,b)=>(a.ca||0)-(b.ca||0)),[dd]);
   const closed=!!dd.close;
   const dateRef=useRef(null);
@@ -748,7 +762,8 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
         <div><div className="text-xs text-mute">實收</div>{money(dd.close.cash)}</div>
         <div><div className="text-xs text-mute">差額</div><span className={dd.close.diff===0?'text-sageD':'text-warn'}>{smoney(dd.close.diff)}</span></div>
       </div>
-      {dd.close.expected!==st.cash-ex.cash&&<div className="text-xs text-warn mt-2">注意：目前的營業額或現金支出與日結時不同</div>}
+      {dd.close.sup>0&&<div className="text-xs text-mute mt-2 num">已扣支援老師現結 {money(dd.close.sup)}</div>}
+      {dd.close.expected!==st.cash-ex.cash-sup.pay&&<div className="text-xs text-warn mt-2">注意：目前的營業額或現金支出與日結時不同</div>}
       {dd.close.note&&<div className="text-xs text-mute mt-2">備註：{dd.close.note}</div>}
     </Card>
   );
@@ -808,6 +823,22 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
           <div className="num text-warn">-{money(e.amt)}</div>
         </button>))}
     </Card>}
+    {sup.n>0&&<>
+      <div className="flex items-center justify-between mt-4 mb-2 px-1">
+        <div className="text-sm text-mute">支援老師（下班現結）<span className="ml-2 num">{money(sup.pay)}</span></div>
+        <div className="text-xs text-mute num">{sup.n} 人・{sup.zh} 支</div>
+      </div>
+      <Card className="overflow-hidden">
+        {sup.list.map((t,i)=>{const pd=(dd.supPay||[]).filter(x=>String(x.tc)===t.tc);const pdAmt=pd.reduce((a,x)=>a+(Number(x.amt)||0),0);return (
+          <div key={t.tc} className={'flex items-center gap-3 px-3 py-3 '+(i?'border-t border-line':'')}>
+            <span className="px-2 py-0.5 rounded bg-brownL text-brown text-xs whitespace-nowrap">支援</span>
+            <div className="flex-1 min-w-0 num"><span className="font-semibold">{t.tc}</span> 號<span className="ml-2 text-xs text-mute">{t.zh} 支{t.ded>0&&<span className="text-warn">・跳單扣 {money(t.ded)}</span>}</span>
+              {pd.length>0&&<div className="text-[11px] text-sageD">✓ 櫃台已付 {money(pdAmt)}・{pd[pd.length-1].t}{pd[pd.length-1].by?'（'+pd[pd.length-1].by+'）':''}</div>}</div>
+            <div className="num text-warn">-{money(t.pay)}</div>
+          </div>);})}
+      </Card>
+      <div className="text-xs text-mute px-1 mt-1">日結時從應有現金扣除；這筆已含在老師抽成內，店家淨額不重複扣。</div>
+    </>}
   </>);
 
   const tStats=st.n>0&&(<>
@@ -819,7 +850,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
         </tr></thead>
         <tbody>{sortT(st.byT).map(t=>(
           <tr key={t.tc} className="border-t border-line">
-            <td className="px-3 py-2">{t.tc}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
+            <td className="px-3 py-2">{t.tc}{isSup(S,t.tc)&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-[10px]">支援</span>}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td><td className="text-right px-3">{money(t.cm)}</td>
           </tr>))}</tbody>
       </table>
     </Card>
@@ -852,13 +883,13 @@ const adjSumOf=list=>list.reduce((s,x)=>s+(Number(x.amt)||0),0);
 
 function monthData(ym,S,p){
   const md=loadMonth(ym);const [from,to]=periodRange(ym,p||'all');
-  const rows=[];const tot={n:0,amt:0,cm:0,exp:0,zh:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{}};
+  const rows=[];const tot={n:0,amt:0,cm:0,exp:0,zh:0,sup:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{}};
   for(let d=from;d<=to;d++){
     const dd=md.days[pad(d)];
     if(!dd||(!(dd.orders||[]).length&&!(dd.expenses||[]).length&&!dd.close))continue;
     const st=statsOf(dd.orders||[],S);const ex=expStatsOf(dd.expenses);
     rows.push({date:ym+'-'+pad(d),st,ex,closed:!!dd.close});
-    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;
+    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;tot.sup+=supportOf(st,S).pay;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;
     Object.keys(st.skipBy).forEach(k=>{tot.skipBy[k]=(tot.skipBy[k]||0)+st.skipBy[k]});st.skipList.forEach(o=>tot.skipList.push(Object.assign({date:ym+'-'+pad(d)},o)));
     Object.keys(st.rj).forEach(c=>{tot.rj[c]=(tot.rj[c]||0)+st.rj[c]});
     Object.keys(ex.byCat).forEach(c=>{tot.byCat[c]=(tot.byCat[c]||0)+ex.byCat[c]});
@@ -916,6 +947,7 @@ function MonthPage({S,rev,goDay,openPay}){
           <Stat label="店家淨額" value={money(data.tot.amt-data.tot.cm-data.tot.exp)} tone="sage"/>
         </div>
         {data.tot.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {data.tot.skipN} 筆・未收 {money(data.tot.skip)}{data.tot.skipRev>0&&<span>（其中 {money(data.tot.skipRev)} 計入營業額）</span>}</div>}
+        {data.tot.sup>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-brown num">支援老師現結 {money(data.tot.sup)}<span className="text-xs text-mute ml-1">（已含在老師抽成內，每日從櫃台現金付出）</span></div>}
         {per==='all'&&<div className="mt-3 pt-3 border-t border-line grid grid-cols-2 gap-2 num">
           {['h1','h2'].map(h=>(
             <button key={h} className="text-left rounded-xl bg-bg border border-line px-3 py-2 active:bg-sageL" onClick={()=>setPer(h)}>
@@ -949,11 +981,11 @@ function MonthPage({S,rev,goDay,openPay}){
               <th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">支數</th><th className="font-normal">老點</th><th className="text-right px-3 font-normal">應領</th>
             </tr></thead>
             <tbody>{sortT(data.tot.byT).map(t=>{
-              const adj=adjSumOf(adjIn((data.pay[t.tc]||{}).adj||[],per));
+              const adj=adjSumOf(adjIn((data.pay[t.tc]||{}).adj||[],per));const sp=isSup(S,t.tc);
               return (
               <tr key={t.tc} className="border-t border-line active:bg-sageL cursor-pointer" onClick={()=>openPay(ym,t.tc,per)}>
-                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span></td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
-                <td className="text-right px-3">{money(t.cm+adj)} <span className="text-mute">›</span></td>
+                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span>{sp&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-[10px]">支援</span>}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
+                <td className="text-right px-3">{sp?<span className="text-mute"><span className="text-[11px] mr-1">已現結</span>{money(t.cm)}</span>:money(t.cm+adj)} <span className="text-mute">›</span></td>
               </tr>);})}</tbody>
           </table>
         </Card>
@@ -1276,6 +1308,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask,per:per0}){
     <Sheet onClose={onClose} title={'老師 '+tc+'・'+a[0]+'年'+Number(a[1])+'月'} footer={footer}>
       <div className="mb-3"><PeriodSeg value={per} onChange={setPer} ym={ym}/></div>
       {pd&&<div className="text-sm text-brown mb-2 px-1">{PERIOD_LABEL[per]}（{periodText(ym,per)}）・發薪日 {fmtPayDay(pd)}</div>}
+      {isSup(S,tc)&&<div className="mb-3 px-3 py-2 rounded-xl bg-brownL text-brown text-sm">支援老師：費用每天下班時向櫃台領現金（已在每日日結扣除），這份明細只用來對帳，<b>不需要再發薪</b>。跳單已在現結時扣除。</div>}
       <Card className="p-4 mb-3 num">
         <div className="grid grid-cols-3 gap-2 mb-3">
           <Stat label="單數" value={orders.length}/>
@@ -1301,7 +1334,7 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask,per:per0}){
           return (
           <div key={o.id} className="flex items-center gap-2 py-1.5 border-t border-line text-sm num">
             <div className="flex-1">{fmtDate(o.date).replace(/（.）/,'')} #{o.sn||'-'}　{money(o.amt)}{o.skipNote&&<div className="text-xs text-mute">{o.skipNote}</div>}</div>
-            {done?<span className="text-xs text-sageD">✓ 已列扣項</span>:
+            {isSup(S,tc)?<span className="text-xs text-mute">現結時已扣</span>:done?<span className="text-xs text-sageD">✓ 已列扣項</span>:
               <button className="h-8 px-3 rounded-lg border border-warn text-warn text-xs" onClick={()=>saveAdj(allAdj.concat([{name:'跳單吸收 '+fmtDate(o.date).replace(/（.）/,'')+' #'+(o.sn||''),amt:-(o.amt||0),p:d<=15?'h1':'h2',src:o.id}]))}>加入扣項</button>}
           </div>);})}
         <div className="text-xs text-mute mt-1">扣項會歸在跳單當天所屬的上期／下期。</div>
@@ -1921,6 +1954,8 @@ const DEMO_BOOK=[
 ];
 // 班表（上牌～下牌）。25 號是晚班，18:00 才上牌
 const DEMO_SHIFT={'122':['09:00','21:00'],'77':['10:00','20:00'],'36':['12:00','22:00'],'58':['13:00','23:00'],'12':['14:00','24:00'],'25':['18:00','02:00']};
+// 範例的支援老師（正式版依設定的 support／之後 members.json 的 support 標記）
+const DEMO_SUPPORT=['58','36'];
 const DEMO_REST=[{tc:'12',s:'14:30',e:'15:40'}];
 // 老師狀態：avail 可接客（rot＝輪班順位，先下鐘先輪）／serving 服務中（end＝預計下鐘）／rest 休息中
 const DEMO_TSTAT=[
@@ -2093,7 +2128,49 @@ function MyDayStrip({tc,day}){
     </>
   );
 }
-function CounterHome({me,mode,desk,hideRev}){
+/* 主櫃：今日支援老師清單 → 點編號確認付現 */
+function SupportSheet({list,onPay,onClose}){
+  const [cf,setCf]=useState(null);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-5" onClick={onClose}>
+      <div className="w-full max-w-md bg-card rounded-2xl p-5 max-h-[92vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+        <div className="text-lg">今日支援老師</div>
+        <div className="text-sm text-mute mb-3">老師下班時，點編號確認付現。付出的現金會從本班應有現金扣除。</div>
+        <div className="grid grid-cols-[4.5rem_2.5rem_1fr] gap-2 text-xs text-mute pb-1 border-b border-line"><span>編號</span><span className="text-right">支數</span><span className="text-right">應付／狀態</span></div>
+        {list.map(t=>{const paid=t.paidAmt>0,done=paid&&t.owe<=0;return (
+          <div key={t.tc} className="grid grid-cols-[4.5rem_2.5rem_1fr] gap-2 py-2.5 border-b border-line last:border-0 items-center">
+            <button disabled={done} onClick={()=>setCf(t)} className={'h-11 rounded-xl border num text-lg font-semibold '+(done?'bg-sageL border-sage text-sageD':'bg-card border-brown text-brown active:bg-brownL')} aria-label={'支付 '+t.tc+' 號'}>{t.tc}</button>
+            <span className="num text-right">{t.zh}</span>
+            <span className="text-right text-sm">
+              <span className="block num text-lg">{money(t.pay)}</span>
+              {t.ded>0&&<span className="block text-[11px] text-warn num">已扣跳單 {money(t.ded)}</span>}
+              {done&&<span className="block text-[11px] text-sageD">✓ 已付 <span className="num">{t.last.t}</span>（{t.last.by}）</span>}
+              {paid&&!done&&<span className="block text-[11px] text-warn num">已付 {money(t.paidAmt)}，還差 {money(t.owe)}，點編號補付</span>}
+              {!paid&&<span className="block text-[11px] text-brown">未付・點編號確認付款</span>}
+            </span>
+          </div>);})}
+        <div className="flex justify-between text-sm num mt-3"><span className="text-mute">{list.length} 人・{list.reduce((a,t)=>a+t.zh,0)} 支</span><span>應付合計 <b>{money(list.reduce((a,t)=>a+t.pay,0))}</b></span></div>
+        <button className="w-full h-11 mt-4 rounded-xl border border-line" onClick={onClose}>關閉</button>
+        {cf&&<div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center px-6" onClick={()=>setCf(null)}>
+          <div className="w-full max-w-sm bg-card rounded-2xl p-5 text-center" onClick={e=>e.stopPropagation()}>
+            <div className="text-sm text-mute">支援老師 <b className="num text-ink">{cf.tc}</b> 號・今日 <span className="num">{cf.zh}</span> 支</div>
+            <div className="text-xs text-mute mt-3">{cf.paidAmt>0?'補付金額':'支付現金'}</div>
+            <div className="serif text-5xl text-brown num my-2">{money(cf.owe)}</div>
+            {cf.paidAmt>0&&<div className="text-xs text-mute num">應付 {money(cf.pay)} − 已付 {money(cf.paidAmt)}</div>}
+            {cf.ded>0&&<div className="text-xs text-warn num">已扣責任歸老師的跳單 {money(cf.ded)}</div>}
+            <div className="text-xs text-mute mt-2">請點清現金交給老師後再按確認。</div>
+            <div className="grid grid-cols-2 gap-2 mt-5">
+              <button className="h-12 rounded-xl border border-line bg-bg" onClick={()=>setCf(null)}>取消</button>
+              <button className="h-12 rounded-xl bg-sage text-white" onClick={()=>{onPay({tc:cf.tc,amt:cf.owe,zh:cf.zh});setCf(null)}}>確認已付現</button>
+            </div>
+          </div>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+function CounterHome({me,mode,desk,hideRev,sup}){
   const M=v=>hideRev?'＊＊＊':money(v);   // 老闆設定「主櫃隱藏營業額」時遮住金額合計
   mode=mode||'phone';
   const S=loadSettings();
@@ -2117,12 +2194,27 @@ function CounterHome({me,mode,desk,hideRev}){
   const nextFree=tc=>{const t=freeAt(tc,blocks,NOWM,tm(DEMO_SHIFT[tc][1]));return t==null?null:Object.assign({t},gapEnd(tc,blocks,t))};
   const free=DEMO_TSTAT.filter(t=>{const f=nextFree(t.tc);return f&&f.t<=Math.ceil(NOWM/5)*5}).length;
   const shown=orders.filter(o=>of==='all'||o.st===of);
+  // 支援老師：當天所有訂單（含服務中）的老師費用；已付紀錄由主櫃傳入
+  const [supOpen,setSupOpen]=useState(false);
+  const supPaid=(sup&&sup.paid)||[];
+  const supList=DEMO_SUPPORT.map(tc=>{let zh=0,fee=0;
+    orders.forEach(o=>o.g.forEach(x=>{if(x.tc===tc){zh+=x.zh;fee+=x.fee}(x.xs||[]).forEach(y=>{if(y.tc===tc){zh+=y.zh;fee+=y.cm}})}));
+    const pd=supPaid.filter(r=>r.tc===tc);const paidAmt=pd.reduce((a,r)=>a+r.amt,0);
+    return {tc,zh,ded:0,pay:fee,paidAmt,owe:fee-paidAmt,last:pd[pd.length-1]};});
+  const supUnpaid=supList.filter(t=>t.owe>0).length;
+  const supPaidSum=supPaid.reduce((a,r)=>a+r.amt,0);
+  const supBtn=supList.length>0&&<button className="w-full mt-2 mb-1 px-3 py-2 rounded-xl border border-brown bg-brownL/40 text-left flex items-center gap-2 active:bg-brownL" onClick={()=>setSupOpen(true)}>
+      <span className="text-brown font-semibold">今日支援老師 {supList.length} 人</span>
+      <span className="text-xs text-mute num">{supList.reduce((a,t)=>a+t.zh,0)} 支・應付 {money(supList.reduce((a,t)=>a+t.pay,0))}</span>
+      <span className={'ml-auto text-xs '+(supUnpaid?'text-warn':'text-sageD')}>{supUnpaid?'未付 '+supUnpaid+' 人':'✓ 已全部付清'} ›</span>
+    </button>;
   const Seg=({opts,val,set})=><div className="flex rounded-lg border border-line overflow-hidden text-xs">{opts.map(o=><button key={o.id} className={'px-2.5 h-7 '+(val===o.id?'bg-sage text-white':'bg-card')} onClick={()=>set(o.id)}>{o.label}</button>)}</div>;
   const B=[
     (<Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
         <div className="grid grid-cols-3 gap-2 mb-1"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="已結帳營業額" v={M(rev)} cls="text-brown"/></div>
         <div className="text-xs text-mute mb-3">服務中 {serving.length} 單・未結帳 <span className="num">{M(unpaid)}</span></div>
-        <DisBtn cls="w-full">＋ 登打訂單</DisBtn>
+        {supBtn}
+        <DisBtn cls="w-full mt-2">＋ 登打訂單</DisBtn>
       </Sec>),
     (<Sec title="訂單" demo right={<Seg opts={[{id:'all',label:'全部'},{id:'serving',label:'服務中'},{id:'paid',label:'已結帳'}]} val={of} set={setOf}/>}>
         {shown.map((o,i)=>(
@@ -2143,7 +2235,7 @@ function CounterHome({me,mode,desk,hideRev}){
         <div className="grid grid-cols-[2.5rem_1fr_2.5rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>編號</span><span>狀態</span><span className="text-right">今日支</span></div>
         {tlist.map(t=>{const h=holdOf(t.tc);return (
           <div key={t.tc} className="grid grid-cols-[2.5rem_1fr_2.5rem] gap-2 py-2 border-b border-line last:border-0 text-sm items-start">
-            <span className="num font-semibold pt-0.5">{t.tc}</span>
+            <span className="num font-semibold pt-0.5">{t.tc}{DEMO_SUPPORT.includes(t.tc)&&<span className="block w-fit mt-0.5 px-1 rounded bg-brownL text-brown text-[10px] font-normal">支援</span>}</span>
             <span>
               <Pill tone={TST[t.st].tone}>{TST[t.st].label}</Pill>
               {t.rot!=null&&(t.st==='avail'||t.st==='rest')&&<span className={'ml-1 text-xs '+(t.st==='rest'?'text-mute':'text-sageD')}>輪班第 {t.rot} 位{t.st==='rest'?'・保留順位，來客時略過':''}</span>}
@@ -2177,24 +2269,30 @@ function CounterHome({me,mode,desk,hideRev}){
         <div className="grid grid-cols-2 gap-2 mt-3"><DisBtn>＋ 新增預約</DisBtn><DisBtn>＋ 現場候位</DisBtn></div>
       </Sec>),
     (<Sec title="交班／日結" demo>
-        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="已結帳現金" v={M(rev)}/><KV k="支出" v={'-'+money(exp)}/><KV k="應有現金" v={M(rev-exp)} cls="text-brown"/></div>
-        <div className="text-xs text-mute mb-3">支出：耗材（毛巾洗滌）{money(exp)}・另有服務中未結帳 {M(unpaid)}，結帳後才計入</div>
+        <div className="grid grid-cols-4 gap-2 mb-3"><KV k="已結帳現金" v={M(rev)}/><KV k="支出" v={'-'+money(exp)}/><KV k="支援現結" v={'-'+money(supPaidSum)}/><KV k="應有現金" v={M(rev-exp-supPaidSum)} cls="text-brown"/></div>
+        <div className="text-xs text-mute mb-2">支出：耗材（毛巾洗滌）{money(exp)}・另有服務中未結帳 {M(unpaid)}，結帳後才計入</div>
+        {supBtn}
+        {supUnpaid>0&&<div className="text-xs text-warn mb-2">還有 {supUnpaid} 位支援老師未付款（日結前請確認）</div>}
         <div className="grid grid-cols-2 gap-2"><DisBtn>登記支出</DisBtn><DisBtn>{desk?'交班請按上方「換人登入（交班）」':'交班'}</DisBtn></div>
       </Sec>),
     (null),   // 主櫃不需要自己的打卡卡片（人員打卡改由「人員上牌／打卡」）
     (<Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
         <div className="flex items-center gap-6 flex-wrap">
           <KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="已結帳營業額" v={M(rev)} cls="text-brown"/>
-          <KV k="服務中・未結帳" v={serving.length+' 單・'+M(unpaid)}/><KV k="應有現金" v={M(rev-exp)}/>
+          <KV k="服務中・未結帳" v={serving.length+' 單・'+M(unpaid)}/><KV k="應有現金" v={M(rev-exp-supPaidSum)}/>
           <div className="flex-1"></div>
           <DisBtn cls="px-8">＋ 登打訂單</DisBtn>
         </div>
+        {supBtn&&<div className="max-w-xl">{supBtn}</div>}
       </Sec>),
     (desk||null)
   ];
   const head=(<><DemoNote/>
       <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span></div></>);
-  return <RolePage mode={mode} head={head} B={B} phone={[8,0,1,2,3,4,5]} wide={{top:[8,7,3],cols:[[2,4],[1,5]]}} xwide={{top:[8,7,3],cols:[[2],[1],[4,5]]}}/>;
+  return <>
+    <RolePage mode={mode} head={head} B={B} phone={[8,0,1,2,3,4,5]} wide={{top:[8,7,3],cols:[[2,4],[1,5]]}} xwide={{top:[8,7,3],cols:[[2],[1],[4,5]]}}/>
+    {supOpen&&<SupportSheet list={supList} onPay={r=>sup&&sup.onPay(r)} onClose={()=>setSupOpen(false)}/>}
+  </>;
 }
 
 function GuestHome({me,mode}){
@@ -2548,6 +2646,7 @@ function MainCounter({me,mode,real,member}){
     return jget('mainc-op',null)||{name:'老闆',kind:'owner',at:hm(new Date())};
   });
   const [hand,setHandS]=useState(()=>jget('handover-'+day,[]));
+  const [supPaid,setSupPaidS]=useState(()=>jget('suppay-'+day,[]));   // 支援老師付現紀錄 [{tc,amt,zh,t,by,at}]
   const [cfg,setCfgS]=useState(()=>jget('mainc-cfg',{hideRev:false}));
   const setCfg=c=>{setCfgS(c);jset('mainc-cfg',c)};
   const [login,setLogin]=useState(null);   // null／'count'（交班點清）／'pick'（選接手的人）
@@ -2563,28 +2662,30 @@ function MainCounter({me,mode,real,member}){
   const S=loadSettings();
   const cumPaid=DEMO_ORDERS.filter(o=>o.st==='paid').reduce((s,o)=>s+o.g.reduce((a,x)=>a+demoCalc(S,x).amt,0),0);
   const prevRev=hand.reduce((s,h)=>s+(h.rev||0),0),prevExp=hand.reduce((s,h)=>s+(h.exp||0),0);
-  const shift={rev:Math.max(0,cumPaid-prevRev),exp:Math.max(0,350-prevExp)};
-  shift.expected=shift.rev-shift.exp;
+  const lastAt=hand.length?(hand[hand.length-1].at||0):0;
+  const shift={rev:Math.max(0,cumPaid-prevRev),exp:Math.max(0,350-prevExp),sup:supPaid.filter(r=>r.at>lastAt).reduce((a,r)=>a+r.amt,0)};
+  shift.expected=shift.rev-shift.exp-shift.sup;
+  const onPay=r=>{const n=supPaid.concat([Object.assign({},r,{t:hm(new Date()),by:op.name,at:Date.now()})]);setSupPaidS(n);jset('suppay-'+day,n)};
   const c=cash===''?null:Number(cash);
   const diff=c==null?null:c-shift.expected;
 
   const clockedIn=uid=>{const r=recs.filter(x=>x.uid===uid);return r.length&&r[r.length-1].k==='in'};
   const openLogin=()=>{setWarn('');setCash('');setNote('');setLogin(pend?'pick':'count')};
   const doCount=skip=>{
-    setPend(skip?{from:op.name,skip:true}:{from:op.name,since:op.at,rev:shift.rev,exp:shift.exp,expected:shift.expected,cash:c,diff,note:note.trim(),hidden:hide});
+    setPend(skip?{from:op.name,skip:true}:{from:op.name,since:op.at,rev:shift.rev,exp:shift.exp,sup:shift.sup,expected:shift.expected,cash:c,diff,note:note.trim(),hidden:hide});
     setLogin('pick');
   };
   const switchTo=p=>{
     if(p&&!clockedIn(p.uid)){setWarn(p.name+' 今天還沒有上班打卡。請先由目前的主櫃（'+op.name+'）在「人員上牌／打卡」產生確認碼，'+p.name+' 在手機輸入完成上班打卡後，再登入主櫃。');return}
     const n={name:p?p.name:'老闆',kind:p?'counter':'owner',uid:p&&p.uid,at:hm(new Date())};
-    const rec=Object.assign({},pend||{from:op.name,skip:true},{to:n.name,t:n.at});
+    const rec=Object.assign({},pend||{from:op.name,skip:true},{to:n.name,t:n.at,at:Date.now()});
     const h=hand.concat([rec]);setHandS(h);jset('handover-'+day,h);
     setOpS(n);jset('mainc-op',n);setLogin(null);setPend(null);setWarn('');
   };
   // 正式版：換人登入會整頁登出再登入，回來後把登出前點清的交班資料補上接手的人
   useEffect(()=>{
     if(!real)return;const hp=jget('handover-pending',null);if(!hp)return;
-    const h=hand.concat([Object.assign({},hp,{to:op.name,t:op.at})]);setHandS(h);jset('handover-'+day,h);jset('handover-pending',null);
+    const h=hand.concat([Object.assign({},hp,{to:op.name,t:op.at,at:Date.now()})]);setHandS(h);jset('handover-'+day,h);jset('handover-pending',null);
   },[]);
   const notIn=real&&op.kind==='counter'&&!clockedIn(op.uid);
   const wide=mode!=='phone';
@@ -2613,7 +2714,7 @@ function MainCounter({me,mode,real,member}){
     <>
       {opBar}
       {notIn&&<div className="bg-warnL text-warn text-sm px-4 py-2 text-center">{op.name} 今天還沒有上班打卡，請先由老闆或上一班產生確認碼完成打卡。</div>}
-      <CounterHome me={me} mode={mode} desk={desk} hideRev={hide}/>
+      <CounterHome me={me} mode={mode} desk={desk} hideRev={hide} sup={{paid:supPaid,onPay}}/>
 
       {login&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setLogin(null)}>
         <div className="w-full max-w-md bg-card rounded-2xl p-5 max-h-[92vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
@@ -2627,6 +2728,7 @@ function MainCounter({me,mode,real,member}){
               <div className="rounded-xl border border-line bg-bg px-3 py-2 mb-3 text-sm">
                 <Row k="本班已結帳營業額" v={money(shift.rev)}/>
                 <Row k="－ 本班現金支出" v={money(shift.exp)}/>
+                {shift.sup>0&&<Row k="－ 本班支援老師現結" v={money(shift.sup)}/>}
                 <Row k="應有現金" v={money(shift.expected)} big/>
               </div>}
             <label className="block mb-2"><div className="text-xs text-mute mb-1">實點現金</div>
@@ -2676,7 +2778,7 @@ function MainCounter({me,mode,real,member}){
           <div className="text-lg mb-3">今日交班紀錄</div>
           {hand.map((h,i)=><div key={i} className="py-2 border-b border-line last:border-0 text-sm">
             <div className="flex justify-between"><span><span className="num">{h.t}</span>　{h.from} → {h.to}</span>{h.skip?<span className="text-xs text-mute">略過點清</span>:<span className="num">實點 {money(h.cash)}</span>}</div>
-            {!h.skip&&(canSeeDiff?<div className="text-xs text-mute num">應有 {money(h.expected)}（營業額 {money(h.rev)} − 支出 {money(h.exp)}）・<span className={h.diff===0?'text-sageD':'text-warn'}>差額 {smoney(h.diff)}</span>{h.note?'・'+h.note:''}</div>:
+            {!h.skip&&(canSeeDiff?<div className="text-xs text-mute num">應有 {money(h.expected)}（營業額 {money(h.rev)} − 支出 {money(h.exp)}{h.sup?' − 支援 '+money(h.sup):''}）・<span className={h.diff===0?'text-sageD':'text-warn'}>差額 {smoney(h.diff)}</span>{h.note?'・'+h.note:''}</div>:
               <div className="text-xs text-mute">差額由老闆查看</div>)}
           </div>)}
           <button className="w-full h-11 mt-3 rounded-xl border border-line" onClick={()=>setShowHand(false)}>關閉</button>
@@ -2796,6 +2898,9 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-039','10-06','支援老師（下班現結）：設定頁點老師編號可標記「支援」；每日訂單在支出下方列出支援老師的支數與應付，日結從應有現金扣除（責任歸老師的跳單直接扣）；主櫃「今日支援老師 N 人」清單，點編號確認付現並從本班現金扣除；月報、薪資明細標示「已現結」'],
+  ['v0.1-038','10-06','雲端同步更穩定：同一台裝置的請求改為排隊一次送一個（不再同時打 GAS）；遇到 HTTP 404／5xx、網路中斷等暫時性錯誤自動重試 2 次'],
+  ['v0.1-037','10-06','雲端同步一律使用程式內建的 GAS 網址（舊版設定頁留下的網址不再覆蓋），修正部分手機出現 HTTP 404；404 時顯示目前使用的網址結尾方便核對'],
   ['v0.1-036','10-06','現階段主管（members.json 的 admin: manager）也可以從歡迎畫面進入老闆模式'],
   ['v0.1-035','10-06','未審核訪客：「給訪客的開通連結」改為「加入官方帳號好友」，顯示好友連結 https://lin.ee/sQXVsrK 的 QR Code，可複製好友連結'],
   ['v0.1-034','10-06','GAS 網址寫進程式（GAS_URL）；雲端同步改用 LINE 登入：GAS 向 LINE 驗證身分並查開通名單，老闆／主管才可同步，登入一次通行 30 天、到期前自動換新；連線金鑰改為進階選項（沒有 LINE 的裝置用）'],
@@ -2961,9 +3066,12 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay}){
         </div>
         {dr.teachers.length===0&&<div className="text-xs text-mute">尚無編號；登打訂單時輸入的編號也會自動加入</div>}
         <div className="flex flex-wrap gap-2">
-          {dr.teachers.map(t=><span key={t} className="inline-flex items-center h-8 pl-3 pr-1 rounded-full bg-sageL text-sageD num text-sm">{t}
-            <button className="w-6 h-6 ml-1 rounded-full text-mute" onClick={()=>up(n=>{n.teachers=n.teachers.filter(x=>x!==t)})} aria-label={'移除 '+t}>×</button></span>)}
+          {Array.from(new Set(dr.teachers.map(String).concat(dr.support||[]))).map(t=>{const sp=(dr.support||[]).includes(t);return (
+            <span key={t} className={'inline-flex items-center h-8 rounded-full num text-sm '+(sp?'bg-brownL text-brown':'bg-sageL text-sageD')}>
+              <button className="h-8 pl-3 pr-1" onClick={()=>up(n=>{n.support=sp?(n.support||[]).filter(x=>x!==t):(n.support||[]).concat([t])})} aria-label={(sp?'取消支援 ':'標記為支援 ')+t}>{t}{sp&&<span className="ml-1 text-[11px]">支援</span>}</button>
+              <button className="w-6 h-6 mr-1 rounded-full text-mute" onClick={()=>up(n=>{n.teachers=n.teachers.filter(x=>String(x)!==t);n.support=(n.support||[]).filter(x=>x!==t)})} aria-label={'移除 '+t}>×</button></span>);})}
         </div>
+        <div className="text-xs text-mute mt-3">點編號可標記為<span className="px-1 mx-0.5 rounded bg-brownL text-brown">支援</span>老師：每天下班向櫃台領現金。每日訂單會在支出下方列出他的支數與應付金額，日結時從應有現金扣除；月報與薪資明細標示「已現結」。</div>
       </Card>
 
       <div className={sec}>支出類別</div>
@@ -3042,7 +3150,8 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay}){
    通過後發 30 天的通行證（tok）存在這台裝置；沒有 LINE 的裝置可在設定頁「進階」改用連線金鑰。 */
 const GAS_URL='https://script.google.com/macros/s/AKfycbzUwtSI4pmPtJaXMEQzzjwMwzXdc1zKJflTD8RYISNBvhz4G-lrH3jUASq-TSXDIQc/exec';
 const CLOUD_KEY='slowve.cloud',SYNC_KEY='slowve.sync';
-const cloudCfg=()=>{let c={};try{c=JSON.parse(localStorage.getItem(CLOUD_KEY)||'null')||{}}catch(_e){}return Object.assign({},c,{url:(c.url||GAS_URL||'').trim()})};
+// 網址以程式內建的 GAS_URL 為準；只有「進階：連線金鑰」模式才使用自己填的網址（避免舊版留下的網址蓋過內建網址）
+const cloudCfg=()=>{let c={};try{c=JSON.parse(localStorage.getItem(CLOUD_KEY)||'null')||{}}catch(_e){}return Object.assign({},c,{url:((c.key&&c.url)?c.url:(GAS_URL||c.url||'')).trim()})};
 const cloudSave=patch=>{let c={};try{c=JSON.parse(localStorage.getItem(CLOUD_KEY)||'null')||{}}catch(_e){}try{localStorage.setItem(CLOUD_KEY,JSON.stringify(Object.assign(c,patch)))}catch(_e){}};
 const tokValid=c=>!!(c.tok&&c.tokExp>Date.now());
 const cloudOn=()=>{const c=cloudCfg();return !!(c.url&&(c.key||tokValid(c)))};
@@ -3059,21 +3168,38 @@ const cloud={
   state(){const s=syncGet();const c=cloudCfg();return {url:!!c.url,who:tokValid(c)?c.who:null,tokExp:c.tokExp,keyMode:!!c.key,on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,pend:this.pend.slice(),dataVer:this.dataVer}},
   mark(k){const s=syncGet();s.dirty[k]=Date.now();if(k==='s')s.sUa=Date.now();syncSet(s);this.emit();this.soon()},
   soon(ms){if(!cloudOn())return;clearTimeout(this.timer);this.timer=setTimeout(()=>this.push(),ms==null?3000:ms)},
-  async call(body,ms){
+  // 呼叫 GAS：同一台裝置一次只送一個請求（排隊），遇到暫時性錯誤（HTTP 404／5xx、網路中斷、回傳不是 JSON）自動重試 2 次
+  q:Promise.resolve(),
+  call(body,ms){
+    const run=()=>this.callRetry(body,ms);
+    const p=this.q.then(run,run);this.q=p.catch(()=>{});return p;
+  },
+  async callRetry(body,ms){
+    const waits=[1500,4000];let last;
+    for(let i=0;i<=waits.length;i++){
+      try{return await this.callOnce(body,ms)}
+      catch(e){last=e;if(!e.transient||i===waits.length)break;await new Promise(r=>setTimeout(r,waits[i]))}
+    }
+    throw last;
+  },
+  async callOnce(body,ms){
     const c=cloudCfg();if(!c.url)throw new Error('尚未設定 GAS 網址');
     const auth=body.action==='auth'?{}:c.key?{key:c.key}:tokValid(c)?{tok:c.tok}:null;
     if(!auth)throw new Error('NEED_LOGIN：請先用 LINE 登入');
     const ctl=typeof AbortController!=='undefined'?new AbortController():null;
     const t=ctl&&setTimeout(()=>ctl.abort(),ms||25000);
+    const tr=m=>{const e=new Error(m);e.transient=true;return e};
     try{
-      const r=await fetch(c.url,{method:'POST',body:JSON.stringify(Object.assign(auth,{device:loadSettings().device,dname:c.name||(c.who&&c.who.name)||''},body)),
-        headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow',signal:ctl?ctl.signal:undefined});
+      let r;
+      try{
+        r=await fetch(c.url,{method:'POST',body:JSON.stringify(Object.assign(auth,{device:loadSettings().device,dname:c.name||(c.who&&c.who.name)||''},body)),
+          headers:{'Content-Type':'text/plain;charset=utf-8'},redirect:'follow',signal:ctl?ctl.signal:undefined});
+      }catch(e){if(e&&e.name==='AbortError')throw new Error('連線逾時，請稍後再試');throw tr('網路連線失敗，請檢查網路')}
       const txt=await r.text();let j=null;try{j=JSON.parse(txt)}catch(_e){}
-      if(!j)throw new Error(r.ok?'GAS 回傳格式不正確（請確認網址是 /exec 結尾的網頁應用程式）':'連線失敗（HTTP '+r.status+'）');
+      if(!j)throw tr(r.ok?'GAS 暫時沒有正常回應，請稍後再試':'連線失敗（HTTP '+r.status+'，已自動重試；GAS 偶爾會暫時無法回應，請稍後再按一次）');
       if(!j.ok){const m=j.error||'GAS 發生錯誤';if(/^NEED_LOGIN/.test(m)){cloudSave({tok:'',tokExp:0});this.emit()}throw new Error(m.replace(/^NEED_LOGIN：/,''))}
       return j;
-    }catch(e){if(e&&e.name==='AbortError')throw new Error('連線逾時，請稍後再試');throw e}
-    finally{t&&clearTimeout(t)}
+    }finally{t&&clearTimeout(t)}
   },
   // LINE 登入 → 取得 ID Token → GAS 驗證並發通行證。interactive＝沒登入時導到 LINE 登入頁
   async login(interactive){
