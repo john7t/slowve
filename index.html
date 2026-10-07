@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-042</title>
+<title>緩緩門店 v0.1-043</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-042';
+const VER='v0.1-043';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1780,53 +1780,105 @@ function NumberPicker({min,max,taken,value,onPick}){
   );
 }
 const tLabel=role=>role==='teacher'?['上牌','下牌']:['上班','下班'];
+const CITIES=['臺北市','新北市','基隆市','桃園市','新竹市','新竹縣','苗栗縣','臺中市','彰化縣','南投縣','雲林縣','嘉義市','嘉義縣','臺南市','高雄市','屏東縣','宜蘭縣','花蓮縣','臺東縣','澎湖縣','金門縣','連江縣'];
+const SKILLS=['指壓','油壓','腳底','刮痧','拔罐','修腳皮'];
+const SLOTS=['平日白天','平日晚上','假日白天','假日晚上'];
+const YEARS=['無經驗','未滿 1 年','1～3 年','3～5 年','5 年以上'];
+const SOURCES=['朋友介紹','店內人員推薦','網路／社群','路過看到','其他'];
+const JOIN_ST={applied:'已投遞',interview:'已約面試',hired:'已錄取',approved:'已開通',rejected:'不錄取'};
+const ageOf=b=>{if(!b)return null;const d=new Date(b+'T12:00:00'),n=new Date();let a=n.getFullYear()-d.getFullYear();if(n.getMonth()<d.getMonth()||(n.getMonth()===d.getMonth()&&n.getDate()<d.getDate()))a--;return a};
+const PRIVACY={
+  staff:'緩緩 SLOWVE BODY SPA 為「人員招募、面試聯繫及人事管理」之目的，蒐集你填寫的姓名、聯絡方式、性別、出生日期、地址、緊急聯絡人與工作經歷等資料，只在本店內部使用，不提供給第三人。未錄取者的資料於處理後 6 個月內刪除；錄取者依人事管理需要保存。你可以隨時向本店查詢、更正或要求刪除你的資料。未提供必填資料將無法完成應徵。',
+  guest:'緩緩 SLOWVE BODY SPA 為「會員服務、預約聯繫及優惠通知」之目的，蒐集你填寫的手機、稱呼與生日，只在本店內部使用，不提供給第三人。你可以隨時向本店查詢、更正或要求刪除你的資料。',
+};
+// 共用的表單小元件
+const FL=({label,opt,children,hint})=><label className="block mb-4"><div className="text-xs text-mute mb-1">{label}{opt&&<span className="ml-1">（選填）</span>}</div>{children}{hint&&<div className="text-xs text-mute mt-1">{hint}</div>}</label>;
+const fin='w-full min-w-0 h-12 px-3 rounded-xl border border-line bg-card text-lg';
+const Chips=({opts,val,multi,onChange})=>(
+  <div className="flex flex-wrap gap-2">{opts.map(o=>{const v=typeof o==='string'?o:o[0],l=typeof o==='string'?o:o[1];const on=multi?(val||[]).includes(v):val===v;return (
+    <button key={v} type="button" className={'h-10 px-4 rounded-full border text-sm '+(on?'bg-sage border-sage text-white':'bg-card border-line')}
+      onClick={()=>onChange(multi?(on?val.filter(x=>x!==v):(val||[]).concat([v])):v)}>{l}</button>);})}</div>);
+function Consent({kind,on,set}){
+  const [open,setOpen]=useState(false);
+  return (
+    <div className="mb-4 rounded-xl border border-line bg-card p-3 text-sm">
+      <div className="flex items-center gap-2">
+        <button type="button" role="checkbox" aria-checked={on} className="flex-1 text-left flex items-center gap-2 min-h-[2.5rem]" onClick={()=>set(!on)}>
+          <span className={'w-6 h-6 shrink-0 rounded border flex items-center justify-center '+(on?'bg-sage border-sage text-white':'border-line')}>{on?'✓':''}</span>
+          <span>我已閱讀並同意個人資料告知事項</span>
+        </button>
+        <button type="button" className="shrink-0 h-8 px-2 text-xs text-sageD underline" onClick={()=>setOpen(!open)}>{open?'收起':'查看'}</button>
+      </div>
+      {open&&<div className="mt-2 text-xs text-mute leading-relaxed">{PRIVACY[kind]}</div>}
+    </div>);
+}
+
 function JoinOnline(){
-  const [st,setSt]=useState('loading');   // loading / error / form / status / approved
+  const [st,setSt]=useState('loading');   // loading / error / home / pick / guest / staff / status / setup / approved
   const [err,setErr]=useState('');
   const [prof,setProf]=useState(null);
   const [info,setInfo]=useState(null);
-  const [f,setF]=useState({role:'',name:'',in:'',out:'',tc:'',support:false});
+  const [f,setF]=useState({});
   const [busy,setBusy]=useState(false);
   const [fe,setFe]=useState('');
   const [inClient,setInClient]=useState(false);
   const set=(k,v)=>{setF(p=>Object.assign({},p,{[k]:v}));setFe('')};
   const idt=()=>{const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請確認 LIFF 已勾選 openid 權限，或關閉後重新開啟');return t};
   const goHome=()=>setTimeout(()=>{location.replace('https://liff.line.me/'+LIFF_ID)},1500);
-  const load=async(p)=>{
-    const j=await cloud.call({action:'joinInfo',idToken:idt()},30000);
-    setInfo(j);
-    if(j.member){hintSet(j.member);setSt('approved');goHome();return j}
-    if(j.app&&j.app.status==='pending'){setSt('status');return j}
-    if(j.app)setF({role:j.app.role,name:j.app.name,in:j.app.in||'',out:j.app.out||'',tc:'',support:!!j.app.support});
-    else setF(x=>Object.assign({},x,{name:x.name||(p&&p.displayName)||''}));
-    setSt(j.app?'status':'form');return j;
+  const route=j=>{
+    setInfo(j);const a=j.app;
+    if(j.member){hintSet(j.member);setSt('approved');goHome();return}
+    if(!a){setSt('home');return}
+    if(a.status==='hired'){setF({in:'',out:'',tc:'',support:a.want==='part'});setSt('setup');return}
+    setSt('status');
   };
+  const load=async()=>route(await cloud.call({action:'joinInfo',idToken:idt()},30000));
   useEffect(()=>{(async()=>{
     try{
       const L=await liffReady();
       if(new URLSearchParams(location.search).has('liff.state'))return;
       if(!L.isLoggedIn()){L.login({redirectUri:location.href});return}
       const p=await L.getProfile();setProf(p);setInClient(L.isInClient());
-      await load(p);
+      await load();
     }catch(e){setErr(String(e&&e.message||e));setSt('error')}
   })()},[]);
-  const recheck=async()=>{setBusy(true);try{await load(prof)}catch(e){setFe(e.message)}setBusy(false)};
-  const submit=async()=>{
-    const L=tLabel(f.role);
-    if(!f.role)return setFe('請選擇身分');
-    if(!f.name.trim())return setFe('請輸入姓名');
-    if(f.role!=='guest'&&(!f.in||!f.out))return setFe('請選擇'+L[0]+'、'+L[1]+'時間');
-    if(f.role==='teacher'&&!f.tc)return setFe('請選擇編號');
+  const recheck=async()=>{setBusy(true);setFe('');try{await load()}catch(e){setFe(e.message)}setBusy(false)};
+  const startGuest=()=>{setF({role:'guest',phone:'',nick:prof.displayName||'',birth:'',consent:false});setFe('');setSt('guest')};
+  const startStaff=role=>{const a=info&&info.app;
+    setF(Object.assign({role,phone:'',last:'',first:'',nick:'',gender:'',birth:'',city:'',addr:'',emgName:'',emgPhone:'',years:'',skills:[],certs:'',expNote:'',want:'full',slots:[],start:'',source:'',referrer:'',consent:false},
+      a&&a.role!=='guest'?Object.assign({},a,{role,consent:false}):{}));setFe('');setSt('staff')};
+  const send=async()=>{
+    const ph=String(f.phone||'').replace(/[\s-]/g,'');
+    if(!/^09\d{8}$/.test(ph))return setFe('請輸入正確的手機號碼（09 開頭 10 碼）');
+    if(f.role==='guest'){if(!String(f.nick).trim())return setFe('請輸入稱呼')}
+    else{
+      const need=[['last','姓'],['first','名'],['gender','性別'],['birth','出生年月日'],['city','縣市'],['addr','地址'],['emgName','緊急聯絡人'],['emgPhone','緊急聯絡電話'],['years','年資']];
+      const miss=need.filter(([k])=>!String(f[k]||'').trim()).map(x=>x[1]);
+      if(miss.length)return setFe('請填寫：'+miss.join('、'));
+    }
+    if(!f.consent)return setFe('請先閱讀並勾選個人資料告知事項');
     setBusy(true);
-    try{
-      await cloud.call({action:'apply',idToken:idt(),lineName:prof.displayName,role:f.role,name:f.name.trim(),in:f.in,out:f.out,tc:f.tc,support:f.support},30000);
-      await load(prof);
-    }catch(e){setFe(e.message);try{const j=await cloud.call({action:'joinInfo',idToken:idt()});setInfo(j)}catch(_e){}}
+    try{const form=Object.assign({},f,{phone:ph});delete form.consent;delete form.role;
+      route(await cloud.call({action:'apply',idToken:idt(),lineName:prof.displayName,role:f.role,consent:true,form},40000));
+      window.scrollTo(0,0);
+    }catch(e){setFe(e.message)}
+    setBusy(false);
+  };
+  const setup=async()=>{
+    const L=tLabel(info.app.role);
+    if(!f.in||!f.out)return setFe('請選擇'+L[0]+'、'+L[1]+'時間');
+    if(info.app.role==='teacher'&&!f.tc)return setFe('請選擇編號');
+    setBusy(true);
+    try{route(await cloud.call({action:'setup',idToken:idt(),in:f.in,out:f.out,tc:f.tc,support:f.support},40000))}
+    catch(e){setFe(e.message);try{const j=await cloud.call({action:'joinInfo',idToken:idt()});setInfo(j)}catch(_e){}}
     setBusy(false);
   };
   const close=()=>{try{window.liff.closeWindow()}catch(_e){}};
   const app=info&&info.app;
-  const Row=({k,v})=><div className="flex justify-between py-1 border-b border-line last:border-0"><span className="text-mute">{k}</span><span className="num">{v}</span></div>;
+  const Big=({t,d,onClick})=><button className="w-full text-left rounded-2xl border border-line bg-card px-5 py-5 mb-3 active:bg-sageL flex items-center gap-3" onClick={onClick}><span className="flex-1"><span className="block text-xl">{t}</span><span className="block text-xs text-mute mt-1">{d}</span></span><span className="text-mute text-xl">›</span></button>;
+  const Err=()=>fe?<div className="mb-3 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">{fe}</div>:null;
+  const Back=({to})=><button className="w-full h-11 mt-2 rounded-xl border border-line bg-card" onClick={()=>{setFe('');setSt(to)}}>返回</button>;
+  const age=ageOf(f.birth);
   return (
     <GateShell>
       {st==='loading'&&<div className="text-center text-mute">載入中…</div>}
@@ -1834,121 +1886,178 @@ function JoinOnline(){
       {st==='approved'&&info&&<Card className="p-5 text-center bg-sageL">
         <div className="text-lg text-sageD font-semibold">✓ 帳號已開通（{memberInfo(info.member).label}）</div>
         <div className="text-sm mt-1">正在進入系統…</div></Card>}
+
+      {st==='home'&&<>
+        <div className="text-center text-lg mb-1">歡迎{prof&&'，'+prof.displayName}</div>
+        <div className="text-center text-sm text-mute mb-5">請選擇</div>
+        <Big t="成為會員" d="預約、查看消費紀錄與優惠（填寫後立即開通）" onClick={startGuest}/>
+        <Big t="成為工作夥伴" d="應徵老師或櫃台人員（填寫個人簡歷，店家會以手機聯繫面試）" onClick={()=>setSt('pick')}/>
+      </>}
+      {st==='pick'&&<>
+        <div className="text-center text-lg mb-5">應徵職務</div>
+        <Big t="老師" d="按摩服務" onClick={()=>startStaff('teacher')}/>
+        <Big t="櫃台" d="接待、預約、結帳" onClick={()=>startStaff('counter')}/>
+        <Back to={app?'status':'home'}/>
+      </>}
+
+      {st==='guest'&&<>
+        <div className="text-center text-lg mb-4">成為會員</div>
+        <FL label="手機"><input className={fin+' num'} inputMode="tel" placeholder="0912345678" value={f.phone} onChange={e=>set('phone',e.target.value)}/></FL>
+        <FL label="稱呼"><input className={fin} maxLength={20} placeholder="例：王小姐" value={f.nick} onChange={e=>set('nick',e.target.value)}/></FL>
+        <FL label="生日" opt><input type="date" className={fin+' num'} value={f.birth} onChange={e=>set('birth',e.target.value)}/></FL>
+        <Consent kind="guest" on={f.consent} set={v=>set('consent',v)}/>
+        <Err/>
+        <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={send}>{busy?'送出中…':'送出，立即開通'}</button>
+        <Back to="home"/>
+      </>}
+
+      {st==='staff'&&<>
+        <div className="text-center text-lg mb-1">應徵{joinRoleLabel(f.role)}・個人簡歷</div>
+        <div className="text-center text-xs text-mute mb-4">送出後店家會以手機與你聯繫面試</div>
+        <div className="text-sm font-semibold text-sageD mb-2">基本資料</div>
+        <FL label="手機（通知面試用）"><input className={fin+' num'} inputMode="tel" placeholder="0912345678" value={f.phone} onChange={e=>set('phone',e.target.value)}/></FL>
+        <div className="grid grid-cols-[2fr_3fr] gap-2">
+          <FL label="姓"><input className={fin} maxLength={10} value={f.last} onChange={e=>set('last',e.target.value)}/></FL>
+          <FL label="名"><input className={fin} maxLength={10} value={f.first} onChange={e=>set('first',e.target.value)}/></FL>
+        </div>
+        <FL label="慣用稱呼" opt hint="在店裡希望被怎麼稱呼（例：小花）"><input className={fin} maxLength={20} value={f.nick} onChange={e=>set('nick',e.target.value)}/></FL>
+        <div className="mb-4"><div className="text-xs text-mute mb-1">性別</div><Chips opts={[['F','女'],['M','男']]} val={f.gender} onChange={v=>set('gender',v)}/></div>
+        <FL label="出生年月日" hint={age!=null&&age<18?'未滿 18 歲：面試時請攜帶法定代理人同意書':''}><input type="date" className={fin+' num'} value={f.birth} onChange={e=>set('birth',e.target.value)}/></FL>
+        <div className="mb-4"><div className="text-xs text-mute mb-1">通訊地址</div>
+          <select className={fin+' mb-2'} value={f.city} onChange={e=>set('city',e.target.value)}><option value="">選擇縣市</option>{CITIES.map(c=><option key={c}>{c}</option>)}</select>
+          <input className={fin} placeholder="區、路、號、樓" value={f.addr} onChange={e=>set('addr',e.target.value)}/></div>
+        <div className="grid grid-cols-2 gap-2">
+          <FL label="緊急聯絡人"><input className={fin} maxLength={20} placeholder="姓名／關係" value={f.emgName} onChange={e=>set('emgName',e.target.value)}/></FL>
+          <FL label="緊急聯絡電話"><input className={fin+' num'} inputMode="tel" value={f.emgPhone} onChange={e=>set('emgPhone',e.target.value)}/></FL>
+        </div>
+        <div className="text-sm font-semibold text-sageD mb-2 mt-2">工作經歷</div>
+        <div className="mb-4"><div className="text-xs text-mute mb-1">相關年資</div><Chips opts={YEARS} val={f.years} onChange={v=>set('years',v)}/></div>
+        {f.role==='teacher'&&<div className="mb-4"><div className="text-xs text-mute mb-1">擅長項目（可複選，選填）</div><Chips multi opts={SKILLS} val={f.skills} onChange={v=>set('skills',v)}/></div>}
+        <FL label="證照" opt><input className={fin} maxLength={100} placeholder="例：按摩技術士、美容丙級" value={f.certs} onChange={e=>set('certs',e.target.value)}/></FL>
+        <FL label="經歷說明" opt><textarea className="w-full min-w-0 px-3 py-2 rounded-xl border border-line bg-card" rows={3} maxLength={500} placeholder="曾任職的店家、年份、工作內容" value={f.expNote} onChange={e=>set('expNote',e.target.value)}/></FL>
+        <div className="text-sm font-semibold text-sageD mb-2 mt-2">希望工作條件</div>
+        <div className="mb-4"><div className="text-xs text-mute mb-1">希望工作型態</div><Chips opts={[['full','正職'],['part','兼職（支援）']]} val={f.want} onChange={v=>set('want',v)}/></div>
+        <div className="mb-4"><div className="text-xs text-mute mb-1">可上班時段（可複選，選填）</div><Chips multi opts={SLOTS} val={f.slots} onChange={v=>set('slots',v)}/></div>
+        <FL label="可到職日" opt><input type="date" className={fin+' num'} value={f.start} onChange={e=>set('start',e.target.value)}/></FL>
+        <div className="mb-4"><div className="text-xs text-mute mb-1">如何得知職缺（選填）</div><Chips opts={SOURCES} val={f.source} onChange={v=>set('source',v)}/></div>
+        {f.source==='店內人員推薦'&&<FL label="推薦人（姓名或老師編號）"><input className={fin} maxLength={20} value={f.referrer} onChange={e=>set('referrer',e.target.value)}/></FL>}
+        <Consent kind="staff" on={f.consent} set={v=>set('consent',v)}/>
+        <Err/>
+        <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={send}>{busy?'送出中…':'送出簡歷'}</button>
+        <Back to="pick"/>
+      </>}
+
       {st==='status'&&app&&<>
-        {app.status==='pending'&&<div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown">
-          <div className="font-semibold">申請已送出，等待老闆／主管審核</div>
-          <div className="text-sm mt-1">審核通過後，再按「重新檢查」或重新開啟就能進入系統。</div></div>}
-        {app.status==='rejected'&&<div className="mb-3 px-4 py-3 rounded-xl bg-warnL text-warn">
-          <div className="font-semibold">申請未通過</div>
-          {app.note&&<div className="text-sm mt-1">原因：{app.note}</div>}
-          <div className="text-sm mt-1">可修改後重新申請，或聯繫店家。</div></div>}
+        {app.status==='applied'&&<div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown"><div className="font-semibold">簡歷已送出</div><div className="text-sm mt-1">店家會以手機 <span className="num">{app.phone}</span> 與你聯繫面試，請留意來電。</div></div>}
+        {app.status==='interview'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">已安排面試</div>{app.note&&<div className="text-sm mt-1">{app.note}</div>}<div className="text-sm mt-1">如需改期，請直接聯繫店家。</div></div>}
+        {app.status==='rejected'&&<div className="mb-3 px-4 py-3 rounded-xl bg-bg border border-line text-mute"><div className="font-semibold text-ink">感謝你的應徵</div><div className="text-sm mt-1">這次未能錄取，期待日後有機會合作。</div></div>}
         <Card className="p-4 text-sm mb-3">
-          <Row k="身分" v={joinRoleLabel(app.role)+(app.role==='teacher'?(app.support?'・兼職（支援）':'・正職'):'')}/>
-          <Row k="姓名" v={app.name}/>
-          {app.tc&&<Row k="編號" v={app.tc+' 號'}/>}
-          {app.in&&<Row k={tLabel(app.role).join('／')+'時間'} v={app.in+'～'+app.out}/>}
-          <Row k="申請時間" v={clockText(app.at)}/>
+          <div className="flex justify-between py-1 border-b border-line"><span className="text-mute">應徵職務</span><span>{joinRoleLabel(app.role)}</span></div>
+          <div className="flex justify-between py-1 border-b border-line"><span className="text-mute">姓名</span><span>{(app.last||'')+(app.first||'')}{app.nick?'（'+app.nick+'）':''}</span></div>
+          <div className="flex justify-between py-1"><span className="text-mute">送出時間</span><span className="num">{clockText(app.at)}</span></div>
         </Card>
-        {fe&&<div className="mb-2 text-sm text-warn">{fe}</div>}
+        <Err/>
         <button className="w-full h-12 mb-2 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={recheck}>{busy?'檢查中…':'重新檢查'}</button>
-        <button className="w-full h-11 rounded-xl border border-line bg-card" onClick={()=>{setF({role:app.role,name:app.name,in:app.in||'',out:app.out||'',tc:app.status==='pending'?app.tc||'':'',support:!!app.support});setSt('form')}}>{app.status==='pending'?'修改申請內容':'重新申請'}</button>
+        {app.status==='applied'&&<button className="w-full h-11 rounded-xl border border-line bg-card" onClick={()=>startStaff(app.role)}>修改簡歷</button>}
+        {app.status==='rejected'&&<button className="w-full h-11 rounded-xl border border-line bg-card" onClick={()=>setSt('home')}>重新申請</button>}
         {inClient&&<button className="w-full h-11 mt-2 rounded-xl border border-line bg-card" onClick={close}>回到聊天室</button>}
       </>}
-      {st==='form'&&info&&<>
-        <div className="text-center text-lg mb-1">帳號開通申請</div>
-        <div className="text-center text-sm text-mute mb-4">{prof&&prof.displayName}，請填寫以下資料，送出後由老闆／主管審核</div>
-        <div className="text-xs text-mute mb-1">身分</div>
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          {JOIN_ROLES.map(r=><button key={r.id} type="button" className={'h-12 rounded-xl border text-lg '+(f.role===r.id?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('role',r.id)}>{r.label}</button>)}
-        </div>
-        {f.role&&<>
-          <label className="block mb-4"><div className="text-xs text-mute mb-1">姓名</div>
-            <input className="w-full h-12 px-3 rounded-xl border border-line bg-card text-lg" value={f.name} maxLength={20} onChange={e=>set('name',e.target.value)}/></label>
-          {f.role!=='guest'&&<div className="mb-4"><div className="text-xs text-mute mb-1">{tLabel(f.role)[0]}／{tLabel(f.role)[1]}時間</div>
-            <div className="flex items-center gap-2">
-              <input type="time" step="1800" aria-label={tLabel(f.role)[0]+'時間'} className="w-0 flex-1 min-w-0 h-12 px-3 rounded-xl border border-line bg-card text-lg num" value={f.in} onChange={e=>set('in',e.target.value)}/>
-              <span className="text-mute">～</span>
-              <input type="time" step="1800" aria-label={tLabel(f.role)[1]+'時間'} className="w-0 flex-1 min-w-0 h-12 px-3 rounded-xl border border-line bg-card text-lg num" value={f.out} onChange={e=>set('out',e.target.value)}/>
-            </div></div>}
-          {f.role==='teacher'&&<>
-            <div className="text-xs text-mute mb-1">工作型態</div>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {[[false,'正職'],[true,'兼職（支援）']].map(([v,l])=><button key={l} type="button" className={'h-12 rounded-xl border '+(f.support===v?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('support',v)}>{l}</button>)}
-            </div>
-            {f.support&&<div className="-mt-2 mb-4 text-xs text-mute">兼職（支援）老師每天下班時向櫃台領現金。</div>}
-            <div className="text-xs text-mute mb-1">選擇編號{f.tc&&<b className="ml-2 text-sageD num text-sm">{f.tc} 號</b>}</div>
-            <div className="mb-4"><NumberPicker min={info.min} max={info.max} taken={info.taken||{}} value={f.tc} onPick={v=>set('tc',v)}/></div>
-          </>}
-          {fe&&<div className="mb-2 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">{fe}</div>}
-          <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={submit}>{busy?'送出中…':'送出申請'}</button>
-          {app&&<button className="w-full h-11 mt-2 rounded-xl border border-line bg-card" onClick={()=>setSt('status')}>取消</button>}
+
+      {st==='setup'&&app&&<>
+        <div className="mb-4 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold text-lg">🎉 恭喜錄取！</div><div className="text-sm mt-1">最後一步：設定{app.role==='teacher'?'工作型態、上下牌時間與你的編號':'上下班時間'}，送出後帳號立即開通。</div></div>
+        {app.role==='teacher'&&<div className="mb-4"><div className="text-xs text-mute mb-1">工作型態</div>
+          <div className="grid grid-cols-2 gap-2">{[[false,'正職'],[true,'兼職（支援）']].map(([v,l])=><button key={l} type="button" className={'h-12 rounded-xl border '+(f.support===v?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('support',v)}>{l}</button>)}</div>
+          {f.support&&<div className="text-xs text-mute mt-1">兼職（支援）老師每天下班時向櫃台領現金。</div>}</div>}
+        <div className="mb-4"><div className="text-xs text-mute mb-1">{tLabel(app.role)[0]}／{tLabel(app.role)[1]}時間</div>
+          <div className="flex items-center gap-2">
+            <input type="time" step="1800" aria-label={tLabel(app.role)[0]+'時間'} className={fin+' w-0 flex-1 num'} value={f.in} onChange={e=>set('in',e.target.value)}/>
+            <span className="text-mute">～</span>
+            <input type="time" step="1800" aria-label={tLabel(app.role)[1]+'時間'} className={fin+' w-0 flex-1 num'} value={f.out} onChange={e=>set('out',e.target.value)}/>
+          </div></div>
+        {app.role==='teacher'&&<>
+          <div className="text-xs text-mute mb-1">選擇編號{f.tc&&<b className="ml-2 text-sageD num text-sm">{f.tc} 號</b>}</div>
+          <div className="mb-4"><NumberPicker min={info.min} max={info.max} taken={info.taken||{}} value={f.tc} onPick={v=>set('tc',v)}/></div>
         </>}
+        <Err/>
+        <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={setup}>{busy?'開通中…':'送出，開通帳號'}</button>
       </>}
     </GateShell>
   );
 }
 
-/* 老闆頁：審核線上開通申請（核准 → GAS 寫入 GitHub 上的 members.json） */
+/* 老闆頁：應徵與會員（約面試、錄取、不錄取；錄取後由申請人自己選編號開通） */
 function JoinReview({S,saveS,toast,ask}){
   const st=useCloud();
   const [list,setList]=useState(null);
   const [meta,setMeta]=useState({});
   const [msg,setMsg]=useState('');
-  const [ed,setEd]=useState({});      // uid → 修改內容
+  const [tab,setTab]=useState('todo');
+  const [openId,setOpenId]=useState(null);
   const [busy,setBusy]=useState('');
-  const load=async()=>{setMsg('讀取中…');try{const j=await cloud.call({action:'applist'});setList(j.list||[]);setMeta(j);setMsg('');const s=syncGet();s.joinN=(j.list||[]).filter(a=>a.status==='pending').length;syncSet(s);cloud.emit()}catch(e){setMsg('✗ '+e.message)}};
+  const load=async()=>{setMsg('讀取中…');try{const j=await cloud.call({action:'applist'});setList(j.list||[]);setMeta(j);setMsg('');
+    const s=syncGet();s.joinN=(j.list||[]).filter(a=>a.status==='applied').length;syncSet(s);cloud.emit();
+    // 已開通的支援老師：自動標記為「支援」
+    const sup=(j.list||[]).filter(a=>a.status==='approved'&&a.role==='teacher'&&a.tc);
+    if(sup.length){const n=clone(S);let ch=false;sup.forEach(a=>{const t=String(a.tc);if(!n.teachers.map(String).includes(t)){n.teachers=[t,...n.teachers];ch=true}if(a.support&&!n.support.includes(t)){n.support=n.support.concat([t]);ch=true}});if(ch)saveS(mergeSettings(n))}
+  }catch(e){setMsg('✗ '+e.message)}};
   useEffect(()=>{if(st.on)load()},[st.on]);
-  if(!st.on)return <div className="text-sm text-mute">請先在下方「雲端同步」用 LINE 登入（老闆／主管），才能審核開通申請。</div>;
-  const E=a=>Object.assign({},a,ed[a.uid]||{});
-  const setE=(uid,k,v)=>setEd(p=>Object.assign({},p,{[uid]:Object.assign({},p[uid]||{},{[k]:v})}));
-  const approve=async a=>{
-    const x=E(a);
-    if(!await ask({title:'核准 '+x.name+'？',msg:joinRoleLabel(x.role)+(x.tc?' '+x.tc+' 號':'')+(x.role==='teacher'?(x.support?'・兼職（支援）':'・正職'):'')+'\n核准後會寫入 GitHub 上的開通名單（members.json），約 1 分鐘後生效。',okText:'核准'}))return;
-    setBusy(a.uid);
-    try{
-      await cloud.call({action:'approve',uid:a.uid,edit:{name:x.name,tc:x.tc,in:x.in,out:x.out,support:x.support}},40000);
-      if(x.role==='teacher'&&x.tc){const n=clone(S);n.teachers=[String(x.tc),...n.teachers.filter(t=>String(t)!==String(x.tc))];if(x.support&&!n.support.includes(String(x.tc)))n.support=n.support.concat([String(x.tc)]);saveS(mergeSettings(n))}
-      toast('已核准，已寫入開通名單');await load();
-    }catch(e){setMsg('✗ '+e.message)}
-    setBusy('');
+  if(!st.on)return <div className="text-sm text-mute">請先在下方「雲端同步」用 LINE 登入（老闆／主管），才能查看應徵與會員資料。</div>;
+  const stage=async(a,to,note)=>{
+    setBusy(a.uid);try{await cloud.call({action:'stage',uid:a.uid,to,note});await load();toast(JOIN_ST[to]?'已改為「'+JOIN_ST[to]+'」':'已更新')}catch(e){setMsg('✗ '+e.message)}setBusy('');
   };
-  const reject=async a=>{
-    const note=window.prompt('退回原因（會顯示給申請人，可留空）','');if(note===null)return;
-    setBusy(a.uid);try{await cloud.call({action:'reject',uid:a.uid,note});await load()}catch(e){setMsg('✗ '+e.message)}setBusy('');
-  };
-  const pend=(list||[]).filter(a=>a.status==='pending'),done=(list||[]).filter(a=>a.status!=='pending');
-  const inp='h-9 px-2 rounded-lg border border-line bg-card num';
+  const interview=async a=>{const note=window.prompt('面試時間／備註（申請人看得到）',a.note||'');if(note===null)return;stage(a,'interview',note)};
+  const hire=async a=>{if(await ask({title:'錄取 '+((a.last||'')+(a.first||''))+'？',msg:'錄取後，申請人打開申請頁就會看到「恭喜錄取」，自己選'+(a.role==='teacher'?'編號、上下牌時間、正職／兼職':'上下班時間')+'，送出後帳號立即開通。\n請記得用手機通知對方。',okText:'錄取'}))stage(a,'hired')};
+  const reject=async a=>{if(await ask({title:'不錄取？',msg:'申請人頁面會顯示「這次未能錄取」。資料會在 6 個月後自動清除。',okText:'不錄取',danger:true}))stage(a,'rejected')};
+  const all=list||[];
+  const groups={todo:all.filter(a=>a.status==='applied'||a.status==='interview'),hired:all.filter(a=>a.status==='hired'),done:all.filter(a=>a.status==='approved'||a.status==='rejected')};
+  const shown=groups[tab];
+  const K=({k,v})=>v?<div className="flex gap-2 py-0.5"><span className="w-20 shrink-0 text-mute">{k}</span><span className="flex-1 min-w-0 break-words">{v}</span></div>:null;
   return (
     <div className="text-sm">
-      <div className="flex items-center justify-between mb-2">
-        <span>待審核 <b className={pend.length?'text-warn':''}>{list?pend.length:'—'}</b> 筆</span>
-        <button className="h-8 px-3 rounded-full border border-line text-xs" onClick={load}>重新整理</button>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="flex-1 flex rounded-lg border border-line overflow-hidden text-xs">
+          {[['todo','待處理'],['hired','已錄取'],['done','已完成']].map(([k,l])=><button key={k} className={'flex-1 h-9 '+(tab===k?'bg-sage text-white':'bg-card')} onClick={()=>setTab(k)}>{l}{list?' '+groups[k].length:''}</button>)}
+        </div>
+        <button className="h-9 px-3 rounded-lg border border-line text-xs" onClick={load}>重新整理</button>
       </div>
-      {meta.github===false&&<div className="mb-2 px-3 py-2 rounded-lg bg-warnL text-warn text-xs">GAS 尚未設定 GITHUB_TOKEN，核准時無法寫入開通名單。</div>}
+      {meta.github===false&&<div className="mb-2 px-3 py-2 rounded-lg bg-warnL text-warn text-xs">GAS 尚未設定 GITHUB_TOKEN，會員與錄取人員無法開通。</div>}
       {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{msg}</div>}
-      {list&&!pend.length&&<div className="text-xs text-mute mb-2">目前沒有待審核的申請。</div>}
-      {pend.map(a=>{const x=E(a);const L=tLabel(a.role);return (
-        <div key={a.uid} className="rounded-xl border border-brown/40 bg-brownL/30 p-3 mb-2">
-          <div className="flex items-baseline justify-between gap-2 mb-2">
-            <span><b className="text-base">{a.name}</b><span className="ml-2 px-1.5 rounded bg-sage text-white text-xs">{joinRoleLabel(a.role)}</span></span>
-            <span className="text-xs text-mute">LINE：{a.lineName||'—'}・{clockText(a.at)}</span>
-          </div>
-          <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1.5 items-center">
-            <span className="text-xs text-mute">姓名</span><input className={inp+' w-full min-w-0'} value={x.name} onChange={e=>setE(a.uid,'name',e.target.value)}/>
-            {a.role==='teacher'&&<><span className="text-xs text-mute">編號</span><input className={inp+' w-24'} inputMode="numeric" value={x.tc||''} onChange={e=>setE(a.uid,'tc',e.target.value.replace(/\D/g,''))}/></>}
-            {a.role!=='guest'&&<><span className="text-xs text-mute">{L[0]}／{L[1]}</span>
-              <span className="flex items-center gap-1 min-w-0"><input type="time" className={inp+' w-0 flex-1 min-w-0'} value={x.in||''} onChange={e=>setE(a.uid,'in',e.target.value)}/>～<input type="time" className={inp+' w-0 flex-1 min-w-0'} value={x.out||''} onChange={e=>setE(a.uid,'out',e.target.value)}/></span></>}
-            {a.role==='teacher'&&<><span className="text-xs text-mute">工作型態</span>
-              <span className="flex rounded-lg border border-line overflow-hidden w-fit">{[[false,'正職'],[true,'兼職（支援）']].map(([v,l])=><button key={l} className={'h-8 px-3 text-xs '+(!!x.support===v?'bg-sage text-white':'bg-card')} onClick={()=>setE(a.uid,'support',v)}>{l}</button>)}</span></>}
-          </div>
-          <div className="grid grid-cols-[1fr_2fr] gap-2 mt-3">
-            <button className="h-10 rounded-lg border border-warn text-warn disabled:opacity-40" disabled={!!busy} onClick={()=>reject(a)}>退回</button>
-            <button className="h-10 rounded-lg bg-sage text-white disabled:opacity-40" disabled={!!busy} onClick={()=>approve(a)}>{busy===a.uid?'處理中…':'核准並寫入開通名單'}</button>
-          </div>
+      {list&&!shown.length&&<div className="text-xs text-mute py-2">{tab==='todo'?'目前沒有待處理的應徵。':tab==='hired'?'沒有等待開通的人。':'最近 60 天沒有紀錄。'}</div>}
+      {shown.map(a=>{const nm=a.role==='guest'?a.nick:(a.last||'')+(a.first||'');const op=openId===a.uid;const age=ageOf(a.birth);return (
+        <div key={a.uid} className={'rounded-xl border p-3 mb-2 '+(a.status==='applied'?'border-brown/50 bg-brownL/30':'border-line bg-card')}>
+          <button className="w-full text-left" onClick={()=>setOpenId(op?null:a.uid)}>
+            <div className="flex items-baseline gap-2">
+              <b className="text-base">{nm}</b>{a.nick&&a.role!=='guest'&&<span className="text-xs text-mute">（{a.nick}）</span>}
+              <span className="px-1.5 rounded bg-sage text-white text-xs">{joinRoleLabel(a.role)}</span>
+              <span className={'ml-auto text-xs '+(a.status==='applied'?'text-brown font-semibold':a.status==='rejected'?'text-mute':'text-sageD')}>{JOIN_ST[a.status]}</span>
+            </div>
+            <div className="text-xs text-mute num mt-0.5">{a.gender==='F'?'女':a.gender==='M'?'男':''}{age!=null?'・'+age+' 歲':''}{a.years?'・'+a.years:''}{a.want?'・希望'+(a.want==='part'?'兼職':'正職'):''}・{clockText(a.at)} 送出{a.tc?'・'+a.tc+' 號':''} <span className="text-sageD">{op?'收起 ▲':'詳細 ▼'}</span></div>
+            {a.note&&<div className="text-xs text-sageD mt-0.5">面試：{a.note}</div>}
+          </button>
+          {a.phone&&<a href={'tel:'+a.phone} className="inline-flex items-center gap-1 mt-2 h-9 px-3 rounded-lg border border-sage text-sageD num">📞 {a.phone}</a>}
+          {op&&<div className="mt-2 pt-2 border-t border-line text-xs">
+            <K k="出生日期" v={a.birth?a.birth+(age!=null?'（'+age+' 歲'+(age<18?'，未成年':'')+'）':''):''}/>
+            <K k="地址" v={(a.city||'')+(a.addr||'')}/>
+            <K k="緊急聯絡" v={a.emgName?a.emgName+' '+(a.emgPhone||''):''}/>
+            <K k="擅長" v={(a.skills||[]).join('、')}/>
+            <K k="證照" v={a.certs}/>
+            <K k="經歷" v={a.expNote}/>
+            <K k="可上班" v={(a.slots||[]).join('、')}/>
+            <K k="可到職" v={a.start}/>
+            <K k="得知管道" v={a.source?(a.source+(a.referrer?'：'+a.referrer:'')):''}/>
+            <K k="LINE 名稱" v={a.lineName}/>
+            {a.status==='approved'&&<K k="開通" v={(a.tc?a.tc+' 號・':'')+(a.in?a.in+'～'+a.out:'')+(a.support?'・兼職（支援）':'')}/>}
+            {a.by&&<K k="處理人" v={a.by}/>}
+          </div>}
+          {(a.status==='applied'||a.status==='interview')&&<div className="grid grid-cols-3 gap-2 mt-3">
+            <button className="h-10 rounded-lg border border-line text-mute disabled:opacity-40" disabled={!!busy} onClick={()=>reject(a)}>不錄取</button>
+            <button className="h-10 rounded-lg border border-sage text-sageD disabled:opacity-40" disabled={!!busy} onClick={()=>interview(a)}>{a.status==='interview'?'改面試時間':'約面試'}</button>
+            <button className="h-10 rounded-lg bg-sage text-white disabled:opacity-40" disabled={!!busy} onClick={()=>hire(a)}>{busy===a.uid?'處理中…':'錄取'}</button>
+          </div>}
+          {a.status==='hired'&&<div className="mt-2 text-xs text-brown">等待對方在申請頁選{a.role==='teacher'?'編號、上下牌時間':'上下班時間'}後開通。
+            <button className="ml-2 underline text-mute" onClick={()=>reject(a)}>取消錄取</button></div>}
         </div>);})}
-      {done.length>0&&<details className="mt-1"><summary className="text-xs text-mute">最近 30 天已處理 {done.length} 筆</summary>
-        {done.map(a=><div key={a.uid} className="flex justify-between py-1.5 border-b border-line last:border-0 text-xs"><span>{a.name}・{joinRoleLabel(a.role)}{a.tc?' '+a.tc:''}</span><span className={a.status==='approved'?'text-sageD':'text-warn'}>{a.status==='approved'?'✓ 已核准':'已退回'}{a.by?'（'+a.by+'）':''}</span></div>)}
-      </details>}
+      <div className="text-xs text-mute mt-1">履歷只存在 Google 試算表「加入申請」，不會放到公開的開通名單。不錄取的資料 6 個月後自動清除。</div>
     </div>
   );
 }
@@ -3123,6 +3232,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-043','10-07','加入流程改版（需 GAS gas-4.1）：未開通的人選「成為會員」（手機、稱呼、生日，送出立即開通）或「成為工作夥伴」→ 老師／櫃台 → 填個人簡歷（手機、姓名、性別、生日、地址、緊急聯絡人、經歷、希望條件、個資告知同意）；老闆頁「應徵與會員」：約面試、錄取、不錄取；錄取後申請人自己選正職／兼職、上下牌時間與編號，送出即開通；不錄取的履歷 6 個月後自動清除'],
   ['v0.1-042','10-07','線上開通（需 GAS gas-4）：申請頁改為線上填寫（身分、姓名、上下牌時間、正職／兼職（支援）、選編號 10～50 號可翻頁，老闆可開放到 100 號），送出後老闆／主管在設定頁「人員開通申請」審核，核准時 GAS 用 GITHUB_TOKEN 寫入 GitHub 上的 members.json；老闆頁頂部提醒待審核筆數；線上開通的人第一次進入不用再設定編號姓名'],
   ['v0.1-041','10-07','支援老師現結改列為支出：每日訂單、月報、日結的「支出」包含支援老師現結；「老師抽成」只算正職老師（5／20 號發薪）；現金結餘＝現金收入 − 現金支出'],
   ['v0.1-040','10-07','每日訂單、月報在營業額下方新增「現金結餘」＝現金收入（不含跳單）－ 現金支出 － 支援老師現結，跟日結的應有現金同一個算法；並列出 5／20 號才發、尚未扣除的正職老師費用'],
@@ -3315,7 +3425,7 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay}){
         <div className="text-xs text-mute mt-2">移除類別不影響已記錄的支出</div>
       </Card>
 
-      <div className={sec}>人員開通申請（線上審核）</div>
+      <div className={sec}>應徵與會員</div>
       <Card className="p-3">
         <JoinReview S={S} saveS={saveS} toast={toast} ask={ask}/>
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-line text-sm">
@@ -3325,7 +3435,7 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay}){
             {[20,30,40,50,60,70,80,90,100].map(v=><option key={v} value={v}>{v}</option>)}
           </select><span>號</span>
         </div>
-        <div className="text-xs text-mute mt-1">申請頁第 1 頁顯示 10～50 號，超過 50 號的在下一頁；最多開放到 100 號。改完按下方「儲存設定」，上傳雲端後生效。</div>
+        <div className="text-xs text-mute mt-1">錄取的老師自己選編號：第 1 頁 10～50 號，超過 50 號在下一頁，最多開放到 100 號。改完按下方「儲存設定」，上傳雲端後生效。</div>
       </Card>
 
       <div className={sec}>雲端同步（Google 試算表）</div>
@@ -3829,7 +3939,7 @@ function App(){
         {cst.on?(()=>{const c=cloudChip(cst);return <button className={'text-xs px-2.5 h-7 rounded-full '+c.c} onClick={()=>setTab('set')}>{c.t}</button>})():
           <button className={'text-xs px-2.5 h-7 rounded-full '+(backupOld?'bg-warnL text-warn':'bg-sageL text-sageD')} onClick={()=>setTab('set')}>{agoText(S.lastBackupAt)}</button>}
       </div>
-      {cst.on&&cst.joinN>0&&tab!=='set'&&<button className="w-full h-9 bg-brownL text-brown text-sm" onClick={()=>setTab('set')}>有 {cst.joinN} 筆人員開通申請待審核 ›</button>}
+      {cst.on&&cst.joinN>0&&tab!=='set'&&<button className="w-full h-9 bg-brownL text-brown text-sm" onClick={()=>setTab('set')}>有 {cst.joinN} 筆新的應徵履歷 ›</button>}
     </header>
   );
   const otherTabs=(<>
