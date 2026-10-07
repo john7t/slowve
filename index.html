@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-043</title>
+<title>緩緩門店 v0.1-044</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-043';
+const VER='v0.1-044';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -2075,7 +2075,7 @@ const VIEWS={
   mainc:{label:'主櫃系統',desc:'店內 iPad：人員上牌打卡、訂單、老師狀態、交班',icon:'▣'},
   counter:{label:'櫃台人員',desc:'我的打卡、差勤、班表',icon:'☰'},
   guest:{label:'客人',desc:'價目表、預約、消費紀錄',icon:'☺'},
-  visitor:{label:'未審核訪客',desc:'預覽訪客開通的每個階段，協助訪客加入',icon:'?'},
+  visitor:{label:'未審核訪客',desc:'預覽加入會員、應徵老師的每個步驟，協助對方加入',icon:'?'},
 };
 function viewsOf(m){
   const info=memberInfo(m);const v=[];
@@ -2680,60 +2680,89 @@ function GuestHome({me,mode}){
 }
 
 /* ---- 未審核訪客：預覽開通流程各階段，員工協助訪客加入 ---- */
-const DEMO_VISITOR={name:'王小姐',uid:'U8f3a1c2d4e5b6a7980c1d2e3f4a5b6c7',role:'guest'};
+const DEMO_VISITOR={guest:{name:'王小姐',phone:'0912345678'},teacher:{last:'林',first:'花',nick:'小花',phone:'0987654321',tc:'33'}};
 function PhoneFrame({children}){
   return (<div className="rounded-[28px] border-[6px] border-ink/80 bg-bg overflow-hidden shadow-sm">
     <div className="h-7 bg-card border-b border-line flex items-center justify-center text-[11px] text-mute">緩緩 SLOWVE・LINE</div>
-    <div className="p-4 min-h-[22rem]">
+    <div className="p-4 min-h-[24rem]">
       <div className="serif text-2xl tracking-widest text-sageD text-center">緩緩</div>
       <div className="text-center text-[10px] tracking-[0.3em] text-brown mb-4">SLOWVE BODY SPA</div>
       <div className="pointer-events-none select-none">{children}</div>
     </div>
   </div>);
 }
+/* 範例畫面用的小元件（只顯示，不能操作） */
+const MBig=({t,d,on})=><div className={'rounded-2xl border px-4 py-4 mb-2 flex items-center gap-3 '+(on?'border-sage bg-sageL ring-2 ring-sage/40':'border-line bg-card')}><span className="flex-1"><span className="block text-lg">{t}</span>{d&&<span className="block text-[11px] text-mute mt-0.5">{d}</span>}</span><span className="text-mute">›</span></div>;
+const MIn=({l,v,opt})=><div className="mb-2"><div className="text-[11px] text-mute mb-0.5">{l}{opt&&'（選填）'}</div><div className="h-9 px-3 rounded-lg border border-line bg-card flex items-center text-sm">{v||''}</div></div>;
+const MChip=({opts,on})=><div className="flex flex-wrap gap-1.5 mb-2">{opts.map(o=><span key={o} className={'h-7 px-3 rounded-full border text-xs flex items-center '+((on||[]).includes(o)?'bg-sage border-sage text-white':'bg-card border-line')}>{o}</span>)}</div>;
+const MBtn=({children,light})=><div className={'w-full h-11 rounded-xl flex items-center justify-center '+(light?'border border-line bg-card':'bg-sage text-white')}>{children}</div>;
+const MCheck=()=><div className="mb-3 rounded-lg border border-line bg-card px-3 py-2 text-xs flex items-center gap-2"><span className="w-5 h-5 rounded bg-sage text-white flex items-center justify-center">✓</span>我已閱讀並同意個人資料告知事項</div>;
+
 function VisitorGuide({me,mode}){
   mode=mode||'phone';const wideM=mode!=='phone';
-  const V=DEMO_VISITOR;
+  const [track,setTrack]=useState('guest');   // guest 加入會員／teacher 應徵老師
   const [i,setI]=useState(0);
   const topRef=useRef(null);const first=useRef(true);
   useEffect(()=>{  // 換步驟時捲回步驟列，並把目前的步驟按鈕捲進可視範圍
     if(first.current){first.current=false;return}
-    if(wideM)return;   // 平板版步驟是直排清單，不用捲動
+    if(wideM)return;
     try{topRef.current.scrollIntoView({block:'start'});const b=topRef.current.querySelector('[data-on="1"]');b&&b.scrollIntoView({inline:'center',block:'nearest'})}catch(_e){}
-  },[i]);
-  const [f,setF]=useState({uid:'',name:'',roles:['guest'],tc:''});
+  },[i,track]);
   const [copied,setCopied]=useState('');
   const flash=k=>{setCopied(k);setTimeout(()=>setCopied(''),2000)};
+  const G=DEMO_VISITOR.guest,T=DEMO_VISITOR.teacher;
   const now=new Date();const hm=pad(now.getHours())+':'+pad(now.getMinutes());
-  const STAGES=[
-    {t:'開啟系統',sub:'尚未開通',
-      tip:'訪客點官方帳號圖文選單「門店系統」後，名單裡沒有他，會看到這個畫面。請他按「申請開通帳號」。',
-      ui:<Card className="p-5 text-center"><div className="text-lg mb-1">{V.name}，你的帳號尚未開通</div><div className="text-sm text-mute mb-4">請先申請開通帳號，並聯繫店家工作人員或主管完成開通。</div><div className="w-full h-12 rounded-xl bg-sage text-white text-lg flex items-center justify-center">申請開通帳號</div></Card>},
-    {t:'選擇身分',sub:'帳號開通申請',
-      tip:'請訪客點自己的身分（老師／櫃台／客人）。點下去就會送出申請，不用填其他資料。',
-      ui:<><div className="text-center text-lg mb-1">帳號開通申請</div><div className="text-center text-sm text-mute mb-4">{V.name}，請選擇你的身分</div><div className="space-y-2">{JOIN_ROLES.map(r=><div key={r.id} className={'h-14 rounded-2xl border border-sage text-xl text-sageD flex items-center justify-center '+(r.id===V.role?'bg-sageL':'bg-card')}>{r.label}</div>)}</div></>},
-    {t:'送出申請卡',sub:'已傳送到聊天室',
-      tip:'申請卡會以訪客名義傳到他和官方帳號的聊天室，並另傳一則只有申請碼的文字。你可以直接掃他螢幕上的 QR Code，或請他把申請碼傳給你。',
-      ui:<><div className="mb-3 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm text-center">✓ 已傳送到聊天室</div><JoinCard name={V.name} role={V.role} uid={V.uid}/></>},
-    {t:'等待審查',sub:'你已申請開通帳號',
-      tip:'之後訪客再打開，會看到「尚未審查」。把申請碼加進 members.json 並推上 GitHub（約 1～數分鐘生效）後，請他按「重新檢查」。',
-      ui:<><div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown"><div className="font-semibold">你已申請開通帳號，目前尚未審查</div><div className="text-sm mt-1">請聯繫店家工作人員或主管掃描 QR Code 完成帳號開通作業，或分享以下帳號申請碼</div><div className="text-xs text-mute mt-1 num">申請時間 {ymd(now)} {hm}</div></div><div className="w-full h-12 rounded-xl bg-sage text-white text-lg flex items-center justify-center">重新檢查</div></>},
-    {t:'開通完成',sub:'正在進入系統',
-      tip:'名單生效後按「重新檢查」，會顯示已開通，約 1 秒後自動進入系統。',
-      ui:<div className="px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">✓ 帳號已開通（{ROLE_LABELS[V.role]}）</div><div className="text-sm mt-1">正在進入系統…</div></div>},
-    {t:'設定編號姓名',sub:'第一次進入',
-      tip:'第一次進入要設定編號和姓名。老師一定要填編號（和訂單上的老師編號相同），客人可以不填。資料只存在他的手機。',
-      ui:<Card className="p-4"><div className="text-lg mb-1">帳號已開通</div><div className="text-sm text-mute mb-3">第一次使用，請設定你的編號與姓名。身分：{ROLE_LABELS[V.role]}</div><div className="text-xs text-mute mb-1">編號（選填）</div><div className="h-11 rounded-xl border border-line bg-card mb-2"></div><div className="text-xs text-mute mb-1">姓名（必填）</div><div className="h-11 rounded-xl border border-line bg-card px-3 flex items-center mb-3">{V.name}</div><div className="h-11 rounded-xl bg-sage text-white flex items-center justify-center">存檔</div></Card>},
-    {t:'歡迎畫面',sub:'之後每次開啟',
-      tip:'設定好之後，每次開啟都會看到歡迎畫面，點身分就能進入。有多個身分的人可以在這裡切換。',
-      ui:<><div className="text-center mb-4"><div className="text-2xl">歡迎 <span className="text-sageD font-semibold">{V.name}</span></div><div className="text-mute mt-1">進入緩緩門店系統</div></div><div className="rounded-2xl border border-line bg-card px-4 py-3 flex items-center gap-3"><span className="w-10 h-10 rounded-full bg-sageL text-sageD flex items-center justify-center">{VIEWS.guest.icon}</span><span className="flex-1"><span className="block">進入系統（客人）</span><span className="block text-xs text-mute">{VIEWS.guest.desc}</span></span><span className="text-mute">›</span></div></>},
-  ];
-  const s=STAGES[i];
-  const tog=r=>setF(x=>Object.assign({},x,{roles:JOIN_ROLES.map(q=>q.id).filter(q=>q===r?!x.roles.includes(r):x.roles.includes(q))}));
-  const uidOk=/^U[0-9a-f]{32}$/.test(f.uid.trim());
-  const entry=(()=>{const o={uid:f.uid.trim(),name:f.name.trim()||'（姓名）',roles:f.roles};if(f.roles.includes('teacher')&&f.tc.trim())o.tc=f.tc.trim();return JSON.stringify(o)})();
-  const friendUrl=OA_FRIEND_URL;
-  const intro=<div className="mt-4 text-sm text-mute">訪客開通共 {STAGES.length} 個階段。{wideM?'點左邊的步驟':'點下方步驟'}可以看訪客當時的畫面，方便在旁邊引導。</div>;
+  const md=(now.getMonth()+1)+'/'+now.getDate();
+  const notMember=nm=>(<Card className="p-5 text-center"><div className="text-lg mb-1">{nm}，你的帳號尚未開通</div><div className="text-sm text-mute mb-4">請先申請開通帳號，並聯繫店家工作人員或主管完成開通。</div><MBtn>申請開通帳號</MBtn></Card>);
+  const home=on=>(<><div className="text-center text-lg mb-1">歡迎，{on==='guest'?G.name:T.last+T.first}</div><div className="text-center text-sm text-mute mb-4">請選擇</div>
+    <MBig t="成為會員" d="預約、查看消費紀錄與優惠（填寫後立即開通）" on={on==='guest'}/><MBig t="成為工作夥伴" d="應徵老師或櫃台人員（填寫個人簡歷）" on={on==='staff'}/></>);
+  const approved=label=>(<div className="px-4 py-3 rounded-xl bg-sageL text-sageD text-center"><div className="font-semibold text-lg">✓ 帳號已開通（{label}）</div><div className="text-sm mt-1">正在進入系統…</div></div>);
+  const welcome=(nm,code,v)=>(<><div className="text-center mb-4"><div className="text-2xl">歡迎 <span className="text-sageD font-semibold">{nm}</span></div><div className="text-mute mt-1">{code?<span className="num">{code}・</span>:''}進入緩緩門店系統</div></div>
+    <div className="rounded-2xl border border-line bg-card px-4 py-3 flex items-center gap-3"><span className="w-10 h-10 rounded-full bg-sageL text-sageD flex items-center justify-center">{VIEWS[v].icon}</span><span className="flex-1"><span className="block">進入系統（{VIEWS[v].label}）</span><span className="block text-xs text-mute">{VIEWS[v].desc}</span></span><span className="text-mute">›</span></div></>);
+  const TRACKS={
+    guest:{label:'加入會員',who:'客人',stages:[
+      {t:'開啟系統',sub:'帳號尚未開通',tip:'客人加好友後，點官方帳號圖文選單進入，名單上沒有他，會看到這個畫面。請他按「申請開通帳號」。',ui:notMember(G.name)},
+      {t:'選擇',sub:'成為會員／成為工作夥伴',tip:'請客人點「成為會員」。',ui:home('guest')},
+      {t:'填寫資料',sub:'成為會員',tip:'只要填手機和稱呼，生日可以不填。勾選個資告知事項後按「送出，立即開通」。會員不需要審核。',ui:<><div className="text-center text-lg mb-3">成為會員</div>
+        <MIn l="手機" v={G.phone}/><MIn l="稱呼" v={G.name}/><MIn l="生日" opt/><MCheck/><MBtn>送出，立即開通</MBtn></>},
+      {t:'開通完成',sub:'正在進入系統',tip:'送出後馬上開通，約 1 秒後自動進入系統。',ui:approved('客人')},
+      {t:'歡迎畫面',sub:'之後每次開啟',tip:'之後每次開啟都會看到歡迎畫面，點一下就能進入客人頁（價目表、預約、消費紀錄）。',ui:welcome(G.name,'','guest')},
+    ]},
+    teacher:{label:'應徵老師',who:'應徵者',stages:[
+      {t:'開啟系統',sub:'帳號尚未開通',tip:'應徵者加好友後，點官方帳號圖文選單進入，會看到這個畫面。請他按「申請開通帳號」。現有的老師也走同一個流程。',ui:notMember(T.last+T.first)},
+      {t:'選擇',sub:'成為會員／成為工作夥伴',tip:'請他點「成為工作夥伴」。',ui:home('staff')},
+      {t:'應徵職務',sub:'老師／櫃台',tip:'選「老師」。應徵櫃台人員的流程相同，只是沒有擅長項目和編號。',ui:<><div className="text-center text-lg mb-4">應徵職務</div><MBig t="老師" d="按摩服務" on/><MBig t="櫃台" d="接待、預約、結帳"/></>},
+      {t:'填寫簡歷',sub:'應徵老師・個人簡歷',tip:'必填：手機、姓名、性別、出生年月日、通訊地址、緊急聯絡人、年資；其他（擅長項目、證照、經歷、可上班時段、可到職日、推薦人）可不填。最後勾選個資告知事項再送出。',ui:<><div className="text-center text-lg mb-3">應徵老師・個人簡歷</div>
+        <MIn l="手機（通知面試用）" v={T.phone}/>
+        <div className="grid grid-cols-2 gap-2"><MIn l="姓" v={T.last}/><MIn l="名" v={T.first}/></div>
+        <MIn l="慣用稱呼" v={T.nick} opt/>
+        <div className="text-[11px] text-mute mb-0.5">性別</div><MChip opts={['女','男']} on={['女']}/>
+        <div className="text-[11px] text-mute mb-0.5">相關年資</div><MChip opts={['無經驗','未滿 1 年','1～3 年','3～5 年','5 年以上']} on={['1～3 年']}/>
+        <div className="text-[11px] text-mute mb-0.5">擅長項目</div><MChip opts={['指壓','油壓','腳底','刮痧','拔罐','修腳皮']} on={['油壓','腳底']}/>
+        <div className="text-[11px] text-mute text-center mb-2">⋯ 出生年月日、地址、緊急聯絡人、希望條件 ⋯</div>
+        <MCheck/><MBtn>送出簡歷</MBtn></>},
+      {t:'簡歷已送出',sub:'等待面試通知',tip:'老闆頁頂部會出現「有新的應徵履歷」。老闆或主管到「設定 → 應徵與會員」看簡歷，點手機號碼就能直接打電話約面試。',ui:<><div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown"><div className="font-semibold">簡歷已送出</div><div className="text-sm mt-1">店家會以手機 <span className="num">{T.phone}</span> 與你聯繫面試，請留意來電。</div></div>
+        <Card className="p-3 text-sm mb-3"><div className="flex justify-between py-0.5"><span className="text-mute">應徵職務</span><span>老師</span></div><div className="flex justify-between py-0.5"><span className="text-mute">姓名</span><span>{T.last+T.first}（{T.nick}）</span></div><div className="flex justify-between py-0.5"><span className="text-mute">送出時間</span><span className="num">{md} {hm}</span></div></Card>
+        <MBtn>重新檢查</MBtn><div className="h-2"></div><MBtn light>修改簡歷</MBtn></>},
+      {t:'已約面試',sub:'顯示面試時間',tip:'老闆在應徵卡片按「約面試」並填面試時間，應徵者按「重新檢查」就會看到。改期請直接聯絡。',ui:<><div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">已安排面試</div><div className="text-sm mt-1">10/9（五）14:00 店內面試</div><div className="text-sm mt-1">如需改期，請直接聯繫店家。</div></div><MBtn>重新檢查</MBtn></>},
+      {t:'錄取・選編號',sub:'恭喜錄取！',tip:'面試通過後老闆按「錄取」，並用手機通知對方。對方打開就會看到這一步：自己選正職／兼職（支援）、上牌下牌時間和編號（灰色是已有人用的號碼），送出後帳號立即開通。',ui:<><div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold text-lg">🎉 恭喜錄取！</div><div className="text-sm mt-1">最後一步：設定工作型態、上下牌時間與你的編號，送出後帳號立即開通。</div></div>
+        <div className="text-[11px] text-mute mb-0.5">工作型態</div><div className="grid grid-cols-2 gap-2 mb-2"><MBtn light>正職</MBtn><MBtn>兼職（支援）</MBtn></div>
+        <div className="text-[11px] text-mute mb-0.5">上牌／下牌時間</div><div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center mb-2"><div className="h-9 rounded-lg border border-line bg-card flex items-center justify-center num">12:00</div>～<div className="h-9 rounded-lg border border-line bg-card flex items-center justify-center num">22:00</div></div>
+        <div className="text-[11px] text-mute mb-0.5">選擇編號 <b className="text-sageD num">{T.tc} 號</b></div>
+        <div className="grid grid-cols-6 gap-1 mb-3">{Array.from({length:12},(_,k)=>k+28).map(n=><span key={n} className={'h-8 rounded border text-xs num flex items-center justify-center '+(String(n)===T.tc?'bg-sage border-sage text-white':n===30||n===36?'bg-bg border-line text-mute/50':'bg-card border-line')}>{n}</span>)}</div>
+        <MBtn>送出，開通帳號</MBtn></>},
+      {t:'開通完成',sub:'正在進入系統',tip:'送出後馬上寫進開通名單，約 1 秒後自動進入系統。兼職（支援）老師會自動標成「支援」，下班時向櫃台領現金。',ui:approved('老師 '+T.tc)},
+      {t:'歡迎畫面',sub:'之後每次開啟',tip:'名單上已經有稱呼和編號，不用再設定，直接看到歡迎畫面，點一下進入老師頁（我的服務、本期費用、上牌打卡）。',ui:welcome(T.nick,T.tc,'teacher')},
+    ]},
+  };
+  const TR=TRACKS[track],STAGES=TR.stages;const s=STAGES[Math.min(i,STAGES.length-1)];
+  const pickTrack=k=>{setTrack(k);setI(0)};
+  const trackSeg=(
+    <div className="mt-4 flex rounded-xl border border-line overflow-hidden bg-card">
+      {Object.keys(TRACKS).map(k=><button key={k} className={'flex-1 h-11 '+(track===k?'bg-sage text-white':'')} onClick={()=>pickTrack(k)}>{TRACKS[k].label}<span className={'ml-1 text-xs '+(track===k?'text-white/80':'text-mute')}>{TRACKS[k].stages.length} 步</span></button>)}
+    </div>
+  );
+  const intro=<div className="mt-4 text-sm text-mute">選擇要協助的情況，{wideM?'點左邊的步驟':'點下方步驟'}可以看到{TR.who}當時的畫面，方便在旁邊引導。</div>;
   const navBtns=(
     <div className="grid grid-cols-2 gap-2 mt-3">
       <button className="h-11 rounded-xl border border-line bg-card disabled:opacity-40" disabled={i===0} onClick={()=>setI(i-1)}>‹ 上一步</button>
@@ -2741,73 +2770,57 @@ function VisitorGuide({me,mode}){
     </div>
   );
   const phoneUi=<PhoneFrame>{s.ui}</PhoneFrame>;
+  const friendUrl=OA_FRIEND_URL;
   const linkBlock=(
       <Sec title="加入官方帳號好友">
-        <div className="text-sm text-mute mb-3">訪客還沒加「緩緩」官方帳號時，請他用 LINE 掃描下方 QR Code 加入好友，再從聊天室的圖文選單開始開通。</div>
+        <div className="text-sm text-mute mb-3">還沒加「緩緩」官方帳號的人，請他用 LINE 掃描下方 QR Code 加入好友，再從聊天室的圖文選單開始。</div>
         <div className="mx-auto w-48 h-48 rounded-xl border border-line bg-white p-2"><img src={joinQrUrl(friendUrl)} alt="緩緩官方帳號好友 QR Code" className="w-full h-full"/></div>
         <div className="text-center text-xs text-brown mt-2 tracking-widest">緩緩 SLOWVE BODY SPA</div>
         <button className="w-full h-11 mt-3 rounded-xl border border-sage text-sageD" onClick={()=>copyStr(friendUrl,()=>flash('url'))}>{copied==='url'?'✓ 已複製':'複製好友連結（傳給不在現場的人）'}</button>
       </Sec>
   );
-  const genBlock=(
-      <Sec title="產生名單資料（老闆／主管用）">
-        <div className="text-sm text-mute mb-3">收到申請碼後填入，複製產生的一行，貼到 GitHub 上 members.json 的 <span className="num">members</span> 清單裡（前一筆後面要加逗號）。</div>
-        <label className="block mb-2"><div className="text-xs text-mute mb-1">帳號申請碼（U 開頭，共 33 碼）</div>
-          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card text-sm num" placeholder="U1234…" value={f.uid} onChange={e=>setF(Object.assign({},f,{uid:e.target.value.replace(/[\s…]/g,'')}))}/></label>
-        {f.uid&&!uidOk&&<div className="text-xs text-warn mb-2">申請碼格式不對：應為 U 加 32 碼英數（不能有「…」或空白）</div>}
-        <label className="block mb-2"><div className="text-xs text-mute mb-1">姓名</div>
-          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={f.name} onChange={e=>setF(Object.assign({},f,{name:e.target.value}))}/></label>
-        <div className="text-xs text-mute mb-1">身分（可複選）</div>
-        <div className="grid grid-cols-3 gap-2 mb-2">{JOIN_ROLES.map(r=><button key={r.id} onClick={()=>tog(r.id)} className={'h-10 rounded-xl border '+(f.roles.includes(r.id)?'bg-sage text-white border-sage':'bg-card border-line')}>{r.label}</button>)}</div>
-        {f.roles.includes('teacher')&&<label className="block mb-2"><div className="text-xs text-mute mb-1">老師編號</div>
-          <input className="w-full h-11 px-3 rounded-xl border border-line bg-card num" inputMode="numeric" placeholder="例：122" value={f.tc} onChange={e=>setF(Object.assign({},f,{tc:e.target.value}))}/></label>}
-        <div className="rounded-lg bg-bg px-3 py-2 text-xs num break-all mb-2">{entry}</div>
-        <button className="w-full h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={!uidOk||!f.roles.length} onClick={()=>copyStr(entry,()=>flash('entry'))}>{copied==='entry'?'✓ 已複製':'複製這一行'}</button>
-        <div className="text-xs text-mute mt-2">老闆、主管權限（admin）請直接在 GitHub 上加，這裡不提供。</div>
-      </Sec>
-  );
   if(wideM){
-    // 平板版：左邊直排步驟清單（目前步驟展開說明），中間手機畫面，工具放右邊（三欄）或下方（雙欄）
     const steps=(
-      <div className="mt-5 space-y-2">
+      <div className="mt-4 space-y-2">
         {STAGES.map((x,k)=>(
           <button key={k} onClick={()=>setI(k)} className={'w-full text-left rounded-2xl border px-4 py-3 '+(k===i?'bg-sageL border-sage':'bg-card border-line')}>
             <div className="flex items-center gap-3">
               <span className={'w-7 h-7 rounded-full flex items-center justify-center text-sm num shrink-0 '+(k===i?'bg-sage text-white':k<i?'bg-sageL text-sageD border border-sage/40':'bg-bg text-mute border border-line')}>{k<i?'✓':k+1}</span>
-              <span className="flex-1"><span className="block">{x.t}</span><span className="block text-xs text-mute">訪客看到：{x.sub}</span></span>
+              <span className="flex-1"><span className="block">{x.t}</span><span className="block text-xs text-mute">{TR.who}看到：{x.sub}</span></span>
             </div>
             {k===i&&<div className="mt-2 ml-10 text-sm text-sageD">💡 {x.tip}</div>}
           </button>))}
       </div>
     );
     const phoneCol=(
-      <div className="mt-5 max-w-[24rem] mx-auto w-full">
+      <div className="mt-4 max-w-[24rem] mx-auto w-full">
         <div className="text-center text-sm text-mute mb-2"><span className="num text-brown mr-1">{i+1}/{STAGES.length}</span>{s.t}</div>
         {phoneUi}{navBtns}
       </div>
     );
     return (
       <div className="max-w-[1400px] mx-auto px-6 pb-16">
+        <div className="max-w-xl">{trackSeg}</div>
         {intro}
         {mode==='xwide'?
-          <div className="grid grid-cols-3 gap-x-6 items-start"><div>{steps}</div><div>{phoneCol}</div><div>{linkBlock}{genBlock}</div></div>:
+          <div className="grid grid-cols-3 gap-x-6 items-start"><div>{steps}</div><div>{phoneCol}</div><div>{linkBlock}</div></div>:
           <><div className="grid grid-cols-2 gap-x-6 items-start"><div>{steps}</div><div>{phoneCol}</div></div>
-            <div className="grid grid-cols-2 gap-x-6 items-start"><div>{linkBlock}</div><div>{genBlock}</div></div></>}
+            <div className="max-w-md">{linkBlock}</div></>}
       </div>
     );
   }
   return (
     <div className="max-w-md mx-auto px-4 pb-16">
+      {trackSeg}
       {intro}
       <div ref={topRef} className="mt-3 flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scroll-mt-12">
         {STAGES.map((x,k)=><button key={k} data-on={k===i?'1':'0'} onClick={()=>setI(k)} className={'shrink-0 h-9 px-3 rounded-full text-sm border '+(k===i?'bg-sage text-white border-sage':'bg-card border-line')}><span className="num mr-1">{k+1}</span>{x.t}</button>)}
       </div>
-      <div className="mt-4 flex items-baseline justify-between px-1"><div><span className="num text-brown mr-1">{i+1}/{STAGES.length}</span><span className="text-lg">{s.t}</span></div><span className="text-xs text-mute">訪客看到：{s.sub}</span></div>
+      <div className="mt-4 flex items-baseline justify-between px-1"><div><span className="num text-brown mr-1">{i+1}/{STAGES.length}</span><span className="text-lg">{s.t}</span></div><span className="text-xs text-mute">{TR.who}看到：{s.sub}</span></div>
       <div className="mt-2 px-3 py-2 rounded-xl bg-sageL text-sageD text-sm">💡 {s.tip}</div>
       <div className="mt-3">{phoneUi}</div>
       {navBtns}
       {linkBlock}
-      {genBlock}
     </div>
   );
 }
@@ -3232,6 +3245,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-044','10-07','未審核訪客檢視更新為新的加入流程：分「加入會員」（5 步）與「應徵老師」（9 步：開啟系統→選擇→應徵職務→填寫簡歷→簡歷已送出→已約面試→錄取選編號→開通完成→歡迎畫面）兩種範例畫面與引導說明；拿掉最下方的「產生名單資料」工具'],
   ['v0.1-043','10-07','加入流程改版（需 GAS gas-4.1）：未開通的人選「成為會員」（手機、稱呼、生日，送出立即開通）或「成為工作夥伴」→ 老師／櫃台 → 填個人簡歷（手機、姓名、性別、生日、地址、緊急聯絡人、經歷、希望條件、個資告知同意）；老闆頁「應徵與會員」：約面試、錄取、不錄取；錄取後申請人自己選正職／兼職、上下牌時間與編號，送出即開通；不錄取的履歷 6 個月後自動清除'],
   ['v0.1-042','10-07','線上開通（需 GAS gas-4）：申請頁改為線上填寫（身分、姓名、上下牌時間、正職／兼職（支援）、選編號 10～50 號可翻頁，老闆可開放到 100 號），送出後老闆／主管在設定頁「人員開通申請」審核，核准時 GAS 用 GITHUB_TOKEN 寫入 GitHub 上的 members.json；老闆頁頂部提醒待審核筆數；線上開通的人第一次進入不用再設定編號姓名'],
   ['v0.1-041','10-07','支援老師現結改列為支出：每日訂單、月報、日結的「支出」包含支援老師現結；「老師抽成」只算正職老師（5／20 號發薪）；現金結餘＝現金收入 − 現金支出'],
