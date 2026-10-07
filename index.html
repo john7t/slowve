@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-047</title>
+<title>緩緩門店 v0.1-048</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-047';
+const VER='v0.1-048';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -247,12 +247,26 @@ function statsOf(orders,S){
 /* 現金結餘（v0.1-040）：手上應該有的現金＝現金收入（不含跳單）－ 現金支出 － 支援老師現結。
    正職老師的費用 5 號／20 號才發，這裡還沒扣，所以會比店家淨額多；跟日結的「應有現金」是同一個算法。
    v0.1-041：支援老師現結當作支出（雜項現金支出）顯示；「老師抽成」只算正職老師（月結），店家淨額不重複扣。 */
-const CashBox=({cashIn,expCash,sup,unpaidT})=>(
-  <div className="mt-3 pt-3 border-t border-line">
-    <div className="flex items-baseline justify-between"><span className="text-sm">現金結餘</span><span className="serif text-2xl text-sageD num">{money(cashIn-expCash-sup)}</span></div>
-    <div className="text-xs text-mute num mt-0.5">現金收入 {money(cashIn)} − 現金支出 {money(expCash+sup)}{sup>0?'（含支援老師 '+money(sup)+'）':''}</div>
-    {unpaidT>0&&<div className="text-xs text-brown num">正職老師費用 {money(unpaidT)} 於 5／20 號發薪，這裡未扣除</div>}
-  </div>);
+/* 統計卡（v0.1-048）：營業額、現金支出、現金結餘、老師費用、公司淨利，各一排（左：名稱＋說明，右：大字金額，顏色不同）
+   現金支出＝店內現金付的雜項支出＋支援老師現結；現金結餘＝現金收入（營業額扣掉跳單未收）－現金支出；
+   老師費用＝正職老師的費用（5／20 號發薪，支援老師已現結不重複算）；公司淨利＝現金結餘－老師費用（有非現金支出時再扣掉） */
+const MR_COL={amt:'#a0784f',exp:'#b5654f',cash:'#6f7d62',fee:'#7d6385',net:'#3f6478'};
+function MoneyRows({title,meta,amt,cashIn,expCash,nonCash,sup,skipRev,fee}){
+  const exp=expCash+sup,cash=cashIn-exp,net=cash-fee-(nonCash||0);   // 非現金支出（如房租轉帳）不影響現金，但公司淨利要扣
+  const R=(lab,sub,val,c,first)=>(
+    <div className={'flex items-center justify-between gap-3 '+(first?'':'mt-3 pt-3 border-t border-line')}>
+      <div className="min-w-0"><div className="text-[17px] font-semibold">{lab}</div><div className="text-xs text-mute num mt-0.5">{sub}</div></div>
+      <div className={'serif num whitespace-nowrap '+(first?'text-3xl':'text-[1.7rem]')} style={{color:val<0?'#b5654f':c}}>{val<0?'-'+money(-val):money(val)}</div>
+    </div>);
+  const expSub=sup>0?'雜項支出 ＋ 支援老師費用 '+money(sup):'雜項支出（店內現金）';
+  return (<>
+    {R(title,meta,amt,MR_COL.amt,true)}
+    {R('現金支出',expSub,exp,MR_COL.exp)}
+    {R('現金結餘',skipRev>0?'營業額 − 跳單未收 '+money(skipRev)+' − 現金支出':'營業額 − 現金支出',cash,MR_COL.cash)}
+    {R('老師費用','正職老師・5／20 號發薪',fee,MR_COL.fee)}
+    {R('公司淨利',nonCash>0?'現金結餘 − 老師費用 − 非現金支出 '+money(nonCash):'現金結餘 − 老師費用',net,MR_COL.net)}
+  </>);
+}
 /* 支援老師（v0.1-039）：編號列在設定 support，每天下班向櫃台領現金。
    應付＝當天老師費用（支數×每支費用＋老點，含加鐘、修腳皮）－ 責任歸他的跳單金額。
    現結從櫃台現金付出，所以日結的應有現金要扣掉；費用本來就算在老師抽成裡，店家淨額不重複扣。 */
@@ -759,16 +773,8 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
 
   const summary=(
     <Card className="p-4 mb-3">
-      <div className="flex items-end justify-between">
-        <Stat label="營業額" value={money(st.amt)} big tone="brown"/>
-        <div className="text-right text-sm text-mute">{st.n} 單{st.guests>st.n&&<span>・{st.guests} 位</span>}{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</div>
-      </div>
-      <CashBox cashIn={st.cash} expCash={ex.cash} sup={sup.pay} unpaidT={st.cm-sup.cm}/>
-      <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
-        <Stat label={sup.n?'老師抽成（正職）':'老師抽成'} value={money(st.cm-sup.cm)}/>
-        <Stat label="支出" value={money(ex.total+sup.pay)}/>
-        <Stat label="店家淨額" value={money(st.amt-(st.cm-sup.cm)-ex.total-sup.pay)} tone="sage"/>
-      </div>
+      <MoneyRows title="營業額" meta={<>{st.n} 單{st.guests>st.n&&<span>・{st.guests} 位</span>}・{st.zh} 支{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</>}
+        amt={st.amt} cashIn={st.cash} expCash={ex.cash} nonCash={ex.total-ex.cash} sup={sup.pay} skipRev={st.skipRev} fee={st.cm-sup.cm}/>
       {st.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {st.skipN} 筆・未收 {money(st.skip)}{st.skipRev>0&&<span>（其中 {money(st.skipRev)} 計入營業額）</span>}</div>}
     </Card>
   );
@@ -958,24 +964,15 @@ function MonthPage({S,rev,goDay,openPay}){
       <div className="mb-3"><PeriodSeg value={per} onChange={setPer} ym={ym}/></div>
 
       <Card className="p-4 mb-3">
-        <div className="flex items-end justify-between">
-          <Stat label={(per==='all'?'本月':PERIOD_LABEL[per])+'營業額'} value={money(data.tot.amt)} big tone="brown"/>
-          <div className="text-sm text-mute text-right">{data.tot.n} 單・{data.tot.zh} 支{pd&&<div className="text-xs text-brown">發薪日 {fmtPayDay(pd)}</div>}</div>
-        </div>
-        <CashBox cashIn={data.tot.cash} expCash={data.tot.expCash} sup={data.tot.sup} unpaidT={data.tot.cm-data.tot.supCm}/>
-        <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-line">
-          <Stat label={data.tot.sup||data.tot.supCm?'老師抽成（正職）':'老師抽成'} value={money(data.tot.cm-data.tot.supCm)}/>
-          <Stat label="支出" value={money(data.tot.exp+data.tot.sup)}/>
-          <Stat label="店家淨額" value={money(data.tot.amt-(data.tot.cm-data.tot.supCm)-data.tot.exp-data.tot.sup)} tone="sage"/>
-        </div>
+        <MoneyRows title={(per==='all'?'本月':PERIOD_LABEL[per])+'營業額'} meta={<>{data.tot.n} 單・{data.tot.zh} 支{pd&&<span className="text-brown">・{fmtPayDay(pd)} 發薪</span>}</>}
+          amt={data.tot.amt} cashIn={data.tot.cash} expCash={data.tot.expCash} nonCash={data.tot.exp-data.tot.expCash} sup={data.tot.sup} skipRev={data.tot.skipRev} fee={data.tot.cm-data.tot.supCm}/>
         {data.tot.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {data.tot.skipN} 筆・未收 {money(data.tot.skip)}{data.tot.skipRev>0&&<span>（其中 {money(data.tot.skipRev)} 計入營業額）</span>}</div>}
-        {data.tot.sup>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-brown num">支出含支援老師現結 {money(data.tot.sup)}<span className="text-xs text-mute ml-1">（每日從櫃台現金付出，不列入正職老師抽成）</span></div>}
         {per==='all'&&<div className="mt-3 pt-3 border-t border-line grid grid-cols-2 gap-2 num">
           {['h1','h2'].map(h=>(
             <button key={h} className="text-left rounded-xl bg-bg border border-line px-3 py-2 active:bg-sageL" onClick={()=>setPer(h)}>
               <div className="text-xs text-mute">{PERIOD_LABEL[h]} {periodText(ym,h)}</div>
               <div className="text-lg">{money(halves[h].amt)}</div>
-              <div className="text-xs text-mute">抽成 {money(halves[h].cm-halves[h].supCm)}</div>
+              <div className="text-xs text-mute">老師費用 {money(halves[h].cm-halves[h].supCm)}</div>
               <div className="text-xs text-brown">{fmtPayDay(payDay(ym,h))} 發薪</div>
             </button>))}
         </div>}
@@ -3360,6 +3357,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-048','10-08','每日訂單、月報統計卡改版：營業額、現金支出、現金結餘、老師費用、公司淨利各一排（左邊粗體名稱＋灰色說明、右邊不同顏色的大字金額）；「正職老師抽成」改稱「老師費用」；公司淨利＝現金結餘 − 老師費用'],
   ['v0.1-047','10-07','額外品項可設定「可單點」：老闆在設定頁勾選後，客人可以不搭主項目、只點該項（例：只刮痧或只拔罐），金額與支數照設定計算；沒勾選的品項仍需搭配主項目'],
   ['v0.1-046','10-07','老師頁接上真實資料（需 GAS gas-4.2）：老師用 LINE 登入後，從雲端讀取自己的今日服務、本期（上期／下期）支數、老點、費用、加扣項與預估應領，以及每日服務明細（可切換月份）；不顯示客人付的金額；支援老師顯示每日現結；資料存在手機，離線時先顯示上次讀到的內容'],
   ['v0.1-045','10-07','已作廢的訂單可以「刪除」：拿掉流水號（可再給別的訂單使用）、仍以「已刪除（原 #N）」顯示在列表最下面且不計入統計；後面訂單的流水號不遞補（對應紙本單號）'],
