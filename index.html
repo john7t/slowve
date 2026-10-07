@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-045</title>
+<title>緩緩門店 v0.1-046</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-045';
+const VER='v0.1-046';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -2211,8 +2211,115 @@ function RolePage({mode,head,B,phone,wide,xwide}){
   );
 }
 
-function TeacherHome({me,mode}){
+/* ---- 老師頁（正式資料，v0.1-046）：LINE 登入 → GAS my → 只有自己的服務明細、支數、費用、加扣項（不含客人付的金額） ---- */
+const MY_KEY='slowve.my.';   // 每月最後一次讀到的資料（離線時先顯示）
+const myLabel=l=>{
+  const p=[];
+  if(l.svc)p.push(SVC_SHORT[l.svc]+l.min+(l.promo?'・平日':''));
+  if(l.ex)p.push('加鐘'+(l.exs&&l.exs!==l.svc?SVC_SHORT[l.exs]:'')+(l.ex*30)+'分');
+  (l.ad||[]).forEach(a=>p.push(a));
+  return p.join(' ＋ ')+(l.xsOf?'（'+l.xsOf+' 老師的客人）':'');
+};
+function TeacherLive({me,mode}){
+  const S=loadSettings();
+  const today=bizToday(S.cutoff);
+  const [ym,setYm]=useState(today.slice(0,7));
+  const [per,setPer]=useState(()=>Number(today.slice(8))<=15?'h1':'h2');
+  const [data,setData]=useState(()=>{try{return JSON.parse(localStorage.getItem(MY_KEY+today.slice(0,7))||'null')}catch(_e){return null}});
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState('');
+  const [open,setOpen]=useState({});
+  const load=async(m)=>{
+    setBusy(true);setErr('');
+    try{
+      const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();
+      if(!t)throw new Error('取不到 LINE 身分，請關閉後重新開啟');
+      const j=await cloud.call({action:'my',idToken:t,ym:m},40000);
+      setData(j);try{localStorage.setItem(MY_KEY+m,JSON.stringify(j))}catch(_e){}
+    }catch(e){setErr(e.message)}
+    setBusy(false);
+  };
+  useEffect(()=>{let c=null;try{c=JSON.parse(localStorage.getItem(MY_KEY+ym)||'null')}catch(_e){}setData(c);load(ym)},[ym]);
+  const shiftM=n=>{const a=ym.split('-').map(Number);const d=new Date(a[0],a[1]-1+n,1);const k=d.getFullYear()+'-'+pad(d.getMonth()+1);setYm(k);setPer(k===today.slice(0,7)?(Number(today.slice(8))<=15?'h1':'h2'):'h1')};
+  const D=data&&data.ym===ym?data:null;
+  const lines=D?D.lines:[];
+  const [from,to]=periodRange(ym,per);
+  const inP=l=>{const d=Number(l.date.slice(8));return d>=from&&d<=to};
+  const pl=lines.filter(inP);
+  const zh=a=>a.reduce((s,l)=>s+(l.zh||0),0),fee=a=>a.reduce((s,l)=>s+(l.cm||0),0),ldN=a=>a.filter(l=>l.ld).length;
+  const adj=D?D.adj.filter(j=>(j.p||'h2')===per):[];
+  const adjSum=adj.reduce((s,j)=>s+j.amt,0);
+  const sup=D&&D.support;
+  const supP=D?D.sup.filter(x=>{const d=Number(x.date.slice(8));return d>=from&&d<=to}):[];
+  const tl=lines.filter(l=>l.date===today);
+  const byDay={};pl.forEach(l=>{(byDay[l.date]=byDay[l.date]||[]).push(l)});
+  const dates=Object.keys(byDay).sort().reverse();
+  const isCur=ym===today.slice(0,7);
+  const pd=payDay(ym,per);
+  const seg=(<div className="flex rounded-lg border border-line overflow-hidden text-xs">{['h1','h2'].map(h=><button key={h} className={'px-3 h-7 '+(per===h?'bg-sage text-white':'bg-card')} onClick={()=>setPer(h)}>{PERIOD_LABEL[h]}</button>)}</div>);
+  const status=(
+    <div className="mb-3 rounded-xl border border-line bg-card px-3 py-2 text-xs flex items-center gap-2">
+      <span className="flex-1 min-w-0">
+        {D?<>資料更新：<span className="num">{D.updatedAt?clockText(D.updatedAt):'本月尚無紀錄'}</span></>:busy?'讀取中…':'尚未讀取'}
+        <span className="block text-mute">服務紀錄由櫃台／主管登打後上傳，可能晚一點才會出現。</span>
+        {err&&<span className="block text-warn">✗ {err}{D?'（顯示上次讀到的資料）':''}</span>}
+      </span>
+      <button className="shrink-0 h-8 px-3 rounded-full border border-sage text-sageD disabled:opacity-40" disabled={busy} onClick={()=>load(ym)}>{busy?'讀取中':'重新整理'}</button>
+    </div>);
+  const monthNav=(
+    <div className="flex items-center justify-between mb-3">
+      <button className="w-10 h-10 rounded-full bg-card border border-line" onClick={()=>shiftM(-1)} aria-label="上個月">◀</button>
+      <div className="serif text-xl num">{ym.slice(0,4)} 年 {Number(ym.slice(5))} 月</div>
+      <button className="w-10 h-10 rounded-full bg-card border border-line disabled:opacity-30" disabled={isCur} onClick={()=>shiftM(1)} aria-label="下個月">▶</button>
+    </div>);
+  const B=[
+    (<Sec title={'今日服務・'+fmtDate(today)}>
+        {!isCur?<Ph>切回本月才看得到今日服務</Ph>:<>
+          <div className="grid grid-cols-4 gap-2"><KV k="單數" v={tl.filter(l=>!l.xsOf).length}/><KV k="支數" v={zh(tl)}/><KV k="老點" v={ldN(tl)}/><KV k="費用" v={money(fee(tl))} cls="text-brown"/></div>
+          {tl.length===0&&<div className="text-xs text-mute mt-2">今天還沒有上傳的服務紀錄。</div>}
+          {sup&&tl.length>0&&<div className="mt-2 px-3 py-2 rounded-lg bg-brownL text-brown text-xs">支援老師：下班時向櫃台領現金。{(D.sup.find(x=>x.date===today))?'今日已結算 '+money(D.sup.find(x=>x.date===today).pay):'實際金額以櫃台結算為準。'}</div>}
+        </>}
+      </Sec>),
+    (<Sec title={(per==='h1'?'上期':'下期')+'累計'} right={seg}>
+        <div className="text-xs text-mute mb-2 num">{periodText(ym,per)}{!sup&&pd?'・發薪日 '+fmtPayDay(pd):''}</div>
+        <div className="grid grid-cols-3 gap-2 mb-3"><KV k="支數" v={zh(pl)}/><KV k="老點" v={ldN(pl)}/><KV k="費用合計" v={money(fee(pl))}/></div>
+        {sup?<>
+          <div className="text-sm text-brown mb-1">支援老師：費用每天下班時向櫃台領現金（現結），不另外發薪。</div>
+          {supP.length>0&&<div className="text-xs">{supP.map(x=><div key={x.date} className="flex justify-between py-1 border-b border-line last:border-0 num"><span>{fmtDate(x.date)}　{x.zh} 支{x.ded?<span className="text-warn">・跳單扣 {money(x.ded)}</span>:''}</span><span>已現結 {money(x.pay)}</span></div>)}</div>}
+        </>:<>
+          {adj.map((j,i)=><div key={i} className="flex justify-between text-sm py-1"><span className="text-mute">{j.amt<0?'扣項':'加項'}：{j.name}</span><span className={'num '+(j.amt<0?'text-warn':'')}>{smoney(j.amt)}</span></div>)}
+          <div className="flex justify-between items-end pt-2 border-t border-line"><span className="text-mute">預估應領</span><span className="serif text-2xl text-brown num">{money(fee(pl)+adjSum)}</span></div>
+          <div className="text-[11px] text-mute mt-1">實際金額以發薪時的薪資明細為準。</div>
+        </>}
+      </Sec>),
+    (<Sec title={'服務明細・'+(per==='h1'?'上期':'下期')}>
+        {dates.length===0&&<Ph>{D?'這段期間沒有服務紀錄':'讀取中…'}</Ph>}
+        {dates.map(d=>{const a=byDay[d];const op=open[d]!==false;return (
+          <div key={d} className="border-b border-line last:border-0">
+            <button className="w-full flex items-center justify-between py-2 text-sm" onClick={()=>setOpen(o=>Object.assign({},o,{[d]:!op}))}>
+              <span className="num">{fmtDate(d)}{d===today&&<span className="ml-1 text-[11px] px-1.5 rounded bg-sageL text-sageD">今天</span>}</span>
+              <span className="num text-mute">{zh(a)} 支・{money(fee(a))} <span className="text-xs">{op?'▲':'▼'}</span></span>
+            </button>
+            {op&&<div className="pb-2">{a.map((l,i)=>(
+              <div key={i} className="grid grid-cols-[2.8rem_1fr_2rem_3.6rem] gap-1 py-1 text-sm items-baseline">
+                <span className="num text-xs text-mute">#{l.sn||'-'}</span>
+                <span className="min-w-0">{myLabel(l)}{l.ld&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>}{l.skip&&<span className="ml-1 text-[10px] px-1 rounded bg-warnL text-warn">跳單{l.skipBy==='teacher'?'・老師':''}</span>}</span>
+                <span className="num text-center">{l.zh}</span>
+                <span className="num text-right">{money(l.cm)}</span>
+              </div>))}</div>}
+          </div>);})}
+        <div className="text-[11px] text-mute mt-2">只顯示你自己的支數與費用。責任歸老師的跳單，扣款會列在加扣項。</div>
+      </Sec>),
+    (<Sec title="上牌打卡"><PunchPanel me={me} kind="teacher"/></Sec>),
+    (<Sec title="我的預約情形" demo><MyDayStrip tc={DEMO_SHIFT[me&&me.code]?me.code:'77'} day="today"/></Sec>),
+  ];
+  const head=(<div className="mt-1">{monthNav}{status}</div>);
+  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4]} wide={{cols:[[0,1,3],[2,4]]}} xwide={{cols:[[0,3],[1],[2,4]]}}/>;
+}
+
+function TeacherHome({me,mode,real}){
   mode=mode||'phone';
+  if(real&&GAS_URL)return <TeacherLive me={me} mode={mode}/>;
   const S=loadSettings();
   const [per,setPer]=useState(()=>new Date().getDate()<=15?'h1':'h2');
   const [day,setDay]=useState('today');
@@ -3172,7 +3279,7 @@ function RoleView({view,me,mode,bar,real,member}){
   const wide=mode!=='phone';
   return (<div className="min-h-screen">{bar}
     <div className={(wide?'max-w-[1400px] px-6':'max-w-md px-4')+' mx-auto pt-4 flex items-baseline gap-2'}><span className="serif text-2xl tracking-widest text-sageD">緩緩</span><span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span><span className="text-sm text-mute ml-1">{VIEWS[view].label}</span></div>
-    <Page key={view+mode} me={me} mode={mode}/></div>);
+    <Page key={view+mode} me={me} mode={mode} real={real}/></div>);
 }
 
 /* 示範模式：?demo=roles，不用 LINE 登入，直接切換各身分畫面（看手機／平板版面用） */
@@ -3248,6 +3355,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-046','10-07','老師頁接上真實資料（需 GAS gas-4.2）：老師用 LINE 登入後，從雲端讀取自己的今日服務、本期（上期／下期）支數、老點、費用、加扣項與預估應領，以及每日服務明細（可切換月份）；不顯示客人付的金額；支援老師顯示每日現結；資料存在手機，離線時先顯示上次讀到的內容'],
   ['v0.1-045','10-07','已作廢的訂單可以「刪除」：拿掉流水號（可再給別的訂單使用）、仍以「已刪除（原 #N）」顯示在列表最下面且不計入統計；後面訂單的流水號不遞補（對應紙本單號）'],
   ['v0.1-044','10-07','未審核訪客檢視更新為新的加入流程：分「加入會員」（5 步）與「應徵老師」（9 步：開啟系統→選擇→應徵職務→填寫簡歷→簡歷已送出→已約面試→錄取選編號→開通完成→歡迎畫面）兩種範例畫面與引導說明；拿掉最下方的「產生名單資料」工具'],
   ['v0.1-043','10-07','加入流程改版（需 GAS gas-4.1）：未開通的人選「成為會員」（手機、稱呼、生日，送出立即開通）或「成為工作夥伴」→ 老師／櫃台 → 填個人簡歷（手機、姓名、性別、生日、地址、緊急聯絡人、經歷、希望條件、個資告知同意）；老闆頁「應徵與會員」：約面試、錄取、不錄取；錄取後申請人自己選正職／兼職、上下牌時間與編號，送出即開通；不錄取的履歷 6 個月後自動清除'],
