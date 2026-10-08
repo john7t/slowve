@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-050</title>
+<title>緩緩門店 v0.1-051</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-050';
+const VER='v0.1-051';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -993,6 +993,9 @@ function MonthPage({S,rev,goDay,openPay}){
           </button>
         ))}
       </Card>}
+
+      <div className="text-sm text-mute mt-5 mb-2 px-1">{Number(a[1])} 月請假</div>
+      <LeaveCalendar ym={ym}/>
 
       {data.tot.n>0&&<>
         <div className="flex items-baseline justify-between mt-5 mb-2 px-1">
@@ -2339,6 +2342,21 @@ function ProfileReview({toast}){
 const LEAVE_KIND={personal:'事假',sick:'病假',off:'休假'};
 const LEAVE_ST={ok:'已登記',pending:'待審核',approved:'已核准',rejected:'已退回',cancelled:'已取消'};
 const leaveTone=st=>st==='rejected'||st==='cancelled'?'text-mute line-through':st==='pending'?'text-brown':'text-sageD';
+// 請假落在某月的天數（全天）或時數（部分時段）；已取消、已退回的不算
+const leaveActive=L=>L.status!=='cancelled'&&L.status!=='rejected';
+function leaveInMonth(L,ym){
+  const a=ym+'-01',dim=new Date(Number(ym.slice(0,4)),Number(ym.slice(5)),0).getDate(),b=ym+'-'+pad(dim);
+  const f=L.from>a?L.from:a,t=(L.to||L.from)<b?(L.to||L.from):b;
+  if(f>t)return {days:0,hours:0,dates:[]};
+  const dates=[];for(let d=parseYmd(f);ymd(d)<=t;d.setDate(d.getDate()+1))dates.push(ymd(d));
+  if(L.all)return {days:dates.length,hours:0,dates};
+  const m=x=>{const q=String(x||'0:0').split(':').map(Number);return q[0]*60+q[1]};
+  return {days:0,hours:Math.max(0,(m(L.t2)-m(L.t1))/60),dates};
+}
+const leaveSum=(list,ym)=>{const r={personal:{days:0,hours:0},sick:{days:0,hours:0},off:{days:0,hours:0}};
+  list.filter(leaveActive).forEach(L=>{const x=leaveInMonth(L,ym);if(r[L.kind]){r[L.kind].days+=x.days;r[L.kind].hours+=x.hours}});return r};
+const dayHr=x=>x.days||x.hours?[x.days?x.days+' 天':'',x.hours?(+x.hours.toFixed(1))+' 小時':''].filter(Boolean).join(' '):'0';
+const LEAVE_COL={personal:'#a0784f',sick:'#b5654f',off:'#6f7d62'};
 const leaveWhen=L=>{const f=fmtDate(L.from).replace(/（.）/,'');return (L.to&&L.to!==L.from?f+'～'+fmtDate(L.to).replace(/（.）/,''):fmtDate(L.from))+'・'+(L.all?'全天':L.t1+'～'+L.t2)};
 function LeavePanel(){
   const today=bizToday(loadSettings().cutoff);
@@ -2363,6 +2381,9 @@ function LeavePanel(){
   };
   const cancel=async L=>{if(!window.confirm('取消 '+leaveWhen(L)+' 的'+LEAVE_KIND[L.kind]+'？'))return;setBusy(true);try{await call({op:'cancel',id:L.id})}catch(e){setErr(e.message)}setBusy(false)};
   const inp='w-full min-w-0 h-11 px-3 rounded-xl border border-line bg-card num';
+  const ym=today.slice(0,7);
+  const mine=(list||[]).filter(L=>L.from<=ym+'-31'&&L.to>=ym+'-01');
+  const later=(list||[]).filter(L=>L.from>ym+'-31');
   return (
     <div>
       {!open&&<button className="w-full h-11 rounded-xl bg-sage text-white" onClick={()=>{setOpen(true);setErr('')}}>＋ 我要請假</button>}
@@ -2384,16 +2405,71 @@ function LeavePanel(){
         <div className="text-[11px] text-mute mt-2">{review?'送出後由老闆／主管審核。':'送出即完成登記，不需要審核。'}可以取消還沒結束的請假。</div>
       </div>}
       {!open&&err&&<div className="text-sm text-warn mt-2">{err}</div>}
-      <div className="text-xs text-mute mt-3 mb-1">我的請假紀錄（最近 60 天與之後）</div>
-      {list===null?<Ph>讀取中…</Ph>:list.length===0?<Ph>沒有請假紀錄</Ph>:
-        list.map(L=>(
+      {list!==null&&(()=>{const sm=leaveSum(list,ym);return (
+        <div className="grid grid-cols-3 gap-2 mt-3">{Object.keys(LEAVE_KIND).map(k=>(
+          <div key={k} className="rounded-xl bg-bg border border-line px-2 py-2 text-center"><div className="text-xs text-mute">本月{LEAVE_KIND[k]}</div><div className="num text-lg" style={{color:LEAVE_COL[k]}}>{dayHr(sm[k])}</div></div>))}</div>);})()}
+      <div className="text-xs text-mute mt-3 mb-1">{Number(ym.slice(5))} 月請假紀錄</div>
+      {list===null?<Ph>讀取中…</Ph>:mine.length===0?<Ph>本月沒有請假</Ph>:
+        mine.map(L=>(
           <div key={L.id} className="flex items-center gap-2 py-2 border-b border-line last:border-0 text-sm">
             <span className="px-1.5 rounded bg-brownL text-brown text-xs shrink-0">{LEAVE_KIND[L.kind]}</span>
             <span className="flex-1 min-w-0 num">{leaveWhen(L)}{L.reason&&<span className="block text-xs text-mute truncate">{L.reason}</span>}{L.note&&<span className="block text-xs text-warn">{L.note}</span>}</span>
             <span className={'text-xs shrink-0 '+leaveTone(L.status)}>{LEAVE_ST[L.status]}</span>
             {L.to>=today&&L.status!=='cancelled'&&L.status!=='rejected'&&<button className="text-xs text-mute underline shrink-0" disabled={busy} onClick={()=>cancel(L)}>取消</button>}
           </div>))}
+      {later.length>0&&<div className="mt-3"><div className="text-xs text-mute mb-1">之後月份</div>{later.map(L=>(
+        <div key={L.id} className="flex items-center gap-2 py-2 border-b border-line last:border-0 text-sm">
+          <span className="px-1.5 rounded bg-brownL text-brown text-xs shrink-0">{LEAVE_KIND[L.kind]}</span>
+          <span className="flex-1 min-w-0 num">{leaveWhen(L)}</span>
+          <span className={'text-xs shrink-0 '+leaveTone(L.status)}>{LEAVE_ST[L.status]}</span>
+          {L.status!=='cancelled'&&L.status!=='rejected'&&<button className="text-xs text-mute underline shrink-0" disabled={busy} onClick={()=>cancel(L)}>取消</button>}
+        </div>))}</div>}
     </div>
+  );
+}
+/* 月報：本月請假月曆（每天標出請假老師的編號，顏色＝假別；待審核的用虛線框） */
+function LeaveCalendar({ym}){
+  const st=useCloud();
+  const [d,setD]=useState(null);
+  const [err,setErr]=useState('');
+  const [sel,setSel]=useState(null);
+  useEffect(()=>{if(!st.on)return;setD(null);setSel(null);setErr('');cloud.call({action:'leavelist',ym}).then(setD).catch(e=>setErr(e.message))},[st.on,ym]);
+  if(!st.on)return <Card className="p-3 text-sm text-mute">用 LINE 登入雲端同步後，這裡會顯示本月請假月曆。</Card>;
+  if(err)return <Card className="p-3 text-sm text-warn">✗ {err}</Card>;
+  if(!d)return <Card className="p-3 text-sm text-mute">讀取中…</Card>;
+  const list=(d.list||[]).filter(leaveActive);
+  const a=ym.split('-').map(Number);const dim=new Date(a[0],a[1],0).getDate();const first=new Date(a[0],a[1]-1,1).getDay();
+  const byDay={};list.forEach(L=>leaveInMonth(L,ym).dates.forEach(x=>{(byDay[x]=byDay[x]||[]).push(L)}));
+  const today=ymd(new Date());
+  const who=L=>L.tc||String(L.name||'').slice(0,2);
+  const per={};list.forEach(L=>{const k=L.tc||L.name;const p=per[k]||(per[k]={k,tc:L.tc,name:L.name,list:[]});p.list.push(L)});
+  const people=Object.values(per).sort((x,y)=>(Number(x.tc)||9999)-(Number(y.tc)||9999));
+  const cells=[];for(let i=0;i<first;i++)cells.push(null);for(let i=1;i<=dim;i++)cells.push(ym+'-'+pad(i));
+  return (
+    <Card className="p-3">
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-mute mb-1">{WK.split('').map(w=><div key={w}>{w}</div>)}</div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((x,i)=>{if(!x)return <div key={'b'+i}></div>;const ls=byDay[x]||[];const on=sel===x;return (
+          <button key={x} onClick={()=>setSel(on?null:x)} className={'min-h-[3.4rem] rounded-lg px-0.5 py-1 text-center align-top border '+(on?'border-sage bg-sageL':x===today?'border-brown/50 bg-card':'border-transparent '+(ls.length?'bg-brownL/40':'bg-bg'))}>
+            <div className={'text-xs num '+(x===today?'text-brown font-semibold':'text-mute')}>{Number(x.slice(8))}</div>
+            {ls.slice(0,4).map(L=><div key={L.id} className={'text-[11px] leading-tight num font-semibold '+(L.status==='pending'?'opacity-60 underline decoration-dotted':'')} style={{color:LEAVE_COL[L.kind]}}>{who(L)}{L.all?'':'½'}</div>)}
+            {ls.length>4&&<div className="text-[10px] text-mute">+{ls.length-4}</div>}
+          </button>);})}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] mt-2">{Object.keys(LEAVE_KIND).map(k=><span key={k} style={{color:LEAVE_COL[k]}}>■ {LEAVE_KIND[k]}</span>)}<span className="text-mute">½＝部分時段・點線＝待審核</span></div>
+      {sel&&<div className="mt-2 pt-2 border-t border-line text-sm">
+        <div className="text-xs text-mute mb-1">{fmtDate(sel)} 請假</div>
+        {(byDay[sel]||[]).length===0?<div className="text-xs text-mute">沒有人請假</div>:(byDay[sel]||[]).map(L=>(
+          <div key={L.id} className="flex items-center gap-2 py-1 text-sm num"><b className="w-10">{L.tc||'—'}</b><span>{L.name}</span><span className="text-xs" style={{color:LEAVE_COL[L.kind]}}>{LEAVE_KIND[L.kind]}</span><span className="text-xs text-mute">{L.all?'全天':L.t1+'～'+L.t2}</span>{L.status==='pending'&&<span className="text-xs text-brown">待審核</span>}<span className="flex-1 min-w-0 truncate text-xs text-mute">{L.reason}</span></div>))}
+      </div>}
+      {people.length>0&&<div className="mt-2 pt-2 border-t border-line">
+        <div className="text-xs text-mute mb-1">本月請假統計</div>
+        {people.map(p=>{const sm=leaveSum(p.list,ym);return (
+          <div key={p.k} className="flex items-center gap-2 py-1 text-sm num"><b className="w-10">{p.tc||'—'}</b><span className="w-14 truncate">{p.name}</span>
+            {Object.keys(LEAVE_KIND).map(k=><span key={k} className="text-xs" style={{color:sm[k].days||sm[k].hours?LEAVE_COL[k]:'#c4bdb1'}}>{LEAVE_KIND[k]} {dayHr(sm[k])}</span>)}</div>);})}
+      </div>}
+      {people.length===0&&<div className="text-xs text-mute mt-2">本月沒有人請假</div>}
+    </Card>
   );
 }
 /* 老闆頁：請假紀錄（開啟審核時可以核准／退回） */
@@ -3579,6 +3655,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-051','10-08','請假改為依月份顯示（需 GAS gas-4.5）：老師頁顯示本月事假／病假／休假各幾天（部分時段算小時）與本月請假紀錄，之後月份另列；月報新增「本月請假」月曆，每天標出請假老師的編號（顏色＝假別），點一天看明細，下方列出每人本月請假統計'],
   ['v0.1-050','10-08','老師頁新增「我的資料」（需 GAS gas-4.4）：可修改顯示名稱、上下牌時間、性別、手機、通訊地址，第一次自動帶入應徵履歷；目前存檔即生效（顯示名稱與時間同步更新開通名單），設定頁可開啟「修改個人資料需要審核」；老闆頁設定新增「人員資料」可查看全部老師／櫃台資料'],
   ['v0.1-049','10-08','月報「支出分類」點一項可展開該類每筆支出明細（點一筆跳到那天）；老師頁「發薪日」改「費用領取日」、說明改「以領取時的費用明細為準」；新增請假（需 GAS gas-4.3）：老師在自己頁面登記事假／病假／休假（可跨天或部分時段、可取消），目前送出即登記，設定頁可開啟「請假需要審核」，老闆頁設定有請假紀錄'],
   ['v0.1-048','10-08','每日訂單、月報統計卡改版：營業額、現金支出、現金結餘、老師費用、公司淨利各一排（左邊粗體名稱＋灰色說明、右邊不同顏色的大字金額）；「正職老師抽成」改稱「老師費用」；公司淨利＝現金結餘 − 老師費用'],
