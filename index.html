@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-055</title>
+<title>緩緩門店 v0.1-056</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-055';
+const VER='v0.1-056';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -745,7 +745,7 @@ function ShiftSheet({S,orders,shifts,sh,locked,onSave,onDelete,onClose}){
 /* ========== 日頁 ==========
    part：'all'＝手機版與平板雙欄的左欄（全部區塊）；平板三欄時拆成 'side'（日期、統計、支出、老師、日結）與 'list'（訂單列表）
    wide：平板版（不顯示右下「＋」，訂單在右側面板登打）；selId：右側面板正在編輯的訂單 */
-function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,wide,selId,selExpId,openShift}){
+function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,wide,selId,selExpId,openShift,bump}){
   part=part||'all';
   const today=bizToday(S.cutoff);
   const dd=useMemo(()=>getDay(loadMonth(monKey(date)),date),[date,rev]);
@@ -842,6 +842,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
       <div className="text-sm text-mute">支出{ex.total+sup.pay>0&&<span className="ml-2 num">{money(ex.total+sup.pay)}</span>}{sup.pay>0&&<span className="ml-1 text-xs">（含支援老師）</span>}</div>
       {!closed&&<button className="h-8 px-3 rounded-full border border-brown text-brown text-sm bg-card" onClick={()=>openExp(null)}>＋ 新增支出</button>}
     </div>
+    <SupportCounterCard S={S} date={date} bump={bump} closed={closed} expenses={dd.expenses}/>
     {exps.length===0&&!sup.n&&<div className="text-xs text-mute px-1">這天沒有支出</div>}
     {exps.length>0&&<Card className="overflow-hidden">
       {exps.map((e,i)=>(
@@ -997,6 +998,9 @@ function MonthPage({S,rev,goDay,openPay}){
 
       <div className="text-sm text-mute mt-5 mb-2 px-1">{Number(a[1])} 月請假</div>
       <LeaveCalendar ym={ym}/>
+
+      <div className="text-sm text-mute mt-5 mb-2 px-1">{Number(a[1])} 月櫃台差勤</div>
+      <AttMonth ym={ym}/>
 
       {data.tot.n>0&&<>
         <div className="flex items-baseline justify-between mt-5 mb-2 px-1">
@@ -2350,13 +2354,14 @@ function ProfileReview({toast}){
         <div key={P.uid} className="border-b border-line last:border-0">
           <button className="w-full flex items-center gap-2 py-2 text-left" onClick={()=>setOpen(op?null:P.uid)}>
             <span className="w-10 num font-semibold">{P.tc||'—'}</span><span className="flex-1 min-w-0 truncate">{P.name}<span className="ml-1 text-xs text-mute">{P.role==='counter'?'櫃台':''}</span></span>
-            <span className="text-xs text-mute num">{P.in&&P.out?P.in+'～'+P.out:''}</span><span className="text-xs text-mute">{op?'▲':'▼'}</span>
+            <span className="text-xs text-mute num">{P.in&&P.out?P.in+'～'+P.out:''}{P.role==='counter'&&!(P.hr&&P.hr.hire)?<span className="block text-warn">未設人事</span>:''}</span><span className="text-xs text-mute">{op?'▲':'▼'}</span>
           </button>
           {op&&<div className="pb-2 pl-12 text-xs space-y-0.5 num">
             <div><span className="text-mute">性別　</span>{gv('gender',P.gender)||'—'}</div>
             <div><span className="text-mute">手機　</span>{P.phone?<a className="text-sageD underline" href={'tel:'+P.phone}>{P.phone}</a>:'—'}</div>
             <div><span className="text-mute">地址　</span>{(P.city||'')+(P.addr||'')||'—'}</div>
             {P.ua&&<div className="text-mute">更新 {clockText(P.ua)}{P.by?'（'+P.by+'）':''}</div>}
+            {P.role==='counter'&&<HrEditor P={P} onSaved={()=>{load();toast&&toast('已儲存人事設定')}}/>}
           </div>}
         </div>);})}
     </div>
@@ -3295,7 +3300,7 @@ const PK={teacher:{in:'上牌',out:'下牌'},counter:{in:'上班',out:'下班'}}
 const personLabel=p=>p.tc?p.tc+' '+p.name:p.name;
 
 /* ---- 手機端：輸入確認碼 ---- */
-function PunchPanel({me,kind}){   // kind：teacher（上牌／下牌）／counter（上班／下班）
+function PunchPanel({me,kind,onDone,cloudRecs}){   // kind：teacher（上牌／下牌）／counter（上班／下班）
   const L=PK[kind];
   const uid=me&&me.uid;
   const key='mypunch-'+uid+'-'+ymd(new Date());
@@ -3306,13 +3311,14 @@ function PunchPanel({me,kind}){   // kind：teacher（上牌／下牌）／count
   const [tries,setTries]=useState(0);
   const [ok,setOk]=useState(null);
   const inRef=useRef(null);
-  const last=k=>{const r=recs.filter(x=>x.k===k);return r.length?r[r.length-1].t:null};
+  const last=k=>{const r=recs.concat(cloudRecs||[]).filter(x=>x.k===k).map(x=>x.t).sort();return r.length?(k==='in'?r[0]:r[r.length-1]):null};   // 雲端的紀錄（換手機、補打卡）也算
   const start=k=>{setAct(k);setVal('');setTries(0);setOk(null);setSt('input');setTimeout(()=>{try{inRef.current.focus()}catch(_e){}},50)};
   const submit=()=>{
     if(!/^\d{3}$/.test(val))return;
     const d=punchVerify(uid,val);
     if(d){
       const r={k:act,t:hm(d),at:Date.now()};const n=recs.concat([r]);setRecs(n);jset(key,n);
+      onDone&&onDone({k:act,code:val,at:d.getTime()});   // v0.1-056：櫃台打卡上傳雲端
       setOk(r);setSt('idle');setVal('');setTries(0);return;
     }
     const n=tries+1;setTries(n);setVal('');
@@ -3567,48 +3573,239 @@ function MainCounter({me,mode,real,member}){
   );
 }
 
-/* ---- 櫃台人員（個人，正式版 v0.1-055）：打卡、本月差勤、我的班表、請假、我的資料 ----
-   打卡紀錄存在這支手機（同老師的上牌打卡）；班表＝我的資料裡的上下班時間＋請假；請假、我的資料走 GAS（leave／profile，老師用的同一套） */
+/* ---- 櫃台人員（個人，正式版 v0.1-055／差勤 v0.1-056） ----
+   打卡：手機輸入主櫃確認碼 → 先存在這支手機 → 上傳 GAS（punch，GAS 再驗一次確認碼）。
+   差勤：到職日起，正職櫃台每天都要有上班、下班打卡（請假的日子除外），沒有就記「異常」，本人可申請補打卡（填原因，老闆／主管核准）。
+   扣薪（月薪）：日薪＝月薪÷30、時薪＝日薪÷8；遲到、早退按分鐘比例扣；事假扣全額、病假扣一半、休假（排休）不扣（依勞工請假規則）。
+   支援櫃台（無底薪）：時薪 × 實際時數，每天下班向主櫃領現金（日結，記成現金支出）；不記異常、不扣薪。 */
+const ATT_DEMO=true;   // 勞基法違規提示的「範例」差勤資料；跟老闆確認提示文字後改成 false（範例就不再顯示）
 const toMin=t=>{const a=String(t||'').split(':');return a.length===2?Number(a[0])*60+Number(a[1]):null};
-function monthPunches(uid,ym,upto){
-  const out=[];const n=new Date(Number(ym.slice(0,4)),Number(ym.slice(5)),0).getDate();
-  for(let d=1;d<=n;d++){const k=ym+'-'+pad(d);if(k>upto)break;const r=jget('mypunch-'+uid+'-'+k,[]);if(!r.length)continue;
-    const ins=r.filter(x=>x.k==='in'),outs=r.filter(x=>x.k==='out');
-    const i=ins.length?ins[0].t:null,o=outs.length?outs[outs.length-1].t:null;
-    let h=null;if(i&&o){let m=toMin(o)-toMin(i);if(m<0)m+=1440;h=m/60}
-    out.push({date:k,in:i,out:o,h})}
-  return out;
+const minTxt=m=>{m=Math.round(m);const h=Math.floor(m/60),r=m%60;return h?(h+' 小時'+(r?' '+r+' 分':'')):r+' 分'};
+const hrTxt=m=>(+(m/60).toFixed(1))+' 時';
+const leaveOn=(list,d)=>(list||[]).filter(L=>L.status!=='cancelled'&&L.status!=='rejected'&&L.from<=d&&(L.to||L.from)>=d);
+const monthEndOf=ym=>ym+'-'+pad(new Date(Number(ym.slice(0,4)),Number(ym.slice(5)),0).getDate());
+const shiftYm=(ym,n)=>{const d=new Date(Number(ym.slice(0,4)),Number(ym.slice(5))-1+n,1);return d.getFullYear()+'-'+pad(d.getMonth()+1)};
+const workMin=(i,o)=>{let m=toMin(o)-toMin(i);if(m<0)m+=1440;return m};
+const LEAVE_RATE={personal:1,sick:0.5,off:0};   // 扣薪比例：事假全扣、病假扣半、休假不扣
+const PAY_TYPE={monthly:'月薪',none:'無底薪（支援・時薪日結）'};
+// 一天的上下班：第一次上班、最後一次下班
+function inOutOf(recs){const r=recs||[];const i=r.filter(x=>x.k==='in'),o=r.filter(x=>x.k==='out');return {in:i.length?i[0].t:'',out:o.length?o[o.length-1].t:'',fixIn:i.some(x=>x.src==='fix'),fixOut:o.some(x=>x.src==='fix')}}
+/* 差勤計算（櫃台頁與老闆月報共用）
+   A：{hr, shift:{in,out}, punches:{date:[recs]}, fixes, leaves}；回傳每天的狀態、統計、扣薪、勞基法提示 */
+function attCalc(A,ym,today){
+  const hr=A.hr||null,sup=!!(hr&&hr.payType==='none'),monthly=!!(hr&&hr.payType!=='none'&&hr.hire);
+  const sIn=(A.shift&&A.shift.in)||'',sOut=(A.shift&&A.shift.out)||'';
+  const mStart=ym+'-01',mEnd=monthEndOf(ym);
+  const from=hr&&hr.hire&&hr.hire>mStart?hr.hire:mStart;
+  const to=mEnd<today?mEnd:today;
+  const fixes=A.fixes||[];
+  const days=[];
+  for(let d=from;d<=to;d=addDays(d,1)){
+    const io=inOutOf((A.punches||{})[d]);
+    const L=leaveOn(A.leaves,d);const full=L.find(x=>x.all);
+    const pend=fixes.filter(f=>f.date===d&&f.status==='pending');
+    const rej=fixes.filter(f=>f.date===d&&f.status==='rejected');
+    const x={date:d,in:io.in,out:io.out,fixIn:io.fixIn,fixOut:io.fixOut,leave:L,full:!!full,pend,rej,min:io.in&&io.out?workMin(io.in,io.out):null,late:0,early:0,issues:[],pay:0};
+    if(monthly&&!full){
+      let es=sIn,ee=sOut;   // 部分時段請假：請在開頭／結尾的，應到／應退時間往後／往前移
+      L.filter(z=>!z.all).forEach(z=>{if(es&&toMin(z.t1)<=toMin(es)&&toMin(z.t2)>toMin(es))es=z.t2;if(ee&&toMin(z.t2)>=toMin(ee)&&toMin(z.t1)<toMin(ee))ee=z.t1});
+      if(d<today){
+        if(!io.in&&!io.out)x.issues.push('沒有上下班打卡');
+        else{if(!io.in)x.issues.push('缺上班打卡');if(!io.out)x.issues.push('缺下班打卡')}
+      }
+      if(io.in&&es)x.late=Math.max(0,toMin(io.in)-toMin(es));
+      if(io.out&&ee)x.early=Math.max(0,toMin(ee)-toMin(io.out));
+    }
+    if(sup&&x.min!=null)x.pay=Math.round(x.min/60*(Number(hr.hourly)||0));
+    days.push(x);
+  }
+  const worked=days.filter(x=>x.in||x.out);
+  const lateMin=days.reduce((s,x)=>s+x.late+x.early,0);
+  const salary=Number(hr&&hr.salary)||0,daily=salary/30,hourly=daily/8;
+  // 請假扣薪：這個月（到職日以後）每一天的請假
+  const lv={personal:0,sick:0,off:0};
+  if(monthly)for(let d=from;d<=mEnd;d=addDays(d,1))leaveOn(A.leaves,d).forEach(L=>{if(lv[L.kind]==null)return;lv[L.kind]+=L.all?8:Math.min(8,Math.max(0,(toMin(L.t2)-toMin(L.t1))/60))});
+  const dedLate=monthly?lateMin*hourly/60:0;
+  const dedLeave={personal:lv.personal*hourly*LEAVE_RATE.personal,sick:lv.sick*hourly*LEAVE_RATE.sick};
+  const ded=Math.round(dedLate+dedLeave.personal+dedLeave.sick);
+  const law=lawCheck(Object.keys(A.punches||{}).sort().map(d=>{const io=inOutOf(A.punches[d]);return {date:d,in:io.in,out:io.out}}),ym);
+  return {days,sup,monthly,hr,sIn,sOut,from,to,
+    n:{work:worked.filter(x=>x.in).length,late:days.filter(x=>x.late>0).length,early:days.filter(x=>x.early>0).length,lateMin,
+      issue:days.filter(x=>x.issues.length&&!x.pend.length).length,pend:fixes.filter(f=>f.status==='pending').length,
+      min:days.reduce((s,x)=>s+(x.min||0),0),pay:days.reduce((s,x)=>s+x.pay,0)},
+    lv,salary,daily,hourly,dedLate:Math.round(dedLate),dedLeave:{personal:Math.round(dedLeave.personal),sick:Math.round(dedLeave.sick)},ded,net:salary-ded,law};
 }
-const leaveOn=(list,d)=>(list||[]).filter(L=>L.status!=='cancelled'&&L.status!=='rejected'&&L.from<=d&&L.to>=d);
+/* 勞基法檢查（第 30、32、34、35、36 條）。days：[{date,in,out}]（可含上個月最後幾天，連續上班才算得準）；只回報落在 ym 的 */
+function lawCheck(days,ym){
+  const w=[];const inYm=d=>d.slice(0,7)===ym;
+  const done=days.filter(x=>x.in&&x.out).map(x=>Object.assign({},x,{min:workMin(x.in,x.out)}));
+  let ot=0;
+  done.forEach(x=>{if(!inYm(x.date))return;const d=fmtDate(x.date);
+    if(x.min>720)w.push({r:'d12',lv:'bad',date:x.date,t:d+' 工作 '+minTxt(x.min)+'，超過每日上限 12 小時（正常工時＋加班），違反勞基法第 32 條。'});
+    else if(x.min>480)w.push({r:'d8',lv:'warn',date:x.date,t:d+' 工作 '+minTxt(x.min)+'，超過每日正常工時 8 小時，超過的 '+minTxt(x.min-480)+' 屬加班，需依法給加班費（第 30、32 條）。'});
+    if(x.min>480)ot+=x.min-480;
+    if(x.min>240)x.long=true;});
+  // 每週 40 小時（週一～週日）
+  const wk={};done.forEach(x=>{const d=parseYmd(x.date);const k=addDays(x.date,-((d.getDay()+6)%7));(wk[k]=wk[k]||[]).push(x)});
+  Object.keys(wk).sort().forEach(k=>{const a=wk[k];const s=a.reduce((t,x)=>t+x.min,0);const e=addDays(k,6);if(!(inYm(k)||inYm(e)))return;
+    if(s>2400)w.push({r:'w40',lv:'warn',date:k,t:fmtDate(k).replace(/（.）/,'')+'～'+fmtDate(e).replace(/（.）/,'')+' 這週工作 '+minTxt(s)+'，超過每週正常工時 40 小時，超過的部分屬加班（第 30 條）。'})});
+  if(ot>46*60)w.push({r:'m46',lv:'bad',date:ym+'-31',t:'本月加班已達 '+minTxt(ot)+'，超過每月 46 小時上限（經工會或勞資會議同意最多 54 小時，每 3 個月合計不超過 138 小時），違反勞基法第 32 條。'});
+  else if(ot>0)w.push({r:'ot',lv:'info',date:ym+'-31',t:'本月加班合計 '+minTxt(ot)+'（上限每月 46 小時）。'});
+  // 連續上班超過 6 天
+  const set={};days.filter(x=>x.in||x.out).forEach(x=>{set[x.date]=1});
+  const ds=Object.keys(set).sort();let run=[];
+  const flush=()=>{if(run.length>6&&inYm(run[run.length-1]))w.push({r:'c6',lv:'bad',date:run[0],t:fmtDate(run[0]).replace(/（.）/,'')+' 起連續上班 '+run.length+' 天（到 '+fmtDate(run[run.length-1]).replace(/（.）/,'')+'），超過 6 天；每 7 天應有 2 天休息（1 天例假、1 天休息日），違反勞基法第 36 條。'});run=[]};
+  ds.forEach(d=>{if(run.length&&addDays(run[run.length-1],1)!==d)flush();run.push(d)});flush();
+  // 下班到隔天上班至少休息 11 小時
+  for(let i=1;i<done.length;i++){const a=done[i-1],b=done[i];if(addDays(a.date,1)!==b.date||!inYm(b.date))continue;
+    const outAbs=toMin(a.out)<toMin(a.in)?toMin(a.out)+1440:toMin(a.out);const rest=1440+toMin(b.in)-outAbs;
+    if(rest<660)w.push({r:'r11',lv:'bad',date:b.date,t:fmtDate(a.date).replace(/（.）/,'')+' 下班（'+a.out+'）到 '+fmtDate(b.date).replace(/（.）/,'')+' 上班（'+b.in+'）只休息 '+minTxt(rest)+'，少於 11 小時，違反勞基法第 34 條。'})}
+  // 連續工作 4 小時應休息 30 分鐘（系統沒有休息打卡，只提醒）
+  const lg=done.filter(x=>x.long&&inYm(x.date)).length;
+  if(lg)w.push({r:'b4',lv:'info',date:ym+'-31',t:'本月有 '+lg+' 天連續工作超過 4 小時，請確認中間有安排至少 30 分鐘休息（第 35 條）。'});
+  return w.sort((a,b)=>({bad:0,warn:1,info:2}[a.lv]-{bad:0,warn:1,info:2}[b.lv])||(a.date<b.date?-1:1));
+}
+const LAW_RULES=[
+  ['每日、每週工時（第 30、32 條）',['每日正常工時不超過 8 小時，每週不超過 40 小時。','正常工時加上加班，每日不超過 12 小時。','每月加班原則上不超過 46 小時；經工會或勞資會議同意，每月最多 54 小時，每 3 個月合計不超過 138 小時。']],
+  ['連續上班天數：一例一休（第 36 條）',['每 7 天應有 2 天休息，1 天例假、1 天休息日。','一般情況不得連續上班超過 6 天。','經勞動部指定的特殊行業，並經工會或勞資會議同意（30 人以上要報主管機關備查），例假可在 7 天週期內調整，最長連續上班 12 天；不是每個行業都適用。']],
+  ['換班休息（第 34 條）',['輪班換班時，中間至少要連續休息 11 小時。','天災等例外或經勞動部公告的特殊行業，經工會或勞資會議同意可以縮短，但不得少於 8 小時。']],
+  ['工作中休息（第 35 條）',['連續工作 4 小時，至少要有 30 分鐘休息。','輪班制或工作有連續性、緊急性時，可以在工作時間內另外調配休息時間。']],
+];
+// 範例差勤：每一條都違反一次，讓老闆確認提示文字（ATT_DEMO＝false 就不顯示）
+function lawDemo(){
+  const ym='2026-09';const d=n=>ym+'-'+pad(n);
+  return [{date:d(1),in:'10:00',out:'18:00'},{date:d(2),in:'10:00',out:'19:30'},{date:d(3),in:'09:00',out:'22:30'},{date:d(4),in:'07:30',out:'18:00'},
+    {date:d(5),in:'10:00',out:'18:00'},{date:d(6),in:'10:00',out:'18:00'},{date:d(7),in:'10:00',out:'18:00'}]
+    .concat([9,10,11,12,13,16,17,18,19,20,23,24,25,26,27].map(n=>({date:d(n),in:'10:00',out:'21:30'})));   // 每天加班 3.5 小時，月加班超過 46 小時
+}
+const LAW_TONE={bad:'bg-warnL text-warn',warn:'bg-brownL text-brown',info:'bg-bg text-mute'};
+function LawBox({law,demo,onlyDemo}){
+  const [open,setOpen]=useState(false);
+  const dm=useMemo(()=>{if(!demo||!ATT_DEMO)return [];const seen={};return lawCheck(lawDemo(),'2026-09').filter(x=>x.r!=='ot'&&!seen[x.r]&&(seen[x.r]=1))},[demo]);
+  return (<div>
+    {onlyDemo?null:law.length===0?<div className="text-sm text-sageD">本月沒有違反勞基法工時規定的紀錄。</div>:
+      law.map((x,i)=><div key={i} className={'mb-1.5 px-3 py-2 rounded-lg text-xs leading-relaxed '+LAW_TONE[x.lv]}>{x.lv==='bad'?'⚠ ':''}{x.t}</div>)}
+    <button className={(onlyDemo?'':'mt-2 ')+'text-xs text-sageD underline'} onClick={()=>setOpen(!open)}>{open?'收起':'查看'}差勤規定（勞動基準法）</button>
+    {open&&<div className="mt-2 text-xs leading-relaxed">{LAW_RULES.map(([h,a])=><div key={h} className="mb-2"><div className="font-semibold">{h}</div>{a.map((t,i)=><div key={i} className="text-mute">・{t}</div>)}</div>)}</div>}
+    {dm.length>0&&<div className="mt-3 rounded-xl border border-dashed border-brown p-3">
+      <div className="text-xs text-brown font-semibold mb-1">範例：違規時的提示（2026 年 9 月的假資料，確認文字後會拿掉）</div>
+      {dm.map((x,i)=><div key={i} className={'mb-1.5 px-3 py-2 rounded-lg text-xs leading-relaxed '+LAW_TONE[x.lv]}>{x.lv==='bad'?'⚠ ':''}{x.t}</div>)}
+    </div>}
+  </div>);
+}
+// 打卡上傳佇列（這支手機）：確認碼成功後先存起來，連得上 GAS 就上傳
+const pqKey=uid=>'punchq-'+uid;
+async function punchSync(uid,ym){
+  const q=jget(pqKey(uid),[]);
+  const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();
+  if(!t)throw new Error('取不到 LINE 身分，請關閉後重新開啟');
+  const j=await cloud.call({action:'punch',op:q.length?'add':'list',items:q,ym,idToken:t},40000);
+  if(q.length){const gone=(j.saved||[]).concat(j.bad||[]);jset(pqKey(uid),jget(pqKey(uid),[]).filter(x=>!gone.includes(x.at)));j.badN=(j.bad||[]).length}
+  return j;
+}
+// 補打卡申請
+function FixForm({day,onDone,onCancel,sIn,sOut}){
+  const k0=day.in&&!day.out?'out':'in';
+  const [f,setF]=useState({k:k0,t:k0==='in'?(sIn||''):(sOut||''),reason:''});
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  const set=(k,v)=>{setF(p=>{const n=Object.assign({},p,{[k]:v});if(k==='k')n.t=v==='in'?(sIn||''):(sOut||'');return n});setErr('')};
+  const send=async()=>{if(!f.t)return setErr('請選擇時間');if(!String(f.reason).trim())return setErr('請填寫原因');
+    setBusy(true);try{const t=window.liff.getIDToken();const j=await cloud.call({action:'punch',op:'fix',idToken:t,ym:day.date.slice(0,7),form:{date:day.date,k:f.k,t:f.t,reason:f.reason}},40000);onDone(j)}catch(e){setErr(e.message)}setBusy(false)};
+  const inp='w-full min-w-0 h-11 px-3 rounded-xl border border-line bg-card num';
+  return (<div className="my-2 rounded-xl border border-sage bg-sageL/30 p-3 text-sm">
+    <div className="font-semibold mb-2">補打卡・{fmtDate(day.date)}</div>
+    <div className="grid grid-cols-2 gap-2 mb-2">{[['in','上班'],['out','下班']].map(([k,l])=><button key={k} type="button" className={'h-10 rounded-xl border '+(f.k===k?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('k',k)}>{l}{(k==='in'?day.in:day.out)?'（已有 '+(k==='in'?day.in:day.out)+'）':''}</button>)}</div>
+    <input type="time" aria-label="補打卡時間" className={inp+' mb-2'} value={f.t} onChange={e=>set('t',e.target.value)}/>
+    <input className={inp+' mb-2'} maxLength={100} placeholder="原因（必填），例如：忘記打卡、手機沒電" value={f.reason} onChange={e=>set('reason',e.target.value)}/>
+    {err&&<div className="text-warn text-xs mb-2">{err}</div>}
+    <div className="grid grid-cols-[1fr_2fr] gap-2"><button className="h-10 rounded-xl border border-line bg-card" onClick={onCancel}>取消</button><button className="h-10 rounded-xl bg-sage text-white disabled:opacity-50" disabled={busy} onClick={send}>{busy?'送出中…':'送出，等待審核'}</button></div>
+    <div className="text-[11px] text-mute mt-1">老闆／主管核准後，才會算進打卡紀錄。</div>
+  </div>);
+}
+// 一天一列（櫃台頁、老闆月報共用）
+function AttRow({x,R,onFix,today}){
+  const lvTag=x.leave.map(L=><span key={L.id} className="ml-1 text-[10px] px-1 rounded" style={{background:'#f1e7da',color:LEAVE_COL[L.kind]}}>{LEAVE_KIND[L.kind]}{L.all?'':' '+L.t1+'～'+L.t2}</span>);
+  const bad=x.issues.length&&!x.pend.length;
+  return (<div className={'py-1.5 border-b border-line last:border-0 text-sm num '+(bad?'bg-warnL/40 -mx-2 px-2':'')}>
+    <div className="grid grid-cols-[3.4rem_1fr_1fr_2.8rem] gap-2 items-baseline">
+      <span>{Number(x.date.slice(5,7))+'/'+Number(x.date.slice(8))}<span className="text-[10px] text-mute ml-0.5">{WK[parseYmd(x.date).getDay()]}</span></span>
+      <span className={x.late?'text-warn':''}>{x.in||(x.full?'':'—')}{x.fixIn&&<span className="text-[10px] text-mute">補</span>}{x.late>0&&<span className="block text-[10px]">遲到 {minTxt(x.late)}</span>}</span>
+      <span className={x.early?'text-warn':''}>{x.out||(x.full?'':x.date===today&&x.in?<span className="text-mute">上班中</span>:'—')}{x.fixOut&&<span className="text-[10px] text-mute">補</span>}{x.early>0&&<span className="block text-[10px]">早退 {minTxt(x.early)}</span>}</span>
+      <span className="text-right">{R.sup?(x.pay?money(x.pay):'—'):(x.min!=null?+(x.min/60).toFixed(1):'—')}</span>
+    </div>
+    {(x.leave.length>0||x.issues.length>0||x.pend.length>0||x.rej.length>0)&&<div className="text-xs mt-0.5">
+      {lvTag}
+      {x.issues.map(t=><span key={t} className="ml-1 text-warn">⚠ 異常：{t}</span>)}
+      {x.pend.map(f=><span key={f.id} className="ml-1 text-brown">補打卡審核中（{f.k==='in'?'上班':'下班'} {f.t}）</span>)}
+      {x.rej.map(f=><span key={f.id} className="ml-1 text-mute">補打卡退回{f.note?'：'+f.note:''}</span>)}
+      {onFix&&x.issues.length>0&&!x.pend.length&&<button className="ml-2 px-2 h-6 rounded-full border border-sage text-sageD" onClick={()=>onFix(x)}>申請補打卡</button>}
+    </div>}
+  </div>);
+}
+// 薪資試算（月薪扣薪／支援時薪）
+function PayCalc({R}){
+  if(R.sup)return (<div className="text-sm">
+    <div className="grid grid-cols-3 gap-2 mb-2"><KV k="本月時數" v={hrTxt(R.n.min)}/><KV k="時薪" v={money(R.hr.hourly||0)}/><KV k="已做合計" v={money(R.n.pay)} cls="text-brown"/></div>
+    <div className="text-xs text-mute">支援人員：時薪 × 實際時數，每天下班向主櫃領現金（日結）。</div></div>);
+  if(!R.monthly)return <div className="text-sm text-mute">老闆還沒設定到職日與薪資，暫不計算異常與扣薪。</div>;
+  const Row=({k,v,sub,neg})=><div className="flex justify-between py-1 border-b border-line last:border-0"><span>{k}{sub&&<span className="block text-[11px] text-mute num">{sub}</span>}</span><span className={'num '+(neg&&v?'text-warn':'')}>{neg&&v?'-':''}{money(v)}</span></div>;
+  return (<div className="text-sm">
+    <Row k="月薪" v={R.salary} sub={'日薪 '+money(Math.round(R.daily))+'・時薪 '+money(Math.round(R.hourly))}/>
+    <Row k="遲到／早退" v={R.dedLate} neg sub={R.n.lateMin?'共 '+minTxt(R.n.lateMin)+'，按分鐘比例':''}/>
+    <Row k="事假" v={R.dedLeave.personal} neg sub={R.lv.personal?(+R.lv.personal.toFixed(1))+' 小時，扣全額':''}/>
+    <Row k="病假" v={R.dedLeave.sick} neg sub={R.lv.sick?(+R.lv.sick.toFixed(1))+' 小時，扣一半':''}/>
+    <div className="flex justify-between items-end pt-2"><span className="text-mute">預估應發</span><span className="serif text-2xl text-brown num">{money(R.net)}</span></div>
+    <div className="text-[11px] text-mute mt-1">休假（排休）不扣薪。依勞工請假規則試算，實際以發薪明細為準。{R.n.issue?'有 '+R.n.issue+' 天異常尚未處理，請申請補打卡或向老闆說明。':''}</div>
+  </div>);
+}
 function CounterLive({me,mode,member}){
-  const today=ymd(new Date());const ym=today.slice(0,7);
+  const today=ymd(new Date());
+  const [ym,setYm]=useState(today.slice(0,7));
+  const [D,setD]=useState(null);
   const [lv,setLv]=useState(null);
   const [prof,setProf]=useState(null);
+  const [err,setErr]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [fixing,setFixing]=useState(null);
+  const [qn,setQn]=useState(()=>jget(pqKey(me.uid),[]).length);
+  const load=async m=>{setBusy(true);setErr('');try{const j=await punchSync(me.uid,m||ym);setD(j);if(j.badN)setErr(j.badN+' 筆打卡的確認碼驗證不過，沒有上傳（請向主櫃說明或申請補打卡）')}catch(e){setErr(e.message)}setQn(jget(pqKey(me.uid),[]).length);setBusy(false)};
+  useEffect(()=>{load(ym)},[ym]);
   const ms=String(member&&member.shift||'').split('-');
-  const sIn=(prof&&prof.in)||ms[0]||'',sOut=(prof&&prof.out)||ms[1]||'';
-  const P=monthPunches(me&&me.uid,ym,today).reverse();
-  const late=x=>!!(sIn&&x.in&&toMin(x.in)>toMin(sIn));
-  const hrs=P.reduce((s,x)=>s+(x.h||0),0);
-  const sm=lv?leaveSum(lv,ym):null;
-  const lvTxt=sm?(()=>{const t={days:0,hours:0};Object.values(sm).forEach(x=>{t.days+=x.days;t.hours+=x.hours});return dayHr(t).replace('小時','時').replace(/ /g,'')})():'…';
+  const shift={in:(prof&&prof.in)||(D&&D.shift.in)||ms[0]||'',out:(prof&&prof.out)||(D&&D.shift.out)||ms[1]||''};
+  const hr=(D&&D.hr)||(prof&&prof.hr)||null;
+  // 請假：本月用請假區塊的最新清單（新增、取消後馬上反映）
+  const leaves=ym===today.slice(0,7)&&lv?lv:(D?D.leaves:[]);
+  const R=D&&D.ym===ym?attCalc({hr,shift,punches:D.punches,fixes:D.fixes,leaves},ym,today):null;
+  const isCur=ym===today.slice(0,7);
   const week=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i);return d});
+  const sIn=shift.in,sOut=shift.out;
+  const lvAll=lv||(D?D.leaves:[]);
   const B=[
-    (<Sec title="打卡" key="p"><PunchPanel me={me} kind="counter"/></Sec>),
-    (<Sec title={'本月差勤・'+Number(ym.slice(5))+' 月'}>
-      <div className="grid grid-cols-4 gap-2 mb-3"><KV k="出勤" v={P.filter(x=>x.in).length+' 天'}/><KV k="遲到" v={P.filter(late).length+' 次'} cls={P.some(late)?'text-warn':''}/><KV k="請假" v={lvTxt}/><KV k="總時數" v={(+hrs.toFixed(1))+' 時'}/></div>
-      {P.length===0?<Ph>本月還沒有打卡紀錄</Ph>:<>
-        <div className="grid grid-cols-[3.5rem_1fr_1fr_3rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>日期</span><span>上班</span><span>下班</span><span className="text-right">時數</span></div>
-        {P.map(x=><div key={x.date} className="grid grid-cols-[3.5rem_1fr_1fr_3rem] gap-2 py-1.5 border-b border-line last:border-0 text-sm num">
-          <span>{Number(x.date.slice(5,7))+'/'+Number(x.date.slice(8))}</span>
-          <span className={late(x)?'text-warn':''}>{x.in||'—'}{late(x)&&<span className="text-[10px] ml-1">遲到</span>}</span>
-          <span>{x.out||<span className="text-mute">{x.date===today?'上班中':'未打卡'}</span>}</span>
-          <span className="text-right">{x.h!=null?+x.h.toFixed(1):'—'}</span></div>)}
+    (<Sec title="打卡" key="p"><PunchPanel me={me} kind="counter" cloudRecs={D&&D.punches&&D.punches[today]} onDone={r=>{jset(pqKey(me.uid),jget(pqKey(me.uid),[]).concat([r]));setQn(q=>q+1);if(isCur)load(ym)}}/>
+      {qn>0&&<div className="mt-2 text-xs text-brown">有 {qn} 筆打卡還沒上傳，連上網路後會自動上傳。<button className="ml-1 underline" onClick={()=>load(ym)}>現在上傳</button></div>}</Sec>),
+    (<Sec title="差勤" right={<div className="flex items-center gap-1"><button className="w-8 h-8 rounded-full border border-line bg-card" onClick={()=>setYm(shiftYm(ym,-1))} aria-label="上個月">◀</button><span className="num text-sm w-16 text-center">{Number(ym.slice(5))} 月</span><button className="w-8 h-8 rounded-full border border-line bg-card disabled:opacity-30" disabled={isCur} onClick={()=>setYm(shiftYm(ym,1))} aria-label="下個月">▶</button></div>}>
+      {!R?<Ph>{busy?'讀取中…':err||'讀取中…'}</Ph>:<>
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          <KV k="出勤" v={R.n.work+' 天'}/>
+          {R.sup?<KV k="時數" v={hrTxt(R.n.min)}/>:<KV k="遲到早退" v={(R.n.late+R.n.early)+' 次'} cls={R.n.late+R.n.early?'text-warn':''}/>}
+          <KV k="請假" v={(()=>{const s=leaveSum(leaves,ym);const t={days:0,hours:0};Object.values(s).forEach(x=>{t.days+=x.days;t.hours+=x.hours});return dayHr(t).replace('小時','時').replace(/ /g,'')})()}/>
+          {R.sup?<KV k="已做" v={money(R.n.pay)} cls="text-brown"/>:<KV k="異常" v={R.n.issue+' 天'} cls={R.n.issue?'text-warn':''}/>}
+        </div>
+        {R.hr&&R.hr.hire&&R.hr.hire>ym+'-01'&&R.hr.hire<=monthEndOf(ym)&&<div className="text-xs text-mute mb-1">到職日 {fmtDate(R.hr.hire)}，之前的日子不列。</div>}
+        <div className="grid grid-cols-[3.4rem_1fr_1fr_2.8rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>日期</span><span>上班</span><span>下班</span><span className="text-right">{R.sup?'費用':'時數'}</span></div>
+        {R.days.length===0?<Ph>這個月沒有資料</Ph>:R.days.slice().reverse().map(x=>(<div key={x.date}>
+          <AttRow x={x} R={R} today={today} onFix={R.monthly?setFixing:null}/>
+          {fixing&&fixing.date===x.date&&<FixForm day={x} sIn={sIn} sOut={sOut} onCancel={()=>setFixing(null)} onDone={j=>{setFixing(null);setD(Object.assign({},j,{ym}))}}/>}
+        </div>))}
+        {err&&<div className="text-xs text-warn mt-2">{err}</div>}
+        <div className="text-[11px] text-mute mt-2">{R.sup?'支援人員不記異常。':R.monthly?<>上班時間 <span className="num">{sIn||'未設定'}</span>，晚到算遲到、早走算早退；沒打卡又沒請假的日子記「異常」，可以申請補打卡。休息日請用「請假 → 休假」登記。</>:'老闆設定到職日後，才會開始檢查異常。'}</div>
       </>}
-      <div className="text-[11px] text-mute mt-2">打卡紀錄存在這支手機；{sIn?<>上班時間 <span className="num">{sIn}</span> 之後打卡算遲到。</>:'在「我的資料」設定上班時間後，才會計算遲到。'}</div>
     </Sec>),
+    (<Sec title={R&&R.sup?'本月費用':'薪資試算'}>{R?<PayCalc R={R}/>:<Ph>讀取中…</Ph>}</Sec>),
+    (<Sec title="勞基法工時提醒">{R?<LawBox law={R.law} demo/>:<Ph>讀取中…</Ph>}</Sec>),
     (<Sec title="我的班表">
       <div className="grid grid-cols-7 gap-1 text-center text-xs">
-        {week.map((d,i)=>{const k=ymd(d);const L=leaveOn(lv,k);const full=L.find(x=>x.all);return (
+        {week.map((d,i)=>{const k=ymd(d);const L=leaveOn(lvAll,k);const full=L.find(x=>x.all);return (
           <div key={k} className={'rounded-lg py-2 px-0.5 '+(full?'bg-bg text-mute':L.length?'bg-brownL text-brown':sIn?'bg-sageL text-sageD':'bg-bg text-mute')}>
             <div>{i===0?'今天':WK[d.getDay()]}</div><div className="num">{d.getDate()}</div>
             <div className="mt-1 leading-tight num">{full?LEAVE_KIND[full.kind]:L.length?<>{LEAVE_KIND[L[0].kind]}<span className="block text-[10px]">{L[0].t1}～{L[0].t2}</span></>:sIn?<>{sIn}<span className="block">{sOut}</span></>:'—'}</div>
@@ -3617,11 +3814,98 @@ function CounterLive({me,mode,member}){
       <div className="text-[11px] text-mute mt-2">{sIn?<>固定上班時間 <span className="num">{sIn}～{sOut}</span>，請假的日子會標出假別。</>:'還沒設定上下班時間，請在下方「我的資料」設定。'}</div>
     </Sec>),
     (<Sec title="請假（事假・病假・休假）"><LeavePanel onList={setLv}/></Sec>),
-    (<Sec title="我的資料"><ProfilePanel me={me} kind="counter" onData={j=>setProf(j.profile)}/></Sec>),
+    (<Sec title="我的資料"><ProfilePanel me={me} kind="counter" onData={j=>setProf(Object.assign({},j.profile,{hr:j.hr}))}/>
+      {hr&&<div className="mt-3 pt-2 border-t border-line text-xs text-mute num">到職日 {hr.hire?fmtDate(hr.hire):'—'}・{PAY_TYPE[hr.payType]||'—'}{hr.payType==='none'?'・時薪 '+money(hr.hourly||0):hr.salary?'・月薪 '+money(hr.salary):''}<span className="block">（由老闆設定）</span></div>}
+    </Sec>),
   ];
   const head=(<div className="mt-2 text-xs text-mute px-1">這裡只顯示你個人的資料；訂單、營業額等店內資料請在店內 iPad 的「主櫃系統」操作。</div>);
-  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4]} wide={{cols:[[0,1],[2,3,4]]}} xwide={{cols:[[0,2],[1],[3,4]]}}/>;
+  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4,5,6]} wide={{cols:[[0,1],[2,3,4,5,6]]}} xwide={{cols:[[0,4],[1],[2,3,5,6]]}}/>;
 }
+/* ---- 老闆端：櫃台差勤（月報）、支援櫃台日結（日報）、人事設定（設定 → 人員資料） ---- */
+const ATT_CACHE={};
+async function fetchAtt(ym,force){
+  const c=ATT_CACHE[ym];if(!force&&c&&Date.now()-c.at<60000)return c.j;
+  const j=await cloud.call({action:'attlist',ym},40000);ATT_CACHE[ym]={j,at:Date.now()};
+  const s=syncGet();s.fixN=(j.pending||[]).length;syncSet(s);cloud.emit();return j;
+}
+function AttMonth({ym,ask,toast}){
+  const st=useCloud();
+  const [d,setD]=useState(null);const [err,setErr]=useState('');const [open,setOpen]=useState(null);const [busy,setBusy]=useState('');
+  const load=f=>{setErr('');fetchAtt(ym,f).then(setD).catch(e=>setErr(e.message))};
+  useEffect(()=>{if(st.on){setD(null);load(false)}},[st.on,ym]);
+  if(!st.on)return <Card className="p-4 text-sm text-mute">登入雲端同步（老闆／主管）後，這裡會顯示櫃台人員的出勤、異常、補打卡申請與扣薪試算。</Card>;
+  if(!d)return <Card className="p-4 text-sm text-mute">{err?'✗ '+err:'讀取中…'}</Card>;
+  const today=d.today||ymd(new Date());
+  const stage=async(F,to)=>{let note='';if(to==='rejected'){note=window.prompt('退回原因（本人看得到，可留空）','');if(note===null)return}
+    setBusy(F.id);try{await cloud.call({action:'fixstage',id:F.id,to,note});load(true);toast&&toast(to==='approved'?'已核准補打卡':'已退回')}catch(e){setErr(e.message)}setBusy('')};
+  const rows=d.list.map(p=>({p,R:attCalc(p,ym,today)}));
+  return (<Card className="p-3">
+    {(d.pending||[]).length>0&&<div className="mb-3">
+      <div className="text-xs text-brown mb-1">補打卡待審核 {d.pending.length} 筆</div>
+      {d.pending.map(F=><div key={F.id} className="rounded-xl border border-brown/50 bg-brownL/30 p-2 mb-1.5 text-sm">
+        <div className="num"><b>{F.name}</b>　{fmtDate(F.date)}　{F.k==='in'?'上班':'下班'} {F.t}</div>
+        <div className="text-xs text-mute">原因：{F.reason}</div>
+        <div className="grid grid-cols-[1fr_2fr] gap-2 mt-1.5"><button className="h-8 rounded-lg border border-warn text-warn text-sm" disabled={!!busy} onClick={()=>stage(F,'rejected')}>退回</button><button className="h-8 rounded-lg bg-sage text-white text-sm" disabled={!!busy} onClick={()=>stage(F,'approved')}>{busy===F.id?'處理中…':'核准'}</button></div>
+      </div>)}
+    </div>}
+    {rows.length===0&&<div className="text-sm text-mute">名單上沒有櫃台人員。</div>}
+    {rows.map(({p,R})=>{const op=open===p.uid;return (<div key={p.uid} className="border-b border-line last:border-0">
+      <button className="w-full flex items-center gap-2 py-2 text-left text-sm" onClick={()=>setOpen(op?null:p.uid)}>
+        <span className="flex-1 min-w-0"><b>{p.name}</b><span className="ml-1 text-xs text-mute">{R.sup?'支援':R.monthly?'月薪':'未設定'}</span>
+          <span className="block text-xs text-mute num">出勤 {R.n.work} 天・{hrTxt(R.n.min)}{R.monthly?'・遲到早退 '+(R.n.late+R.n.early)+' 次':''}{R.n.issue?<span className="text-warn">・異常 {R.n.issue} 天</span>:''}{R.law.some(x=>x.lv==='bad')?<span className="text-warn">・⚠ 勞基法</span>:''}</span></span>
+        <span className="text-right num">{R.sup?money(R.n.pay):R.monthly?money(R.net):'—'}<span className="block text-[10px] text-mute">{R.sup?'支援費用':R.monthly?(R.ded?'扣 '+money(R.ded):'無扣薪'):''}</span></span>
+        <span className="text-xs text-mute">{op?'▲':'▼'}</span>
+      </button>
+      {op&&<div className="pb-3 space-y-3">
+        <div className="rounded-xl bg-bg p-3"><PayCalc R={R}/></div>
+        <div><div className="grid grid-cols-[3.4rem_1fr_1fr_2.8rem] gap-2 text-xs text-mute pb-1 border-b border-line"><span>日期</span><span>上班</span><span>下班</span><span className="text-right">{R.sup?'費用':'時數'}</span></div>
+          {R.days.length?R.days.slice().reverse().map(x=><AttRow key={x.date} x={x} R={R} today={today}/>):<Ph>沒有資料</Ph>}</div>
+        <div><div className="text-xs text-mute mb-1">勞基法工時提醒</div><LawBox law={R.law}/></div>
+      </div>}
+    </div>)})}
+    <div className="mt-3"><LawBox law={[]} demo onlyDemo/></div>
+    <div className="flex justify-between items-center mt-2 text-[11px] text-mute"><span>到職日、月薪／時薪在「設定 → 人員資料」設定。</span><button className="h-7 px-3 rounded-full border border-line" onClick={()=>load(true)}>重新整理</button></div>
+  </Card>);
+}
+// 日報：當天有打卡的支援櫃台 → 一鍵記成現金支出（日結）
+function SupportCounterCard({S,date,bump,closed,expenses}){
+  const st=useCloud();const [d,setD]=useState(null);
+  useEffect(()=>{if(st.on)fetchAtt(date.slice(0,7)).then(setD).catch(()=>{})},[st.on,date]);
+  if(!st.on||!d)return null;
+  const list=d.list.filter(p=>p.hr&&p.hr.payType==='none').map(p=>{const io=inOutOf((p.punches||{})[date]);if(!io.in)return null;const min=io.out?workMin(io.in,io.out):null;
+    return {p,io,min,amt:min!=null?Math.round(min/60*(Number(p.hr.hourly)||0)):0,done:(expenses||[]).find(e=>e.sc===p.uid)}}).filter(Boolean);
+  if(!list.length)return null;
+  const add=x=>{const now=Date.now();mutateDay(date,dd=>{dd.expenses=(dd.expenses||[]).concat([{id:newId(S.device),cat:'支援櫃台',name:x.p.name+' '+x.io.in+'～'+x.io.out+'（'+hrTxt(x.min)+'）',amt:x.amt,cash:true,note:'時薪 '+x.p.hr.hourly,ca:now,ua:now,sc:x.p.uid}]);return dd});bump&&bump()};
+  return (<Card className="p-3 mb-2 text-sm">
+    <div className="text-xs text-mute mb-1">今日支援櫃台（時薪日結，下班時從櫃台現金支付）</div>
+    {list.map(x=><div key={x.p.uid} className="flex items-center gap-2 py-1.5 border-b border-line last:border-0 num">
+      <span className="flex-1 min-w-0"><b>{x.p.name}</b> {x.io.in}～{x.io.out||<span className="text-mute">上班中</span>}{x.min!=null&&<span className="text-xs text-mute">・{hrTxt(x.min)} × {money(x.p.hr.hourly)}</span>}</span>
+      {x.done?<span className="text-xs text-sageD">✓ 已記支出 {money(x.done.amt)}</span>:x.io.out?<button className="h-8 px-3 rounded-full bg-brown text-white text-xs disabled:opacity-40" disabled={closed} onClick={()=>add(x)}>記入支出 {money(x.amt)}</button>:<span className="text-xs text-mute">下班打卡後計算</span>}
+    </div>)}
+    {closed&&list.some(x=>!x.done&&x.io.out)&&<div className="text-[11px] text-warn mt-1">已日結，需先解除日結才能記入。</div>}
+  </Card>);
+}
+// 設定 → 人員資料：櫃台的人事設定
+function HrEditor({P,onSaved}){
+  const h=P.hr||{};
+  const [ed,setEd]=useState(false);const [f,setF]=useState({hire:h.hire||'',payType:h.payType||'monthly',salary:h.salary||'',hourly:h.hourly||''});
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  const save=async()=>{if(!f.hire)return setErr('請選擇到職日');if(f.payType==='monthly'&&!(Number(f.salary)>0))return setErr('請輸入月薪');if(f.payType==='none'&&!(Number(f.hourly)>0))return setErr('請輸入時薪');
+    setBusy(true);try{await cloud.call({action:'hrset',uid:P.uid,hr:f});setEd(false);onSaved&&onSaved()}catch(e){setErr(e.message)}setBusy(false)};
+  const inp='w-full min-w-0 h-10 px-3 rounded-lg border border-line bg-card num';
+  if(!ed)return (<div className="mt-1 pt-1 border-t border-line"><span className="text-mute">人事　</span>{h.hire?<>到職 {fmtDate(h.hire)}・{PAY_TYPE[h.payType]}・{h.payType==='none'?'時薪 '+money(h.hourly):'月薪 '+money(h.salary)}</>:<span className="text-warn">尚未設定到職日與薪資</span>}
+    <button className="ml-2 text-sageD underline" onClick={()=>setEd(true)}>設定</button></div>);
+  return (<div className="mt-2 rounded-xl border border-sage bg-sageL/30 p-3 space-y-2 not-italic">
+    <label className="block"><div className="text-xs text-mute mb-1">到職日</div><input type="date" className={inp} value={f.hire} onChange={e=>{setF(Object.assign({},f,{hire:e.target.value}));setErr('')}}/></label>
+    <div><div className="text-xs text-mute mb-1">薪資型態</div><div className="grid grid-cols-2 gap-2">{[['monthly','月薪'],['none','無底薪（支援）']].map(([k,l])=><button key={k} type="button" className={'h-10 rounded-lg border text-sm '+(f.payType===k?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setF(Object.assign({},f,{payType:k}))}>{l}</button>)}</div></div>
+    {f.payType==='monthly'?<label className="block"><div className="text-xs text-mute mb-1">月薪</div><input className={inp} inputMode="numeric" value={f.salary} onChange={e=>setF(Object.assign({},f,{salary:e.target.value.replace(/\D/g,'')}))}/><div className="text-[11px] text-mute mt-1">遲到早退按分鐘、事假全扣、病假扣半（日薪＝月薪÷30，時薪＝日薪÷8）。</div></label>
+      :<label className="block"><div className="text-xs text-mute mb-1">時薪</div><input className={inp} inputMode="numeric" value={f.hourly} onChange={e=>setF(Object.assign({},f,{hourly:e.target.value.replace(/\D/g,'')}))}/><div className="text-[11px] text-mute mt-1">支援人員：時薪 × 實際時數，每天下班從櫃台現金支付；不記異常、不扣薪。</div></label>}
+    {err&&<div className="text-xs text-warn">{err}</div>}
+    <div className="grid grid-cols-[1fr_2fr] gap-2"><button className="h-9 rounded-lg border border-line bg-card" onClick={()=>setEd(false)}>取消</button><button className="h-9 rounded-lg bg-sage text-white disabled:opacity-50" disabled={busy} onClick={save}>{busy?'儲存中…':'儲存'}</button></div>
+    <div className="text-[11px] text-mute">薪資只存在試算表，不會出現在公開的開通名單。</div>
+  </div>);
+}
+
 function CounterStaffHome({me,mode,real,member}){
   if(real&&GAS_URL)return <CounterLive me={me} mode={mode} member={member}/>;
   const days=Array.from({length:6},(_,i)=>{const d=demoDay(i+1);return {d,in:['09:52','10:01','09:58','—','09:47','10:12'][i],out:['18:05','18:00','18:30','—','18:02','18:10'][i]}});
@@ -3741,6 +4025,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-056','10-08','櫃台差勤（需 GAS gas-4.7）：打卡上傳雲端（GAS 再驗確認碼）；老闆在人員資料設定到職日、月薪／無底薪（支援・時薪）；正職櫃台到職日起沒打卡又沒請假記異常，可申請補打卡（填原因，老闆／主管核准）；遲到早退按分鐘、事假全扣、病假扣半自動試算扣薪；支援櫃台時薪×時數日結，日報一鍵記入現金支出；櫃台頁與月報加上勞基法工時提醒與差勤規定（含違規提示範例，確認後移除）'],
   ['v0.1-055','10-08','櫃台人員頁正式上線（GAS gas-4.4 以上即可）：打卡、本月差勤（出勤天數、遲到、請假、總時數，依這支手機的打卡紀錄）、我的班表（未來 7 天的上下班時間，請假日標出假別）、請假（事假／病假／休假，跟老師同一套，老闆月報的請假月曆也看得到）、我的資料（顯示名稱、上下班時間、性別、手機、地址）'],
   ['v0.1-054','10-08','老師、櫃台在切換身分時也可以選「客人」（自己預約）；歡迎畫面的「修改編號／姓名」拿掉（只留給名單上沒有姓名的舊帳號）：姓名改在老師頁「我的資料」，編號由老闆在名單上改，打開時自動跟著名單更新'],
   ['v0.1-053','10-08','應徵中的人也寫進 members.json（需 GAS gas-4.6）：只有 userId、應徵職務、目前階段（簡歷已送出／已安排面試／恭喜錄取／未錄取），不含姓名電話；從 LINE 打開時不用等 GAS，直接顯示該階段的畫面，再補上面試時間、可選編號等細節。第一次來的人直接進「成為會員／成為工作夥伴」'],
@@ -4055,7 +4340,7 @@ const ckey=c=>c.type==='day'?'d:'+c.date:c.type==='pay'?'p:'+c.ym:'s';
 const cloud={
   busy:false,timer:null,subs:new Set(),pend:[],dataVer:0,
   emit(){const st=this.state();this.subs.forEach(f=>{try{f(st)}catch(_e){}})},
-  state(){const s=syncGet();const c=cloudCfg();return {url:!!c.url,who:tokValid(c)?c.who:null,tokExp:c.tokExp,keyMode:!!c.key,on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,joinN:s.joinN||0,leaveN:s.leaveN||0,profN:s.profN||0,pend:this.pend.slice(),dataVer:this.dataVer}},
+  state(){const s=syncGet();const c=cloudCfg();return {url:!!c.url,who:tokValid(c)?c.who:null,tokExp:c.tokExp,keyMode:!!c.key,on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,joinN:s.joinN||0,leaveN:s.leaveN||0,profN:s.profN||0,fixN:s.fixN||0,pend:this.pend.slice(),dataVer:this.dataVer}},
   mark(k){const s=syncGet();s.dirty[k]=Date.now();if(k==='s')s.sUa=Date.now();syncSet(s);this.emit();this.soon()},
   soon(ms){if(!cloudOn())return;clearTimeout(this.timer);this.timer=setTimeout(()=>this.push(),ms==null?3000:ms)},
   // 呼叫 GAS：同一台裝置一次只送一個請求（排隊），遇到暫時性錯誤（HTTP 404／5xx、網路中斷、回傳不是 JSON）自動重試 2 次
@@ -4199,7 +4484,7 @@ const cloud={
       (j.days||[]).forEach(x=>handle('d:'+x.date,x));
       (j.pay||[]).forEach(x=>handle('p:'+x.ym,x));
       if(j.settings)handle('s',j.settings);
-      const s=syncGet();s.cursor=j.at||Date.now();s.pullAt=Date.now();s.err='';if(j.joinN!=null)s.joinN=j.joinN;if(j.leaveN!=null)s.leaveN=j.leaveN;if(j.profN!=null)s.profN=j.profN;syncSet(s);
+      const s=syncGet();s.cursor=j.at||Date.now();s.pullAt=Date.now();s.err='';if(j.joinN!=null)s.joinN=j.joinN;if(j.leaveN!=null)s.leaveN=j.leaveN;if(j.profN!=null)s.profN=j.profN;if(j.fixN!=null)s.fixN=j.fixN;syncSet(s);
       this.busy=false;this.emit();
       return {nd,np,ns,nc,total:(j.days||[]).length};
     }catch(e){const s=syncGet();s.err=String(e.message||e);syncSet(s);this.busy=false;this.emit();throw e}
@@ -4460,7 +4745,7 @@ function App(){
     window.addEventListener('keydown',h);return ()=>window.removeEventListener('keydown',h);
   });
 
-  const dayProps={S,date,setDate:d=>{setDate(d);setEd(null);setXe(null)},rev,openClose:(st,ex)=>setCloseSt({st,ex}),onUnlock,openShift:sh=>setShEd({sh})};
+  const dayProps={S,date,bump,setDate:d=>{setDate(d);setEd(null);setXe(null)},rev,openClose:(st,ex)=>setCloseSt({st,ex}),onUnlock,openShift:sh=>setShEd({sh})};
   const locked=!!dayData().close;
   const panel=wide&&tab==='day'&&(
     xe?<ExpenseEditor inline key={'x'+date+xe.k} S={S} exp={xe.exp} locked={locked} prev={xe.prev} count={xe.count}
@@ -4487,6 +4772,7 @@ function App(){
       </div>
       {cst.on&&cst.joinN>0&&tab!=='set'&&<button className="w-full h-9 bg-brownL text-brown text-sm" onClick={()=>setTab('set')}>有 {cst.joinN} 筆新的應徵履歷 ›</button>}
       {cst.on&&cst.profN>0&&tab!=='set'&&<button className="w-full h-9 bg-brownL text-brown text-sm border-t border-white/60" onClick={()=>setTab('set')}>有 {cst.profN} 筆人員資料修改待審核 ›</button>}
+      {cst.on&&cst.fixN>0&&tab!=='month'&&<button className="w-full h-9 bg-brownL text-brown text-sm border-t border-white/60" onClick={()=>setTab('month')}>有 {cst.fixN} 筆補打卡待審核（月報 → 櫃台差勤）›</button>}
       {cst.on&&cst.leaveN>0&&tab!=='set'&&<button className="w-full h-9 bg-brownL text-brown text-sm border-t border-white/60" onClick={()=>setTab('set')}>有 {cst.leaveN} 筆請假待審核 ›</button>}
     </header>
   );
