@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-051</title>
+<title>緩緩門店 v0.1-054</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-051';
+const VER='v0.1-054';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -255,19 +255,20 @@ function statsOf(orders,S){
 const MR_COL={amt:'#a0784f',exp:'#b5654f',cash:'#6f7d62',fee:'#7d6385',net:'#3f6478'};
 function MoneyRows({title,meta,amt,cashIn,expCash,nonCash,sup,skipRev,fee}){
   const exp=expCash+sup,cash=cashIn-exp,net=cash-fee-(nonCash||0);   // 非現金支出（如房租轉帳）不影響現金，但公司淨利要扣
-  const R=(lab,sub,val,c,first)=>(
-    <div className={'flex items-center justify-between gap-3 '+(first?'':'mt-3 pt-3 border-t border-line')}>
-      <div className="min-w-0"><div className="text-[17px] font-semibold">{lab}</div><div className="text-xs text-mute num mt-0.5">{sub}</div></div>
-      <div className={'serif num whitespace-nowrap '+(first?'text-3xl':'text-[1.7rem]')} style={{color:val<0?'#b5654f':c}}>{val<0?'-'+money(-val):money(val)}</div>
-    </div>);
   const expSub=sup>0?'雜項支出 ＋ 支援老師費用 '+money(sup):'雜項支出（店內現金）';
-  return (<>
-    {R(title,meta,amt,MR_COL.amt,true)}
-    {R('現金支出',expSub,exp,MR_COL.exp)}
-    {R('現金結餘',skipRev>0?'營業額 − 跳單未收 '+money(skipRev)+' − 現金支出':'營業額 − 現金支出',cash,MR_COL.cash)}
-    {R('老師費用','正職老師・5／20 號發薪',fee,MR_COL.fee)}
-    {R('公司淨利',nonCash>0?'現金結餘 − 老師費用 − 非現金支出 '+money(nonCash):'現金結餘 − 老師費用',net,MR_COL.net)}
-  </>);
+  // v0.1-052：金額為 0 的那排隱藏（營業額那排一定顯示，沒生意時才看得到 $0）
+  const rows=[
+    [title,meta,amt,MR_COL.amt],
+    ['現金支出',expSub,exp,MR_COL.exp],
+    ['現金結餘',['營業額',skipRev>0&&'跳單未收 '+money(skipRev),exp!==0&&'現金支出'].filter(Boolean).join(' − '),cash,MR_COL.cash],
+    ['老師費用','正職老師・5／20 號發薪',fee,MR_COL.fee],
+    ['公司淨利',[cash!==0&&'現金結餘',fee!==0&&'老師費用',nonCash>0&&'非現金支出 '+money(nonCash)].filter(Boolean).join(' − ').replace(/^(老師費用|非現金支出)/,'− $1')||'—',net,MR_COL.net],
+  ].filter((r,i)=>i===0||Math.round(r[2]||0)!==0);
+  return (<>{rows.map(([lab,sub,val,c],i)=>(
+    <div key={lab} className={'flex items-center justify-between gap-3 '+(i===0?'':'mt-3 pt-3 border-t border-line')}>
+      <div className="min-w-0"><div className="text-[17px] font-semibold">{lab}</div><div className="text-xs text-mute num mt-0.5">{sub}</div></div>
+      <div className={'serif num whitespace-nowrap '+(i===0?'text-3xl':'text-[1.7rem]')} style={{color:val<0?'#b5654f':c}}>{val<0?'-'+money(-val):money(val)}</div>
+    </div>))}</>);
 }
 /* 支援老師（v0.1-039）：編號列在設定 support，每天下班向櫃台領現金。
    應付＝當天老師費用（支數×每支費用＋老點，含加鐘、修腳皮）－ 責任歸他的跳單金額。
@@ -1642,10 +1643,14 @@ function joinGet(uid){try{const x=JSON.parse(localStorage.getItem(JOIN_KEY)||'nu
 function joinSet(x){try{localStorage.setItem(JOIN_KEY,JSON.stringify(x))}catch(_e){}}
 /* 已開通名單：GitHub 上的公開檔 members.json，格式 {"members":[{"uid":"U…","role":"teacher","name":"江將"}]}；
    沒有這個檔或讀取失敗 → 視為尚未審查 */
-async function fetchMembers(){
+/* v0.1-053：名單裡也有應徵中的人 {uid,roles:['applicant'],apply:'teacher'|'counter',stage:'applied'|'interview'|'hired'|'rejected'}，
+   只有 userId 和階段（沒有姓名電話），不算開通。fetchMembers() 只回開通的人；all=true 連應徵中的一起回 */
+const isApplicant=m=>!!(m&&m.stage);
+async function fetchMembers(all){
   const r=await fetch('./members.json?t='+Date.now(),{cache:'no-store'});
   if(!r.ok)throw new Error(r.status===404?'nofile':'http '+r.status);
-  const j=await r.json();return Array.isArray(j)?j:(j.members||[]);
+  const j=await r.json();const list=Array.isArray(j)?j:(j.members||[]);
+  return all?list:list.filter(m=>!isApplicant(m));
 }
 function JoinCard({name,role,uid}){
   return (
@@ -1834,8 +1839,9 @@ function Consent({kind,on,set}){
     </div>);
 }
 
-function JoinOnline(){
-  const [st,setSt]=useState('loading');   // loading / error / home / pick / guest / staff / status / setup / approved
+function JoinOnline({pre:pre0,prof0}){
+  const [st,setSt0]=useState('loading');
+  const stRef=useRef('loading');const setSt=v=>{stRef.current=v;setSt0(v)};   // loading / error / home / pick / guest / staff / status / setup / approved
   const [err,setErr]=useState('');
   const [prof,setProf]=useState(null);
   const [info,setInfo]=useState(null);
@@ -1849,18 +1855,34 @@ function JoinOnline(){
   const route=j=>{
     setInfo(j);const a=j.app;
     if(j.member){hintSet(j.member);setSt('approved');goHome();return}
-    if(!a){setSt('home');return}
-    if(a.status==='hired'){setF({in:'',out:'',tc:'',support:a.want==='part'});setSt('setup');return}
+    if(!a){if(stRef.current==='loading'||stRef.current==='status'||stRef.current==='setup')setSt('home');return}
+    if(a.status==='hired'){if(stRef.current!=='setup')setF({in:'',out:'',tc:'',support:a.want==='part'});setSt('setup');return}
+    if(a.status==='approved'&&!j.member){setSt('home');return}
     setSt('status');
   };
   const load=async()=>route(await cloud.call({action:'joinInfo',idToken:idt()},30000));
+  /* v0.1-053：先用 members.json（GitHub 上，很快）決定第一個畫面，再向 GAS 拿細節（面試時間、可選編號…）
+     第一次來的人：馬上顯示「成為會員／成為工作夥伴」；GAS 回來時，如果他已經開始填表就不打斷 */
+  const quick=m=>{
+    if(!m)return false;
+    if(!isApplicant(m)){hintSet(m);setInfo({member:m});setSt('approved');goHome();return true}
+    const a={uid:m.uid,role:m.apply||'teacher',status:m.stage,_pre:true};
+    setInfo({app:a,_pre:true});
+    if(a.status==='hired'){setF({in:'',out:'',tc:'',support:false});setSt('setup')}else setSt('status');
+    return true;
+  };
   useEffect(()=>{(async()=>{
     try{
       const L=await liffReady();
       if(new URLSearchParams(location.search).has('liff.state'))return;
       if(!L.isLoggedIn()){L.login({redirectUri:location.href});return}
-      const p=await L.getProfile();setProf(p);setInClient(L.isInClient());
-      await load();
+      const p=prof0||await L.getProfile();setProf(p);setInClient(L.isInClient());
+      let m=pre0;
+      if(m===undefined){try{m=(await fetchMembers(true)).find(x=>x&&x.uid===p.userId)||null}catch(_e){m=null}}
+      if(quick(m)&&!isApplicant(m))return;
+      if(!m)setSt('home');
+      try{await load()}
+      catch(e){if(stRef.current==='loading'){setErr(String(e&&e.message||e));setSt('error')}else setFe('暫時連不上雲端，部分資料還沒載入：'+e.message)}
     }catch(e){setErr(String(e&&e.message||e));setSt('error')}
   })()},[]);
   const recheck=async()=>{setBusy(true);setFe('');try{await load()}catch(e){setFe(e.message)}setBusy(false)};
@@ -1969,17 +1991,18 @@ function JoinOnline(){
       </>}
 
       {st==='status'&&app&&<>
-        {app.status==='applied'&&<div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown"><div className="font-semibold">簡歷已送出</div><div className="text-sm mt-1">店家會以手機 <span className="num">{app.phone}</span> 與你聯繫面試，請留意來電。</div></div>}
-        {app.status==='interview'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">已安排面試</div>{app.note&&<div className="text-sm mt-1">{app.note}</div>}<div className="text-sm mt-1">如需改期，請直接聯繫店家。</div></div>}
+        {app.status==='applied'&&<div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown"><div className="font-semibold">簡歷已送出</div><div className="text-sm mt-1">店家會以{app.phone?<>手機 <span className="num">{app.phone}</span> </>:'你留的手機'}與你聯繫面試，請留意來電。</div></div>}
+        {app.status==='interview'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">已安排面試</div>{app._pre&&<div className="text-sm mt-1 text-mute">讀取面試時間…</div>}{app.note&&<div className="text-sm mt-1">{app.note}</div>}<div className="text-sm mt-1">如需改期，請直接聯繫店家。</div></div>}
         {app.status==='rejected'&&<div className="mb-3 px-4 py-3 rounded-xl bg-bg border border-line text-mute"><div className="font-semibold text-ink">感謝你的應徵</div><div className="text-sm mt-1">這次未能錄取，期待日後有機會合作。</div></div>}
         <Card className="p-4 text-sm mb-3">
           <div className="flex justify-between py-1 border-b border-line"><span className="text-mute">應徵職務</span><span>{joinRoleLabel(app.role)}</span></div>
+          {app._pre?<div className="py-1 text-xs text-mute">讀取簡歷資料…</div>:<>
           <div className="flex justify-between py-1 border-b border-line"><span className="text-mute">姓名</span><span>{(app.last||'')+(app.first||'')}{app.nick?'（'+app.nick+'）':''}</span></div>
-          <div className="flex justify-between py-1"><span className="text-mute">送出時間</span><span className="num">{clockText(app.at)}</span></div>
+          <div className="flex justify-between py-1"><span className="text-mute">送出時間</span><span className="num">{clockText(app.at)}</span></div></>}
         </Card>
         <Err/>
         <button className="w-full h-12 mb-2 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={recheck}>{busy?'檢查中…':'重新檢查'}</button>
-        {app.status==='applied'&&<button className="w-full h-11 rounded-xl border border-line bg-card" onClick={()=>startStaff(app.role)}>修改簡歷</button>}
+        {app.status==='applied'&&!app._pre&&<button className="w-full h-11 rounded-xl border border-line bg-card" onClick={()=>startStaff(app.role)}>修改簡歷</button>}
         {app.status==='rejected'&&<button className="w-full h-11 rounded-xl border border-line bg-card" onClick={()=>setSt('home')}>重新申請</button>}
         {inClient&&<button className="w-full h-11 mt-2 rounded-xl border border-line bg-card" onClick={close}>回到聊天室</button>}
       </>}
@@ -1997,10 +2020,10 @@ function JoinOnline(){
           </div></div>
         {app.role==='teacher'&&<>
           <div className="text-xs text-mute mb-1">選擇編號{f.tc&&<b className="ml-2 text-sageD num text-sm">{f.tc} 號</b>}</div>
-          <div className="mb-4"><NumberPicker min={info.min} max={info.max} taken={info.taken||{}} value={f.tc} onPick={v=>set('tc',v)}/></div>
+          <div className="mb-4">{info._pre?<div className="h-24 rounded-xl border border-line bg-card flex items-center justify-center text-sm text-mute">讀取可選的編號…</div>:<NumberPicker min={info.min} max={info.max} taken={info.taken||{}} value={f.tc} onPick={v=>set('tc',v)}/>}</div>
         </>}
         <Err/>
-        <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={setup}>{busy?'開通中…':'送出，開通帳號'}</button>
+        <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy||info._pre} onClick={setup}>{busy?'開通中…':'送出，開通帳號'}</button>
       </>}
     </GateShell>
   );
@@ -2103,6 +2126,8 @@ function viewsOf(m){
   if(info.admin==='owner'){v.push('owner');v.push('mainc')}
   else if(info.admin==='manager')v.push('owner');   // 現階段主管也可進入老闆模式（登打日報表、雲端同步）
   ['teacher','counter','guest'].forEach(r=>{if(info.roles.includes(r))v.push(r)});
+  // v0.1-054：老師、櫃台也可以切到客人身分（自己預約）
+  if(!v.includes('guest')&&(info.roles.includes('teacher')||info.roles.includes('counter')))v.push('guest');
   // 老師、櫃台、老闆、主管可看「未審核訪客」流程，協助訪客開通
   if(info.admin||info.roles.includes('teacher')||info.roles.includes('counter'))v.push('visitor');
   return v;
@@ -2145,7 +2170,7 @@ function ProfileForm({m,prof,me,onSave,onCancel}){
     </Card>
   );
 }
-function Welcome({me,views,onPick,onEdit}){
+function Welcome({me,views,onPick,onEdit}){   // onEdit：只有名單上沒有姓名的人（舊的手動名單）才有
   let last=null;try{last=localStorage.getItem(VIEW_KEY)}catch(_e){}
   return (
     <>
@@ -2162,7 +2187,7 @@ function Welcome({me,views,onPick,onEdit}){
             <span className="text-mute text-xl">›</span>
           </button>))}
       </div>
-      <button className="w-full h-10 mt-6 text-sm text-mute underline" onClick={onEdit}>修改編號／姓名</button>
+      {onEdit&&<button className="w-full h-10 mt-6 text-sm text-mute underline" onClick={onEdit}>修改編號／姓名</button>}
     </>
   );
 }
@@ -3608,6 +3633,7 @@ function LineGate(){
   const [mem,setMem]=useState(null);
   const [me,setMe]=useState(null);
   const [view,setView]=useState(null);
+  const [pre,setPre]=useState(null);
   const run=async()=>{
     setSt('loading');setErr('');
     try{
@@ -3616,13 +3642,17 @@ function LineGate(){
       if(!L.isLoggedIn()){L.login({redirectUri:location.href});return}
       const p=await L.getProfile();setProf(p);
       let list=[];
-      try{list=await fetchMembers()}catch(e){if(String(e.message)!=='nofile')throw new Error('讀取開通名單失敗，請檢查網路後重試')}
-      const m=list.find(x=>x&&x.uid===p.userId)||hintGet(p.userId);   // 剛核准、GitHub Pages 還沒更新：先用核准時的資料
-      if(!m){setSt('notmember');return}
+      try{list=await fetchMembers(true)}catch(e){if(String(e.message)!=='nofile')throw new Error('讀取開通名單失敗，請檢查網路後重試')}
+      const hit=list.find(x=>x&&x.uid===p.userId);
+      const m=(hit&&!isApplicant(hit)?hit:null)||hintGet(p.userId);   // 剛核准、GitHub Pages 還沒更新：先用核准時的資料
+      // v0.1-053：沒開通 → 線上申請頁（第一次來：成為會員／成為工作夥伴；應徵中：直接顯示目前階段）
+      if(!m){setPre(hit||null);setSt(GAS_URL?'join':'notmember');return}
       setMem(m);
       let mine=meGet(p.userId);
       // 線上開通的人：名單上已有姓名（老師還有編號）→ 不用再設定，直接進歡迎畫面
       if(!mine&&m.name&&(m.tc||!memberInfo(m).roles.includes('teacher'))){mine={uid:p.userId,code:m.tc||'',name:m.name,at:Date.now()};meSet(mine)}
+      // v0.1-054：編號以名單為準（老闆改了編號，這支手機也跟著改）
+      if(mine&&m.tc&&String(mine.code)!==String(m.tc)){mine=Object.assign({},mine,{code:String(m.tc)});meSet(mine)}
       setMe(mine);
       // 這台被設為主櫃（店內 iPad）：櫃台人員或老闆登入後直接進主櫃系統，操作人＝登入的人
       let mc=false;try{mc=localStorage.getItem('slowve.mainc')==='1'}catch(_e){}
@@ -3635,6 +3665,7 @@ function LineGate(){
   const views=mem?viewsOf(mem):[];
   const lay=useLayout();
   const pick=v=>{try{localStorage.setItem(VIEW_KEY,v)}catch(_e){}setView(v);setSt('view')};
+  if(st==='join')return <JoinOnline pre={pre} prof0={prof}/>;
   if(st==='view'&&view){
     return <RoleView real member={mem} view={view} me={me} mode={lay.mode} bar={<RoleBar view={view} me={me} wide={lay.mode!=='phone'} canSwitch={views.length>1} onSwitch={()=>{setView(null);setSt('welcome')}}/>}/>;
   }
@@ -3648,13 +3679,16 @@ function LineGate(){
         <button className="w-full h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>location.replace('https://liff.line.me/'+LIFF_ID+'?mode=join')}>申請開通帳號</button>
       </Card>}
       {st==='profile'&&mem&&<ProfileForm m={mem} prof={prof} me={me} onSave={x=>{meSet(x);setMe(x);setSt('welcome')}} onCancel={me?()=>setSt('welcome'):null}/>}
-      {st==='welcome'&&me&&<Welcome me={me} views={views} onPick={pick} onEdit={()=>setSt('profile')}/>}
+      {st==='welcome'&&me&&<Welcome me={me} views={views} onPick={pick} onEdit={mem&&!mem.name?()=>setSt('profile'):null}/>}
     </GateShell>
   );
 }
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-054','10-08','老師、櫃台在切換身分時也可以選「客人」（自己預約）；歡迎畫面的「修改編號／姓名」拿掉（只留給名單上沒有姓名的舊帳號）：姓名改在老師頁「我的資料」，編號由老闆在名單上改，打開時自動跟著名單更新'],
+  ['v0.1-053','10-08','應徵中的人也寫進 members.json（需 GAS gas-4.6）：只有 userId、應徵職務、目前階段（簡歷已送出／已安排面試／恭喜錄取／未錄取），不含姓名電話；從 LINE 打開時不用等 GAS，直接顯示該階段的畫面，再補上面試時間、可選編號等細節。第一次來的人直接進「成為會員／成為工作夥伴」'],
+  ['v0.1-052','10-08','日報、月報最上面的五個金額：金額是 0 的那排自動隱藏（營業額那排一定顯示）'],
   ['v0.1-051','10-08','請假改為依月份顯示（需 GAS gas-4.5）：老師頁顯示本月事假／病假／休假各幾天（部分時段算小時）與本月請假紀錄，之後月份另列；月報新增「本月請假」月曆，每天標出請假老師的編號（顏色＝假別），點一天看明細，下方列出每人本月請假統計'],
   ['v0.1-050','10-08','老師頁新增「我的資料」（需 GAS gas-4.4）：可修改顯示名稱、上下牌時間、性別、手機、通訊地址，第一次自動帶入應徵履歷；目前存檔即生效（顯示名稱與時間同步更新開通名單），設定頁可開啟「修改個人資料需要審核」；老闆頁設定新增「人員資料」可查看全部老師／櫃台資料'],
   ['v0.1-049','10-08','月報「支出分類」點一項可展開該類每筆支出明細（點一筆跳到那天）；老師頁「發薪日」改「費用領取日」、說明改「以領取時的費用明細為準」；新增請假（需 GAS gas-4.3）：老師在自己頁面登記事假／病假／休假（可跨天或部分時段、可取消），目前送出即登記，設定頁可開啟「請假需要審核」，老闆頁設定有請假紀錄'],
