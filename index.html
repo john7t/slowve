@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-058</title>
+<title>緩緩門店 v0.1-059</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-058';
+const VER='v0.1-059';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -951,6 +951,7 @@ function PeriodSeg({value,onChange,ym,noAll}){
 }
 
 function MonthPage({S,rev,goDay,openPay}){
+  const testTc=useTestTcs();
   const [ym,setYm]=useState(()=>monKey(bizToday(S.cutoff)));
   const [per,setPer]=useState('all');
   const [catOpen,setCatOpen]=useState(null);
@@ -1015,7 +1016,7 @@ function MonthPage({S,rev,goDay,openPay}){
               const adj=adjSumOf(adjIn((data.pay[t.tc]||{}).adj||[],per));const sp=isSup(S,t.tc);
               return (
               <tr key={t.tc} className="border-t border-line active:bg-sageL cursor-pointer" onClick={()=>openPay(ym,t.tc,per)}>
-                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span>{sp&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-[10px]">支援</span>}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
+                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span>{testTc[String(t.tc)]&&<TestTag/>}{sp&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-[10px]">支援</span>}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
                 <td className="text-right px-3">{sp?<span className="text-mute"><span className="text-[11px] mr-1">已現結</span>{money(t.cm)}</span>:money(t.cm+adj)} <span className="text-mute">›</span></td>
               </tr>);})}</tbody>
           </table>
@@ -1781,8 +1782,8 @@ function JoinPageOld(){
    申請人 LINE 登入 → GAS joinInfo（是否已開通、申請狀態、已用編號、開放到幾號）→ 填表 apply →
    老闆／主管在老闆頁審核 → GAS 把這個人寫進 GitHub 上的 members.json → 申請人重新檢查即進入系統 */
 const MEMBER_HINT='slowve.memberHint';   // 剛核准、GitHub Pages 還沒更新時，先用 GAS 回傳的資料進入（只存在這支手機）
-function hintSet(m){try{localStorage.setItem(MEMBER_HINT,JSON.stringify({m,at:Date.now()}))}catch(_e){}}
-function hintGet(uid){try{const x=JSON.parse(localStorage.getItem(MEMBER_HINT)||'null');return x&&x.m&&x.m.uid===uid&&Date.now()-x.at<6*36e5?x.m:null}catch(_e){return null}}
+function hintSet(m){try{localStorage.setItem(MEMBER_HINT+altSfx(),JSON.stringify({m,at:Date.now()}))}catch(_e){}}
+function hintGet(uid){try{const x=JSON.parse(localStorage.getItem(MEMBER_HINT+altSfx())||'null');return x&&x.m&&x.m.uid===uid&&Date.now()-x.at<6*36e5?x.m:null}catch(_e){return null}}
 // 頁碼：第 1 頁 10～50 號，之後每頁 50 個，到老闆設定的上限為止（最多 100）
 function numPages(min,max){const out=[];let a=min,b=Math.min(max,50);while(a<=max){out.push([a,b]);a=b+1;b=Math.min(max,a+49)}return out}
 function NumberPicker({min,max,taken,value,onPick}){
@@ -2033,6 +2034,29 @@ function JoinOnline({pre:pre0,prof0}){
   );
 }
 
+/* 設定 → 測試分身：列出目前的分身、一鍵清除（名單、履歷、請假、打卡、個人資料；訂單要老闆自己刪） */
+function AltAdmin({S,saveS,toast,ask}){
+  const st=useCloud();const [list,setList]=useState(null);const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('');
+  const load=()=>fetchMembers(true).then(l=>setList(l.filter(x=>x&&isAltOf(x.uid,l)))).catch(e=>setMsg('✗ '+e.message));
+  useEffect(()=>{load()},[]);
+  const clear=async()=>{
+    if(!await ask({title:'清除全部測試分身？',msg:'會把分身從開通名單移除，並刪掉它們的履歷、請假、打卡、補打卡、個人資料。\n分身登打過的訂單是日報表的一部分，請自己到每日訂單刪除。',okText:'清除',danger:true}))return;
+    setBusy(true);setMsg('');
+    try{const j=await cloud.call({action:'altclear'},60000);
+      const tcs=(j.members||[]).map(m=>String(m.tc||'')).filter(Boolean);
+      if(tcs.length){const n=clone(S);n.teachers=n.teachers.filter(t=>!tcs.includes(String(t)));n.support=(n.support||[]).filter(t=>!tcs.includes(String(t)));saveS(mergeSettings(n))}
+      __testTc=null;try{window.dispatchEvent(new Event('slowve-people'))}catch(_e){}toast('已清除 '+(j.members||[]).length+' 個分身');setMsg('✓ 已清除名單 '+(j.members||[]).length+' 筆、資料 '+(j.rows||0)+' 筆'+(tcs.length?'；設定的老師名單也拿掉 '+tcs.join('、')+' 號':''));
+      setTimeout(load,1500);
+    }catch(e){setMsg('✗ '+e.message)}setBusy(false)};
+  return (<div className="text-sm">
+    <div className="text-xs text-mute mb-2">老闆在 LINE 的歡迎畫面點「分身 1～9」，就能用虛擬帳號測試新老師、新櫃台的流程。分身在主櫃、月報、薪資、應徵與人員資料上都標「測試」。</div>
+    {list===null?<div className="text-xs text-mute">讀取中…</div>:list.length===0?<div className="text-xs text-mute">目前沒有分身在開通名單上。</div>:
+      list.map(m=><div key={m.uid} className="flex items-center gap-2 py-1 border-b border-line last:border-0"><span className="text-warn text-xs w-12">分身 {m.uid.slice(-1)}</span><span className="flex-1">{m.stage?'應徵中':(m.tc?m.tc+' ':'')+(m.name||'')}</span><span className="text-xs text-mute">{m.stage?'':memberInfo(m).label}</span></div>)}
+    {!st.on?<div className="text-xs text-mute mt-2">登入雲端同步（老闆）後才能清除。</div>:
+      <button className="w-full h-10 mt-3 rounded-xl border border-warn text-warn disabled:opacity-40" disabled={busy} onClick={clear}>{busy?'清除中…':'清除分身資料'}</button>}
+    {msg&&<div className={'text-xs mt-2 '+(msg[0]==='✗'?'text-warn':'text-sageD')}>{msg}</div>}
+  </div>);
+}
 /* 老闆頁：應徵與會員（約面試、錄取、不錄取；錄取後由申請人自己選編號開通） */
 function JoinReview({S,saveS,toast,ask}){
   const st=useCloud();
@@ -2075,7 +2099,7 @@ function JoinReview({S,saveS,toast,ask}){
         <div key={a.uid} className={'rounded-xl border p-3 mb-2 '+(a.status==='applied'?'border-brown/50 bg-brownL/30':'border-line bg-card')}>
           <button className="w-full text-left" onClick={()=>setOpenId(op?null:a.uid)}>
             <div className="flex items-baseline gap-2">
-              <b className="text-base">{nm}</b>{a.nick&&a.role!=='guest'&&<span className="text-xs text-mute">（{a.nick}）</span>}
+              <b className="text-base">{nm}</b>{a.test&&<TestTag/>}{a.nick&&a.role!=='guest'&&<span className="text-xs text-mute">（{a.nick}）</span>}
               <span className="px-1.5 rounded bg-sage text-white text-xs">{joinRoleLabel(a.role)}</span>
               <span className={'ml-auto text-xs '+(a.status==='applied'?'text-brown font-semibold':a.status==='rejected'?'text-mute':'text-sageD')}>{JOIN_ST[a.status]}</span>
             </div>
@@ -2113,10 +2137,20 @@ function JoinReview({S,saveS,toast,ask}){
 /* ========== LINE 入口檢查（在 LINE App 內開啟時） ==========
    LINE 登入 → 讀 members.json → 未開通轉申請頁 → 首次設定編號／姓名（本機）→ 歡迎畫面選身分 → 各身分畫面
    外部瀏覽器（Safari／主畫面）直接開 GitHub 網址時不檢查，維持老闆離線使用門店系統。 */
-const ME_KEY=P+'me';           // 本機個人設定 {uid, code, name, at}
+/* v0.1-059：老闆的測試分身（1～9）。userId＝老闆的 userId＋那一碼；GAS 驗證老闆本人後才認（請求帶 alt）。
+   分身和老闆各自存自己的本機資料（key 加 .a1～.a9），在歡迎畫面切換，不用重新登入。 */
+const ALT_KEY='slowve.alt';
+const altGet=()=>{try{const n=Number(localStorage.getItem(ALT_KEY))||0;return n>=1&&n<=9?n:0}catch(_e){return 0}};
+const altSfx=()=>{const n=altGet();return n?'.a'+n:''};
+function altSwitch(n){try{if(n)localStorage.setItem(ALT_KEY,String(n));else localStorage.removeItem(ALT_KEY)}catch(_e){}location.replace('https://liff.line.me/'+LIFF_ID)}
+const isAltOf=(uid,list)=>{uid=String(uid||'');if(!/[1-9]$/.test(uid))return false;const b=uid.slice(0,-1);return (list||[]).some(m=>m&&m.uid===b&&memberInfo(m).admin==='owner')};
+function AltBar(){const n=altGet();if(!n)return null;return (
+  <div className="sticky top-0 z-40 bg-warn text-white text-sm"><div className="max-w-md mx-auto px-4 h-9 flex items-center justify-between">
+    <span>🧪 分身 {n}（測試用）</span><button className="h-7 px-3 rounded-full bg-white/20" onClick={()=>altSwitch(0)}>回到老闆本人</button></div></div>)}
+const ME_KEY=P+'me';           // 本機個人設定 {uid, code, name, at}（分身另外存）
 const VIEW_KEY=P+'last-view';  // 上次選的身分
-function meGet(uid){try{const x=JSON.parse(localStorage.getItem(ME_KEY)||'null');return x&&x.uid===uid?x:null}catch(_e){return null}}
-function meSet(x){try{localStorage.setItem(ME_KEY,JSON.stringify(x))}catch(_e){}}
+function meGet(uid){try{const x=JSON.parse(localStorage.getItem(ME_KEY+altSfx())||'null');return x&&x.uid===uid?x:null}catch(_e){return null}}
+function meSet(x){try{localStorage.setItem(ME_KEY+altSfx(),JSON.stringify(x))}catch(_e){}}
 const VIEWS={
   owner:{label:'老闆',desc:'門店系統：訂單、日結、月報、薪資明細',icon:'◆'},
   teacher:{label:'老師',desc:'我的服務、本期費用、打卡',icon:'✿'},
@@ -2141,12 +2175,12 @@ function copyStr(t,ok){
   try{navigator.clipboard.writeText(t).then(()=>ok&&ok()).catch(fb)}catch(_e){fb()}
 }
 function GateShell({children}){
-  return (
+  return (<><AltBar/>
     <div className="min-h-screen max-w-md mx-auto p-6">
       <div className="serif text-3xl tracking-widest text-sageD text-center mt-4">緩緩</div>
       <div className="text-center text-xs tracking-[0.3em] text-brown mb-6">SLOWVE BODY SPA</div>
       {children}
-    </div>
+    </div></>
   );
 }
 function ProfileForm({m,prof,me,onSave,onCancel}){
@@ -2175,7 +2209,7 @@ function ProfileForm({m,prof,me,onSave,onCancel}){
   );
 }
 function Welcome({me,views,onPick,onEdit}){   // onEdit：只有名單上沒有姓名的人（舊的手動名單）才有
-  let last=null;try{last=localStorage.getItem(VIEW_KEY)}catch(_e){}
+  let last=null;try{last=localStorage.getItem(VIEW_KEY+altSfx())}catch(_e){}
   return (
     <>
       <div className="text-center mb-6">
@@ -2194,6 +2228,16 @@ function Welcome({me,views,onPick,onEdit}){   // onEdit：只有名單上沒有�
       {onEdit&&<button className="w-full h-10 mt-6 text-sm text-mute underline" onClick={onEdit}>修改編號／姓名</button>}
     </>
   );
+}
+// 老闆的歡迎畫面：測試分身 1～9（點了就以分身身分重新進入）
+function AltPicker({real}){
+  const st=n=>{const m=(real.list||[]).find(x=>x&&x.uid===real.uid+n);if(!m)return '未建立';if(m.stage)return ({applied:'已投遞',interview:'約面試',hired:'已錄取',rejected:'不錄取'})[m.stage]||'應徵中';const i=memberInfo(m);return (m.tc&&i.roles.includes('teacher')?m.tc+' ':'')+(m.name||'')+'・'+i.label.replace(/ \d+/,'')};
+  return (<div className="mt-8 pt-4 border-t border-line">
+    <div className="text-sm text-mute mb-1">測試分身（只有老闆看得到）</div>
+    <div className="text-xs text-mute mb-2">用虛擬帳號從頭走一次新老師、新櫃台的流程（應徵 → 錄取 → 選編號 → 打卡、請假）。清除在「設定 → 測試分身」。</div>
+    <div className="grid grid-cols-3 gap-2">{[1,2,3,4,5,6,7,8,9].map(n=><button key={n} className="rounded-xl border border-warn/40 bg-warnL/40 px-2 py-2 text-left active:bg-warnL" onClick={()=>altSwitch(n)}>
+      <div className="text-sm text-warn font-semibold">分身 {n}</div><div className="text-[11px] text-mute truncate">{st(n)}</div></button>)}</div>
+  </div>);
 }
 function RoleBar({view,me,canSwitch,onSwitch,wide}){
   return (
@@ -2216,6 +2260,10 @@ function Sec({title,soon,demo,children,right}){
   </div>);
 }
 const KV=({k,v,cls})=><div><div className="text-xs text-mute">{k}</div><div className={'text-lg num '+(cls||'')}>{v}</div></div>;
+const TestTag=()=><span className="ml-1 px-1 rounded bg-warnL text-warn text-[10px] align-middle">測試</span>;
+// 名單上標 test 的老師編號（月報、薪資用）：讀 GitHub 上的 members.json，讀不到就當沒有
+let __testTc=null;
+function useTestTcs(){const [m,setM]=useState(__testTc||{});useEffect(()=>{if(__testTc)return;fetchMembers().then(l=>{const o={};l.forEach(x=>{if(x.test&&x.tc)o[String(x.tc)]=1});__testTc=o;setM(o)}).catch(()=>{})},[]);return m}
 const Ph=({children})=><div className="text-sm text-mute text-center py-3">{children}</div>;
 const DisBtn=({children,cls})=><button disabled className={'h-11 rounded-xl border border-line bg-bg text-mute '+(cls||'')}>{children}</button>;
 const DemoNote=()=><div className="mt-4 px-3 py-2 rounded-xl bg-brownL text-brown text-xs">此畫面為預設樣式，數字都是<b>範例資料</b>，功能尚未開放。</div>;
@@ -2331,6 +2379,7 @@ function ProfileReview({toast}){
   const [busy,setBusy]=useState('');
   const load=async()=>{setMsg('讀取中…');try{const j=await cloud.call({action:'proflist'});setD(j);setMsg('');const s=syncGet();s.profN=(j.list||[]).filter(x=>x.pending).length;syncSet(s);cloud.emit()}catch(e){setMsg('✗ '+e.message)}};
   useEffect(()=>{if(st.on)load()},[st.on]);
+  useEffect(()=>{const f=()=>{if(cloudOn())load()};window.addEventListener('slowve-people',f);return ()=>window.removeEventListener('slowve-people',f)},[]);   // 清除分身後重讀
   if(!st.on)return <div className="text-sm text-mute">請先在下方「雲端同步」用 LINE 登入（老闆／主管），才能查看人員資料。</div>;
   const stage=async(P,to)=>{let note='';if(to==='rejected'){note=window.prompt('退回原因（本人看得到，可留空）','');if(note===null)return}
     setBusy(P.uid);try{const j=await cloud.call({action:'profstage',uid:P.uid,to,note});await load();toast(to==='approved'?'已核准'+(j.warn?'（'+j.warn+'）':''):'已退回')}catch(e){setMsg('✗ '+e.message)}setBusy('')};
@@ -2354,7 +2403,7 @@ function ProfileReview({toast}){
       {list.filter(x=>!x.pending).map(P=>{const op=open===P.uid;return (
         <div key={P.uid} className="border-b border-line last:border-0">
           <button className="w-full flex items-center gap-2 py-2 text-left" onClick={()=>setOpen(op?null:P.uid)}>
-            <span className="w-10 num font-semibold">{P.tc||'—'}</span><span className="flex-1 min-w-0 truncate">{P.name}<span className="ml-1 text-xs text-mute">{P.role==='counter'?'櫃台':''}</span></span>
+            <span className="w-10 num font-semibold">{P.tc||'—'}</span><span className="flex-1 min-w-0 truncate">{P.name}{P.test&&<TestTag/>}<span className="ml-1 text-xs text-mute">{P.role==='counter'?'櫃台':''}</span></span>
             <span className="text-xs text-mute num">{P.in&&P.out?P.in+'～'+P.out:''}{P.role==='counter'&&!(P.hr&&P.hr.hire)?<span className="block text-warn">未設人事</span>:P.counter&&P.role==='teacher'&&!(P.hr&&P.hr.hourly)?<span className="block text-warn">未設卡班時薪</span>:''}</span><span className="text-xs text-mute">{op?'▲':'▼'}</span>
           </button>
           {op&&<div className="pb-2 pl-12 text-xs space-y-0.5 num">
@@ -2547,12 +2596,12 @@ const MY_KEY='slowve.my.';   // 每月最後一次讀到的資料（v0.1-058 起
    帶上每塊資料的異動時間，GAS 只回有變的部分。暫存：slowve.boot.{teacher|counter}＝{uid, sec:{'my:YYYY-MM'|'att:YYYY-MM'|leave|prof:{st,data,at}}} */
 const BOOT_KEY='slowve.boot.';
 const bootKk=(k,ym)=>(k==='my'||k==='att')?k+':'+ym:k;
-function bootGet(page,uid){try{const x=JSON.parse(localStorage.getItem(BOOT_KEY+page)||'null');return x&&x.uid===uid&&x.sec?x:{uid,sec:{}}}catch(_e){return {uid,sec:{}}}}
+function bootGet(page,uid){try{const x=JSON.parse(localStorage.getItem(BOOT_KEY+page+altSfx())||'null');return x&&x.uid===uid&&x.sec?x:{uid,sec:{}}}catch(_e){return {uid,sec:{}}}}
 function bootSet(page,c){
   const ks=Object.keys(c.sec).filter(k=>k.indexOf(':')>0).sort();   // 每月的資料只留最近 4 個月
   const keep={};['my','att'].forEach(p=>ks.filter(k=>k.startsWith(p+':')).slice(-4).forEach(k=>{keep[k]=1}));
   ks.forEach(k=>{if(!keep[k])delete c.sec[k]});
-  try{localStorage.setItem(BOOT_KEY+page,JSON.stringify(c))}catch(_e){}
+  try{localStorage.setItem(BOOT_KEY+page+altSfx(),JSON.stringify(c))}catch(_e){}
 }
 const bootData=(page,uid,k,ym)=>{const x=bootGet(page,uid).sec[bootKk(k,ym)];return x?x.data:null};
 function bootPut(page,uid,k,ym,data){if(!data||!data.st)return;const c=bootGet(page,uid);c.sec[bootKk(k,ym)]={st:data.st,data,at:Date.now()};bootSet(page,c)}
@@ -3404,7 +3453,7 @@ function PunchDesk({op,people,recs,setRecs}){
   };
   const Chip=({p})=>{const l=lastOf(p.uid,role(p));const on=l&&l.k==='in';const ct=role(p)==='counter';return (
     <button onClick={()=>{setShow(null);setPick(p)}} className={'rounded-xl border px-3 py-2 text-left min-w-[6.5rem] '+(on?'bg-sageL border-sage':'bg-card border-line')}>
-      <div className="num font-semibold">{ct?p.name:(p.tc||p.name)}{!ct&&p.tc&&<span className="font-normal text-xs text-mute ml-1">{p.name}</span>}{ct&&p.tc&&<span className="font-normal text-[10px] text-brown ml-1">卡班</span>}</div>
+      <div className="num font-semibold">{ct?p.name:(p.tc||p.name)}{!ct&&p.tc&&<span className="font-normal text-xs text-mute ml-1">{p.name}</span>}{ct&&p.tc&&<span className="font-normal text-[10px] text-brown ml-1">卡班</span>}{p.test&&<span className="font-normal text-[10px] text-warn ml-1">測試</span>}</div>
       <div className={'text-[11px] '+(on?'text-sageD':'text-mute')}>{l?PK[role(p)][l.k]+' '+l.t:'未'+PK[role(p)].in}</div>
     </button>)};
   return (
@@ -3457,7 +3506,7 @@ function PunchDesk({op,people,recs,setRecs}){
    櫃台人員須先完成上班打卡才能登入主櫃。老闆可設定主櫃隱藏營業額（交班時改為盲點：只輸入實點現金，差額只有老闆看得到）。 */
 function MainCounter({me,mode,real,member}){
   const [people,setPeople]=useState(real?[]:DEMO_STAFF);   // 正式版：members.json 中有 teacher／counter 的人
-  useEffect(()=>{if(!real)return;fetchMembers().then(list=>setPeople(list.map(x=>{const i=memberInfo(x);return {uid:x.uid,name:x.name||'',tc:i.roles.includes('teacher')?x.tc:'',roles:i.roles}}).filter(x=>x.tc||x.roles.includes('counter')))).catch(()=>{})},[]);
+  useEffect(()=>{if(!real)return;fetchMembers().then(list=>setPeople(list.map(x=>{const i=memberInfo(x);return {uid:x.uid,name:x.name||'',tc:i.roles.includes('teacher')?x.tc:'',roles:i.roles,test:!!x.test}}).filter(x=>x.tc||x.roles.includes('counter')))).catch(()=>{})},[]);
   const day=ymd(new Date());
   const [recs,setRecsS]=useState(()=>jget('punch-'+day,[]));
   const setRecs=n=>{setRecsS(n);jset('punch-'+day,n)};
@@ -3921,7 +3970,7 @@ function AttMonth({ym,ask,toast}){
     {rows.length===0&&<div className="text-sm text-mute">名單上沒有櫃台人員。</div>}
     {rows.map(({p,R})=>{const op=open===p.uid;return (<div key={p.uid} className="border-b border-line last:border-0">
       <button className="w-full flex items-center gap-2 py-2 text-left text-sm" onClick={()=>setOpen(op?null:p.uid)}>
-        <span className="flex-1 min-w-0"><b>{p.name}</b><span className="ml-1 text-xs text-mute">{R.kb?'老師卡班':R.sup?'支援':R.monthly?'月薪':'未設定'}</span>
+        <span className="flex-1 min-w-0"><b>{p.name}</b>{p.test&&<TestTag/>}<span className="ml-1 text-xs text-mute">{R.kb?'老師卡班':R.sup?'支援':R.monthly?'月薪':'未設定'}</span>
           <span className="block text-xs text-mute num">出勤 {R.n.work} 天・{hrTxt(R.n.min)}{R.monthly?'・遲到早退 '+(R.n.late+R.n.early)+' 次':''}{R.n.issue?<span className="text-warn">・異常 {R.n.issue} 天</span>:''}{R.law.some(x=>x.lv==='bad')?<span className="text-warn">・⚠ 勞基法</span>:''}</span></span>
         <span className="text-right num">{R.sup?money(R.n.pay):R.monthly?money(R.net):'—'}<span className="block text-[10px] text-mute">{R.sup?'支援費用':R.monthly?(R.ded?'扣 '+money(R.ded):'無扣薪'):''}</span></span>
         <span className="text-xs text-mute">{op?'▲':'▼'}</span>
@@ -4009,10 +4058,10 @@ function CounterStaffHome({me,mode,real,member}){
 /* 進入某身分後的畫面（LINE 入口與示範模式共用） */
 function RoleView({view,me,mode,bar,real,member}){
   if(view==='owner')return <>{bar}<App/></>;
-  if(view==='mainc')return <div className="min-h-screen">{bar}<MainCounter me={me} mode={mode} real={real} member={member}/></div>;
+  if(view==='mainc')return <div className="min-h-screen"><AltBar/>{bar}<MainCounter me={me} mode={mode} real={real} member={member}/></div>;
   const Page={teacher:TeacherHome,counter:CounterStaffHome,guest:GuestHome,visitor:VisitorGuide}[view];
   const wide=mode!=='phone';
-  return (<div className="min-h-screen">{bar}
+  return (<div className="min-h-screen"><AltBar/>{bar}
     <div className={(wide?'max-w-[1400px] px-6':'max-w-md px-4')+' mx-auto pt-4 flex items-baseline gap-2'}><span className="serif text-2xl tracking-widest text-sageD">緩緩</span><span className="text-xs tracking-[0.2em] text-brown">SLOWVE</span><span className="text-sm text-mute ml-1">{VIEWS[view].label}</span></div>
     <Page key={view+mode} me={me} mode={mode} real={real} member={member}/></div>);
 }
@@ -4044,15 +4093,22 @@ function LineGate(){
   const [me,setMe]=useState(null);
   const [view,setView]=useState(null);
   const [pre,setPre]=useState(null);
+  const [real,setReal]=useState(null);   // 本人的 userId 與名單（歡迎畫面的測試分身用）
   const run=async()=>{
     setSt('loading');setErr('');
     try{
       const L=await liffReady();
       if(new URLSearchParams(location.search).has('liff.state'))return;   // LIFF 中繼頁
       if(!L.isLoggedIn()){L.login({redirectUri:location.href});return}
-      const p=await L.getProfile();setProf(p);
+      let p=await L.getProfile();
       let list=[];
       try{list=await fetchMembers(true)}catch(e){if(String(e.message)!=='nofile')throw new Error('讀取開通名單失敗，請檢查網路後重試')}
+      setReal({uid:p.userId,list});
+      const an=altGet();
+      if(an){const o=list.find(x=>x&&x.uid===p.userId);   // 只有老闆可以用分身
+        if(!o||memberInfo(o).admin!=='owner'){altSwitch(0);return}
+        p=Object.assign({},p,{userId:p.userId+an,displayName:'分身'+an})}
+      setProf(p);
       const hit=list.find(x=>x&&x.uid===p.userId);
       const m=(hit&&!isApplicant(hit)?hit:null)||hintGet(p.userId);   // 剛核准、GitHub Pages 還沒更新：先用核准時的資料
       // v0.1-053：沒開通 → 線上申請頁（第一次來：成為會員／成為工作夥伴；應徵中：直接顯示目前階段）
@@ -4074,7 +4130,7 @@ function LineGate(){
   useEffect(()=>{run()},[]);
   const views=mem?viewsOf(mem):[];
   const lay=useLayout();
-  const pick=v=>{try{localStorage.setItem(VIEW_KEY,v)}catch(_e){}setView(v);setSt('view')};
+  const pick=v=>{try{localStorage.setItem(VIEW_KEY+altSfx(),v)}catch(_e){}setView(v);setSt('view')};
   if(st==='join')return <JoinOnline pre={pre} prof0={prof}/>;
   if(st==='view'&&view){
     return <RoleView real member={mem} view={view} me={me} mode={lay.mode} bar={<RoleBar view={view} me={me} wide={lay.mode!=='phone'} canSwitch={views.length>1} onSwitch={()=>{setView(null);setSt('welcome')}}/>}/>;
@@ -4090,12 +4146,14 @@ function LineGate(){
       </Card>}
       {st==='profile'&&mem&&<ProfileForm m={mem} prof={prof} me={me} onSave={x=>{meSet(x);setMe(x);setSt('welcome')}} onCancel={me?()=>setSt('welcome'):null}/>}
       {st==='welcome'&&me&&<Welcome me={me} views={views} onPick={pick} onEdit={mem&&!mem.name?()=>setSt('profile'):null}/>}
+      {st==='welcome'&&!altGet()&&mem&&memberInfo(mem).admin==='owner'&&real&&<AltPicker real={real}/>}
     </GateShell>
   );
 }
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-059','10-09','老闆的測試分身（需 GAS gas-4.10）：LINE 歡迎畫面點「分身 1～9」，用「老闆 userId＋一碼」的虛擬帳號從頭測試新老師、新櫃台（應徵、錄取、選編號、打卡、請假），GAS 確認是老闆本人才認；分身在主櫃、月報差勤、薪資、應徵與人員資料上標「測試」；設定頁「測試分身」一鍵清除名單與履歷、請假、打卡、個人資料；分身與老闆各自存本機資料，切換不用重新登入'],
   ['v0.1-058','10-09','老師頁、櫃台人員頁打開更快（需 GAS gas-4.9）：先顯示這支手機上次的資料，再一次向 GAS 確認（帶上每塊資料的異動時間，只下載有變的部分），取代原本依序發出的三個請求；GAS 暫存已驗證的 LINE 身分，不用每次都問 LINE；「重新整理」會重新下載全部'],
   ['v0.1-057','10-08','老師與櫃台的打卡、請假分開（需 GAS gas-4.8）：主管老師下去櫃台卡班時，在主櫃的「櫃台人員」點自己打櫃台上班／下班卡（確認碼跟上牌不同），請假也各自登記；卡班時不能接客，依老闆設定的卡班時薪 × 時數給支援費用，日報「今日支援櫃台／老師卡班」一鍵記入現金支出'],
   ['v0.1-056','10-08','櫃台差勤（需 GAS gas-4.7）：打卡上傳雲端（GAS 再驗確認碼）；老闆在人員資料設定到職日、月薪／無底薪（支援・時薪）；正職櫃台到職日起沒打卡又沒請假記異常，可申請補打卡（填原因，老闆／主管核准）；遲到早退按分鐘、事假全扣、病假扣半自動試算扣薪；支援櫃台時薪×時數日結，日報一鍵記入現金支出；櫃台頁與月報加上勞基法工時提醒與差勤規定（含違規提示範例，確認後移除）'],
@@ -4319,6 +4377,9 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay}){
         <div className="text-xs text-mute mt-1">錄取的老師自己選編號：第 1 頁 10～50 號，超過 50 號在下一頁，最多開放到 100 號。改完按下方「儲存設定」，上傳雲端後生效。</div>
       </Card>
 
+      <div className={sec}>測試分身</div>
+      <Card className="p-3"><AltAdmin S={S} saveS={saveS} toast={toast} ask={ask}/></Card>
+
       <div className={sec}>人員資料</div>
       <Card className="p-3">
         <ProfileReview toast={toast}/>
@@ -4432,6 +4493,7 @@ const cloud={
   },
   async callOnce(body,ms){
     const c=cloudCfg();if(!c.url)throw new Error('尚未設定 GAS 網址');
+    if(body.idToken&&body.action!=='auth'&&altGet())body=Object.assign({},body,{alt:altGet()});   // 測試分身
     const auth=(body.action==='auth'||body.idToken)?{}:c.key?{key:c.key}:tokValid(c)?{tok:c.tok}:null;   // 申請開通用 LINE ID Token，不需要通行證
     if(!auth)throw new Error('NEED_LOGIN：請先用 LINE 登入');
     const ctl=typeof AbortController!=='undefined'?new AbortController():null;
