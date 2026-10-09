@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-062</title>
+<title>緩緩門店 v0.1-064</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-062';
+const VER='v0.1-064';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1020,7 +1020,7 @@ function MonthPage({S,rev,goDay,openPay}){
               const adj=adjSumOf(adjIn((data.pay[t.tc]||{}).adj||[],per));const sp=isSup(S,t.tc);
               return (
               <tr key={t.tc} className="border-t border-line active:bg-sageL cursor-pointer" onClick={()=>openPay(ym,t.tc,per)}>
-                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span>{testTc[String(t.tc)]&&<TestTag/>}{sp&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-[10px]">支援</span>}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
+                <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span>{testTc[String(t.tc)]&&<TestTag uid={testTc[String(t.tc)]}/>}{sp&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-[10px]">支援</span>}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
                 <td className="text-right px-3">{sp?<span className="text-mute"><span className="text-[11px] mr-1">已現結</span>{money(t.cm)}</span>:money(t.cm+adj)} <span className="text-mute">›</span></td>
               </tr>);})}</tbody>
           </table>
@@ -1815,9 +1815,17 @@ function NumberPicker({min,max,taken,value,onPick}){
   );
 }
 const tLabel=role=>role==='teacher'?['上牌','下牌']:['上班','下班'];
+/* v0.1-064：老師要待滿 12 小時；營業 10:00～02:00 → 錄取後可選的上牌時間是 10:00～14:00 整點，下牌＝上牌＋12 小時（之後可在「我的資料」修改） */
+const T_SHIFT_H=12,T_IN_OPTS=['10:00','11:00','12:00','13:00','14:00'];
+const plusH=(t,h)=>{const m=toMin(t);if(m==null)return '';const x=(m+h*60)%1440;return pad(Math.floor(x/60))+':'+pad(x%60)};
 const CITIES=['臺北市','新北市','基隆市','桃園市','新竹市','新竹縣','苗栗縣','臺中市','彰化縣','南投縣','雲林縣','嘉義市','嘉義縣','臺南市','高雄市','屏東縣','宜蘭縣','花蓮縣','臺東縣','澎湖縣','金門縣','連江縣'];
 const SKILLS=['指壓','油壓','腳底','刮痧','拔罐','修腳皮'];
-const SLOTS=['平日白天','平日晚上','假日白天','假日晚上'];
+const SLOTS=['白班','晚班'];   // v0.1-063：可上班時段只留白班、晚班
+const TIMES=['上午','中午','下午','晚上','均可'];   // 方便聯絡／面試時間（「均可」與其他互斥）
+const pickTimes=(old,v)=>{const add=v.find(x=>!(old||[]).includes(x));if(add==='均可')return ['均可'];return v.filter(x=>x!=='均可')};
+const WKN='日一二三四五六';
+// 面試時間 'YYYY-MM-DD HH:mm' → '10/12（一）14:00'
+const ivText=iv=>{const m=/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(String(iv||''));if(!m)return '';const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12);return Number(m[2])+'/'+Number(m[3])+'（'+WKN[d.getDay()]+'）'+m[4]};
 const YEARS=['無經驗','未滿 1 年','1～3 年','3～5 年','5 年以上'];
 const SOURCES=['朋友介紹','店內人員推薦','網路／社群','路過看到','其他'];
 const JOIN_ST={applied:'已投遞',interview:'已約面試',hired:'已錄取',approved:'已開通',rejected:'不錄取'};
@@ -1875,7 +1883,7 @@ function JoinOnline({pre:pre0,prof0}){
   const quick=m=>{
     if(!m)return false;
     if(!isApplicant(m)){hintSet(m);setInfo({member:m});setSt('approved');goHome();return true}
-    const a={uid:m.uid,role:m.apply||'teacher',status:m.stage,_pre:true};
+    const a={uid:m.uid,role:m.apply||'teacher',status:m.stage,iv:m.iv||'',_pre:true};   // 面試時間也在名單上（沒有個資）
     setInfo({app:a,_pre:true});
     if(a.status==='hired'){setF({in:'',out:'',tc:'',support:false});setSt('setup')}else setSt('status');
     return true;
@@ -1897,7 +1905,7 @@ function JoinOnline({pre:pre0,prof0}){
   const recheck=async()=>{setBusy(true);setFe('');try{await load()}catch(e){setFe(e.message)}setBusy(false)};
   const startGuest=()=>{setF({role:'guest',phone:'',nick:prof.displayName||'',birth:'',consent:false});setFe('');setSt('guest')};
   const startStaff=role=>{const a=info&&info.app;
-    setF(Object.assign({role,phone:'',last:'',first:'',nick:'',gender:'',birth:'',city:'',addr:'',emgName:'',emgPhone:'',years:'',skills:[],certs:'',expNote:'',want:'full',slots:[],start:'',source:'',referrer:'',consent:false},
+    setF(Object.assign({role,phone:'',last:'',first:'',nick:'',gender:'',birth:'',city:'',addr:'',emgName:'',emgPhone:'',years:'',skills:[],certs:'',expNote:'',want:'full',slots:[],start:'',contact:[],ivPref:[],source:'',referrer:'',consent:false},
       a&&a.role!=='guest'?Object.assign({},a,{role,consent:false}):{}));setFe('');setSt('staff')};
   const send=async()=>{
     const ph=String(f.phone||'').replace(/[\s-]/g,'');
@@ -1990,7 +1998,9 @@ function JoinOnline({pre:pre0,prof0}){
         <div className="text-sm font-semibold text-sageD mb-2 mt-2">希望工作條件</div>
         <div className="mb-4"><div className="text-xs text-mute mb-1">希望工作型態</div><Chips opts={[['full','正職'],['part','兼職（支援）']]} val={f.want} onChange={v=>set('want',v)}/></div>
         <div className="mb-4"><div className="text-xs text-mute mb-1">可上班時段（可複選，選填）</div><Chips multi opts={SLOTS} val={f.slots} onChange={v=>set('slots',v)}/></div>
-        <FL label="可到職日" opt><input type="date" className={fin+' num'} value={f.start} onChange={e=>set('start',e.target.value)}/></FL>
+        <FL label="最快可上班日期" opt><input type="date" className={fin+' num'} value={f.start} onChange={e=>set('start',e.target.value)}/></FL>
+        <div className="mb-4"><div className="text-xs text-mute mb-1">方便聯絡時間（可複選，選填）</div><Chips multi opts={TIMES} val={f.contact} onChange={v=>set('contact',pickTimes(f.contact,v))}/></div>
+        <div className="mb-4"><div className="text-xs text-mute mb-1">方便面試時間（可複選，選填）</div><Chips multi opts={TIMES} val={f.ivPref} onChange={v=>set('ivPref',pickTimes(f.ivPref,v))}/></div>
         <div className="mb-4"><div className="text-xs text-mute mb-1">如何得知職缺（選填）</div><Chips opts={SOURCES} val={f.source} onChange={v=>set('source',v)}/></div>
         {f.source==='店內人員推薦'&&<FL label="推薦人（姓名或老師編號）"><input className={fin} maxLength={20} value={f.referrer} onChange={e=>set('referrer',e.target.value)}/></FL>}
         <Consent kind="staff" on={f.consent} set={v=>set('consent',v)}/>
@@ -2001,7 +2011,7 @@ function JoinOnline({pre:pre0,prof0}){
 
       {st==='status'&&app&&<>
         {app.status==='applied'&&<div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown"><div className="font-semibold">簡歷已送出</div><div className="text-sm mt-1">店家會以{app.phone?<>手機 <span className="num">{app.phone}</span> </>:'你留的手機'}與你聯繫面試，請留意來電。</div></div>}
-        {app.status==='interview'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">已安排面試</div>{app._pre&&<div className="text-sm mt-1 text-mute">讀取面試時間…</div>}{app.note&&<div className="text-sm mt-1">{app.note}</div>}<div className="text-sm mt-1">如需改期，請直接聯繫店家。</div></div>}
+        {app.status==='interview'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">已安排面試</div>{app.iv?<div className="text-sm mt-1">面試時間：<b className="num">{ivText(app.iv)}</b></div>:app._pre?<div className="text-sm mt-1 text-mute">讀取面試時間…</div>:app.note&&<div className="text-sm mt-1">{app.note}</div>}<div className="text-sm mt-1">如需改期，請直接聯繫店家。</div></div>}
         {app.status==='rejected'&&<div className="mb-3 px-4 py-3 rounded-xl bg-bg border border-line text-mute"><div className="font-semibold text-ink">感謝你的應徵</div><div className="text-sm mt-1">這次未能錄取，期待日後有機會合作。</div></div>}
         <Card className="p-4 text-sm mb-3">
           <div className="flex justify-between py-1 border-b border-line"><span className="text-mute">應徵職務</span><span>{joinRoleLabel(app.role)}</span></div>
@@ -2021,12 +2031,15 @@ function JoinOnline({pre:pre0,prof0}){
         {app.role==='teacher'&&<div className="mb-4"><div className="text-xs text-mute mb-1">工作型態</div>
           <div className="grid grid-cols-2 gap-2">{[[false,'正職'],[true,'兼職（支援）']].map(([v,l])=><button key={l} type="button" className={'h-12 rounded-xl border '+(f.support===v?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('support',v)}>{l}</button>)}</div>
           {f.support&&<div className="text-xs text-mute mt-1">兼職（支援）老師每天下班時向櫃台領現金。</div>}</div>}
-        <div className="mb-4"><div className="text-xs text-mute mb-1">{tLabel(app.role)[0]}／{tLabel(app.role)[1]}時間</div>
+        {app.role==='teacher'?<div className="mb-4"><div className="text-xs text-mute mb-1">上牌時間（整點）</div>
+          <div className="grid grid-cols-5 gap-1.5">{T_IN_OPTS.map(t=><button key={t} type="button" className={'h-11 rounded-xl border num '+(f.in===t?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>{set('in',t);set('out',plusH(t,T_SHIFT_H))}}>{t}</button>)}</div>
+          <div className="mt-2 text-sm">下牌時間：<b className="num">{f.out||'—'}</b><span className="text-xs text-mute ml-1">（上牌＋{T_SHIFT_H} 小時，之後可在「我的資料」修改）</span></div>
+        </div>:<div className="mb-4"><div className="text-xs text-mute mb-1">{tLabel(app.role)[0]}／{tLabel(app.role)[1]}時間</div>
           <div className="flex items-center gap-2">
             <input type="time" step="1800" aria-label={tLabel(app.role)[0]+'時間'} className={fin+' w-0 flex-1 num'} value={f.in} onChange={e=>set('in',e.target.value)}/>
             <span className="text-mute">～</span>
             <input type="time" step="1800" aria-label={tLabel(app.role)[1]+'時間'} className={fin+' w-0 flex-1 num'} value={f.out} onChange={e=>set('out',e.target.value)}/>
-          </div></div>
+          </div></div>}
         {app.role==='teacher'&&<>
           <div className="text-xs text-mute mb-1">選擇編號{f.tc&&<b className="ml-2 text-sageD num text-sm">{f.tc} 號</b>}</div>
           <div className="mb-4">{info._pre?<div className="h-24 rounded-xl border border-line bg-card flex items-center justify-center text-sm text-mute">讀取可選的編號…</div>:<NumberPicker min={info.min} max={info.max} taken={info.taken||{}} value={f.tc} onPick={v=>set('tc',v)}/>}</div>
@@ -2041,7 +2054,8 @@ function JoinOnline({pre:pre0,prof0}){
 /* 設定 → 測試分身：列出目前的分身、一鍵清除（名單、履歷、請假、打卡、個人資料；訂單要老闆自己刪） */
 function AltAdmin({S,saveS,toast,ask}){
   const st=useCloud();const [list,setList]=useState(null);const [mgr,setMgr]=useState([]);const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('');
-  const load=()=>fetchMembers(true).then(l=>{setList(l.filter(x=>x&&isAltOf(x.uid,l)));setMgr(l.filter(x=>x&&memberInfo(x).admin==='manager'))}).catch(e=>setMsg('✗ '+e.message));
+  const [all,setAll]=useState([]);
+  const load=()=>fetchMembers(true).then(l=>{setAll(l);__memAll=l;setList(l.filter(x=>x&&isAltOf(x.uid,l)));setMgr(l.filter(x=>x&&memberInfo(x).admin==='manager'))}).catch(e=>setMsg('✗ '+e.message));
   const perm=async(m,on)=>{setBusy(true);setMsg('');try{await cloud.call({action:'altperm',uid:m.uid,on});setMgr(a=>a.map(x=>x.uid===m.uid?Object.assign({},x,{altOk:on?undefined:false}):x));toast((on?'已開放 ':'已關閉 ')+(m.name||'主管')+' 使用分身')}catch(e){setMsg('✗ '+e.message)}setBusy(false)};
   useEffect(()=>{load()},[]);
   const clear=async()=>{
@@ -2050,7 +2064,7 @@ function AltAdmin({S,saveS,toast,ask}){
     try{const j=await cloud.call({action:'altclear'},60000);
       const tcs=(j.members||[]).map(m=>String(m.tc||'')).filter(Boolean);
       if(tcs.length){const n=clone(S);n.teachers=n.teachers.filter(t=>!tcs.includes(String(t)));n.support=(n.support||[]).filter(t=>!tcs.includes(String(t)));saveS(mergeSettings(n))}
-      __testTc=null;try{window.dispatchEvent(new Event('slowve-people'))}catch(_e){}toast('已清除 '+(j.members||[]).length+' 個分身');setMsg('✓ 已清除名單 '+(j.members||[]).length+' 筆、資料 '+(j.rows||0)+' 筆'+(tcs.length?'；設定的老師名單也拿掉 '+tcs.join('、')+' 號':''));
+      __testTc=null;__memAll=null;__memP=null;try{window.dispatchEvent(new Event('slowve-people'))}catch(_e){}toast('已清除 '+(j.members||[]).length+' 個分身');setMsg('✓ 已清除名單 '+(j.members||[]).length+' 筆、資料 '+(j.rows||0)+' 筆'+(tcs.length?'；設定的老師名單也拿掉 '+tcs.join('、')+' 號':''));
       setTimeout(load,1500);
     }catch(e){setMsg('✗ '+e.message)}setBusy(false)};
   return (<div className="text-sm">
@@ -2059,7 +2073,7 @@ function AltAdmin({S,saveS,toast,ask}){
       {mgr.map(m=>{const ok=m.altOk!==false;return <button key={m.uid} type="button" disabled={busy||!st.on} className={'w-full mb-1.5 rounded-xl border px-3 py-2 text-left disabled:opacity-60 '+(ok?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>perm(m,!ok)}>
         {ok?'☑':'☐'} {m.tc?m.tc+' ':''}{m.name||'主管'}<span className="ml-2 text-xs text-mute">{ok?'可以使用分身 1～9':'不能使用分身'}</span></button>})}</div>}
     {list===null?<div className="text-xs text-mute">讀取中…</div>:list.length===0?<div className="text-xs text-mute">目前沒有分身在開通名單上。</div>:
-      list.map(m=><div key={m.uid} className="flex items-center gap-2 py-1 border-b border-line last:border-0"><span className="text-warn text-xs w-12">分身 {m.uid.slice(-1)}</span><span className="flex-1">{m.stage?'應徵中':(m.tc?m.tc+' ':'')+(m.name||'')}</span><span className="text-xs text-mute">{m.stage?'':memberInfo(m).label}</span></div>)}
+      list.map(m=><div key={m.uid} className="flex items-center gap-2 py-1 border-b border-line last:border-0"><span className="text-warn text-xs w-20 num">{altLabel(m.uid,all)||'分身 '+m.uid.slice(-1)}</span><span className="flex-1">{m.stage?'應徵中':(m.tc?m.tc+' ':'')+(m.name||'')}</span><span className="text-xs text-mute">{m.stage?'':memberInfo(m).label}</span></div>)}
     {!st.on?<div className="text-xs text-mute mt-2">登入雲端同步（老闆）後才能清除。</div>:
       <button className="w-full h-10 mt-3 rounded-xl border border-warn text-warn disabled:opacity-40" disabled={busy} onClick={clear}>{busy?'清除中…':'清除分身資料'}</button>}
     {msg&&<div className={'text-xs mt-2 '+(msg[0]==='✗'?'text-warn':'text-sageD')}>{msg}</div>}
@@ -2085,7 +2099,10 @@ function JoinReview({S,saveS,toast,ask}){
   const stage=async(a,to,note)=>{
     setBusy(a.uid);try{await cloud.call({action:'stage',uid:a.uid,to,note});await load();toast(JOIN_ST[to]?'已改為「'+JOIN_ST[to]+'」':'已更新')}catch(e){setMsg('✗ '+e.message)}setBusy('');
   };
-  const interview=async a=>{const note=window.prompt('面試時間／備註（申請人看得到）',a.note||'');if(note===null)return;stage(a,'interview',note)};
+  // v0.1-063：約面試改用日期＋時間選擇器（不再跳文字框）；面試時間連同進度寫進開通名單（沒有個資）
+  const [ivFor,setIvFor]=useState(null);const [ivD,setIvD]=useState('');const [ivT,setIvT]=useState('');
+  const interview=a=>{const m=/^(\S+) (\S+)$/.exec(a.iv||'');setIvD(m?m[1]:ymd(new Date(Date.now()+864e5)));setIvT(m?m[2]:'14:00');setIvFor(a.uid)};
+  const ivSend=async a=>{if(!ivD||!ivT){setMsg('✗ 請選擇面試日期和時間');return}setIvFor(null);setBusy(a.uid);try{await cloud.call({action:'stage',uid:a.uid,to:'interview',iv:ivD+' '+ivT});await load();toast('已約面試 '+ivText(ivD+' '+ivT))}catch(e){setMsg('✗ '+e.message)}setBusy('')};
   const hire=async a=>{if(await ask({title:'錄取 '+((a.last||'')+(a.first||''))+'？',msg:'錄取後，申請人打開申請頁就會看到「恭喜錄取」，自己選'+(a.role==='teacher'?'編號、上下牌時間、正職／兼職':'上下班時間')+'，送出後帳號立即開通。\n請記得用手機通知對方。',okText:'錄取'}))stage(a,'hired')};
   const reject=async a=>{if(await ask({title:'不錄取？',msg:'申請人頁面會顯示「這次未能錄取」。資料會在 6 個月後自動清除。',okText:'不錄取',danger:true}))stage(a,'rejected')};
   const all=list||[];
@@ -2107,12 +2124,12 @@ function JoinReview({S,saveS,toast,ask}){
         <div key={a.uid} className={'rounded-xl border p-3 mb-2 '+(a.status==='applied'?'border-brown/50 bg-brownL/30':'border-line bg-card')}>
           <button className="w-full text-left" onClick={()=>setOpenId(op?null:a.uid)}>
             <div className="flex items-baseline gap-2">
-              <b className="text-base">{nm}</b>{a.test&&<TestTag/>}{a.nick&&a.role!=='guest'&&<span className="text-xs text-mute">（{a.nick}）</span>}
+              <b className="text-base">{nm}</b>{a.test&&<TestTag uid={a.uid}/>}{a.nick&&a.role!=='guest'&&<span className="text-xs text-mute">（{a.nick}）</span>}
               <span className="px-1.5 rounded bg-sage text-white text-xs">{joinRoleLabel(a.role)}</span>
               <span className={'ml-auto text-xs '+(a.status==='applied'?'text-brown font-semibold':a.status==='rejected'?'text-mute':'text-sageD')}>{JOIN_ST[a.status]}</span>
             </div>
             <div className="text-xs text-mute num mt-0.5">{a.gender==='F'?'女':a.gender==='M'?'男':''}{age!=null?'・'+age+' 歲':''}{a.years?'・'+a.years:''}{a.want?'・希望'+(a.want==='part'?'兼職':'正職'):''}・{clockText(a.at)} 送出{a.tc?'・'+a.tc+' 號':''} <span className="text-sageD">{op?'收起 ▲':'詳細 ▼'}</span></div>
-            {a.note&&<div className="text-xs text-sageD mt-0.5">面試：{a.note}</div>}
+            {(a.iv||a.note)&&<div className="text-xs text-sageD mt-0.5">面試：{a.iv?ivText(a.iv):a.note}</div>}
           </button>
           {a.phone&&<a href={'tel:'+a.phone} className="inline-flex items-center gap-1 mt-2 h-9 px-3 rounded-lg border border-sage text-sageD num">📞 {a.phone}</a>}
           {op&&<div className="mt-2 pt-2 border-t border-line text-xs">
@@ -2123,13 +2140,21 @@ function JoinReview({S,saveS,toast,ask}){
             <K k="證照" v={a.certs}/>
             <K k="經歷" v={a.expNote}/>
             <K k="可上班" v={(a.slots||[]).join('、')}/>
-            <K k="可到職" v={a.start}/>
+            <K k="最快上班" v={a.start}/>
+            <K k="方便聯絡" v={(a.contact||[]).join('、')}/>
+            <K k="方便面試" v={(a.ivPref||[]).join('、')}/>
             <K k="得知管道" v={a.source?(a.source+(a.referrer?'：'+a.referrer:'')):''}/>
             <K k="LINE 名稱" v={a.lineName}/>
             {a.status==='approved'&&<K k="開通" v={(a.tc?a.tc+' 號・':'')+(a.in?a.in+'～'+a.out:'')+(a.support?'・兼職（支援）':'')}/>}
             {a.by&&<K k="處理人" v={a.by}/>}
           </div>}
-          {(a.status==='applied'||a.status==='interview')&&<div className="grid grid-cols-3 gap-2 mt-3">
+          {ivFor===a.uid&&<div className="mt-3 rounded-xl border border-sage bg-sageL/30 p-3">
+            <div className="text-xs text-mute mb-1">面試時間{(a.ivPref||[]).length?'（對方方便：'+a.ivPref.join('、')+'）':''}</div>
+            <div className="flex gap-2"><input type="date" aria-label="面試日期" className="w-0 flex-[3] h-10 px-2 rounded-lg border border-line bg-card num" min={ymd(new Date())} value={ivD} onChange={e=>setIvD(e.target.value)}/><input type="time" step="900" aria-label="面試時間" className="w-0 flex-[2] h-10 px-2 rounded-lg border border-line bg-card num" value={ivT} onChange={e=>setIvT(e.target.value)}/></div>
+            <div className="grid grid-cols-[1fr_2fr] gap-2 mt-2"><button className="h-9 rounded-lg border border-line bg-card" onClick={()=>setIvFor(null)}>取消</button><button className="h-9 rounded-lg bg-sage text-white" onClick={()=>ivSend(a)}>確定{ivD&&ivT?' '+ivText(ivD+' '+ivT):''}</button></div>
+            <div className="text-[11px] text-mute mt-1">申請人打開申請頁就會看到面試時間；請也用手機通知對方。</div>
+          </div>}
+          {(a.status==='applied'||a.status==='interview')&&ivFor!==a.uid&&<div className="grid grid-cols-3 gap-2 mt-3">
             <button className="h-10 rounded-lg border border-line text-mute disabled:opacity-40" disabled={!!busy} onClick={()=>reject(a)}>不錄取</button>
             <button className="h-10 rounded-lg border border-sage text-sageD disabled:opacity-40" disabled={!!busy} onClick={()=>interview(a)}>{a.status==='interview'?'改面試時間':'約面試'}</button>
             <button className="h-10 rounded-lg bg-sage text-white disabled:opacity-40" disabled={!!busy} onClick={()=>hire(a)}>{busy===a.uid?'處理中…':'錄取'}</button>
@@ -2270,10 +2295,15 @@ function Sec({title,soon,demo,children,right}){
   </div>);
 }
 const KV=({k,v,cls})=><div><div className="text-xs text-mute">{k}</div><div className={'text-lg num '+(cls||'')}>{v}</div></div>;
-const TestTag=()=><span className="ml-1 px-1 rounded bg-warnL text-warn text-[10px] align-middle">測試</span>;
-// 名單上標 test 的老師編號（月報、薪資用）：讀 GitHub 上的 members.json，讀不到就當沒有
+/* 分身標籤：寫出是誰的分身，例如「122分身1」（本人有編號用編號，沒有用名字）；名單讀不到時寫「測試」 */
+let __memAll=null,__memP=null;
+function loadMemAll(){if(__memAll)return Promise.resolve(__memAll);if(!__memP)__memP=fetchMembers(true).then(l=>{__memAll=l;return l}).catch(()=>{__memP=null;return []});return __memP}
+function altLabel(uid,list){uid=String(uid||'');const b=(list||[]).find(m=>m&&m.uid===uid.slice(0,-1));return b?(b.tc||b.name||'')+'分身'+uid.slice(-1):''}
+function TestTag({uid}){const [l,setL]=useState(()=>__memAll?altLabel(uid,__memAll):'');useEffect(()=>{if(!l&&uid)loadMemAll().then(a=>setL(altLabel(uid,a)))},[uid]);
+  return <span className="ml-1 px-1 rounded bg-warnL text-warn text-[10px] align-middle whitespace-nowrap">{l||'測試'}</span>}
+// 名單上標 test 的老師編號 → 分身 userId（月報、薪資用）
 let __testTc=null;
-function useTestTcs(){const [m,setM]=useState(__testTc||{});useEffect(()=>{if(__testTc)return;fetchMembers().then(l=>{const o={};l.forEach(x=>{if(x.test&&x.tc)o[String(x.tc)]=1});__testTc=o;setM(o)}).catch(()=>{})},[]);return m}
+function useTestTcs(){const [m,setM]=useState(__testTc||{});useEffect(()=>{if(__testTc)return;loadMemAll().then(l=>{const o={};l.forEach(x=>{if(x.test&&x.tc)o[String(x.tc)]=x.uid});__testTc=o;setM(o)})},[]);return m}
 const Ph=({children})=><div className="text-sm text-mute text-center py-3">{children}</div>;
 const DisBtn=({children,cls})=><button disabled className={'h-11 rounded-xl border border-line bg-bg text-mute '+(cls||'')}>{children}</button>;
 const DemoNote=()=><div className="mt-4 px-3 py-2 rounded-xl bg-brownL text-brown text-xs">此畫面為預設樣式，數字都是<b>範例資料</b>，功能尚未開放。</div>;
@@ -2416,7 +2446,7 @@ function ProfileReview({toast}){
         const Row=(P,blk)=>{const k=blk+P.uid;const op=open===k;const ct=blk==='c';return (
         <div key={k} className="border-b border-line last:border-0">
           <button className="w-full flex items-center gap-2 py-2 text-left" onClick={()=>setOpen(op?null:k)}>
-            <span className="w-10 num font-semibold">{ct?'':(P.tc||'—')}</span><span className="flex-1 min-w-0 truncate">{P.name}{P.test&&<TestTag/>}{ct&&P.role==='teacher'&&<span className="ml-1 text-xs text-brown">{P.tc} 兼櫃台</span>}{!ct&&P.counter&&<span className="ml-1 text-xs text-mute">兼櫃台</span>}</span>
+            <span className="w-10 num font-semibold">{ct?'':(P.tc||'—')}</span><span className="flex-1 min-w-0 truncate">{P.name}{P.test&&<TestTag uid={P.uid}/>}{ct&&P.role==='teacher'&&<span className="ml-1 text-xs text-brown">{P.tc} 兼櫃台</span>}{!ct&&P.counter&&<span className="ml-1 text-xs text-mute">兼櫃台</span>}</span>
             <span className="text-xs text-mute num">{P.in&&P.out&&!(ct&&P.role==='teacher')?P.in+'～'+P.out:''}{ct&&P.role==='counter'&&!(P.hr&&P.hr.hire)?<span className="block text-warn">未設人事</span>:ct&&P.role==='teacher'&&!(P.hr&&P.hr.hourly)?<span className="block text-warn">未設卡班時薪</span>:''}</span><span className="text-xs text-mute">{op?'▲':'▼'}</span>
           </button>
           {op&&<div className="pb-2 pl-12 text-xs space-y-0.5 num">
@@ -2443,7 +2473,7 @@ function ProfileReview({toast}){
           {G.length?G.slice(0,gMax).map(g=>{const k='g'+g.uid;const op=open===k;return (
             <div key={k} className="border-b border-line last:border-0">
               <button className="w-full flex items-center gap-2 py-2 text-left" onClick={()=>setOpen(op?null:k)}>
-                <span className="w-28 num">{g.phone||'—'}</span><span className="flex-1 min-w-0 truncate">{g.name}{g.test&&<TestTag/>}{g.staff&&<span className="ml-1 text-xs text-mute">工作人員</span>}</span><span className="text-xs text-mute">{op?'▲':'▼'}</span>
+                <span className="w-28 num">{g.phone||'—'}</span><span className="flex-1 min-w-0 truncate">{g.name}{g.test&&<TestTag uid={g.uid}/>}{g.staff&&<span className="ml-1 text-xs text-mute">工作人員</span>}</span><span className="text-xs text-mute">{op?'▲':'▼'}</span>
               </button>
               {op&&<div className="pb-2 pl-2 text-xs space-y-0.5 num">
                 <div><span className="text-mute">手機　</span>{g.phone?<a className="text-sageD underline" href={'tel:'+g.phone}>{g.phone}</a>:'—'}</div>
@@ -3307,7 +3337,7 @@ function VisitorGuide({me,mode}){
       {t:'開啟系統',sub:'帳號尚未開通',tip:'應徵者加好友後，點官方帳號圖文選單進入，會看到這個畫面。請他按「申請開通帳號」。現有的老師也走同一個流程。',ui:notMember(T.last+T.first)},
       {t:'選擇',sub:'成為會員／成為工作夥伴',tip:'請他點「成為工作夥伴」。',ui:home('staff')},
       {t:'應徵職務',sub:'老師／櫃台',tip:'選「老師」。應徵櫃台人員的流程相同，只是沒有擅長項目和編號。',ui:<><div className="text-center text-lg mb-4">應徵職務</div><MBig t="老師" d="按摩服務" on/><MBig t="櫃台" d="接待、預約、結帳"/></>},
-      {t:'填寫簡歷',sub:'應徵老師・個人簡歷',tip:'必填：手機、姓名、性別、出生年月日、通訊地址、緊急聯絡人、年資；其他（擅長項目、證照、經歷、可上班時段、可到職日、推薦人）可不填。最後勾選個資告知事項再送出。',ui:<><div className="text-center text-lg mb-3">應徵老師・個人簡歷</div>
+      {t:'填寫簡歷',sub:'應徵老師・個人簡歷',tip:'必填：手機、姓名、性別、出生年月日、通訊地址、緊急聯絡人、年資；其他（擅長項目、證照、經歷、可上班時段、最快可上班日期、方便聯絡／面試時間、推薦人）可不填。最後勾選個資告知事項再送出。',ui:<><div className="text-center text-lg mb-3">應徵老師・個人簡歷</div>
         <MIn l="手機（通知面試用）" v={T.phone}/>
         <div className="grid grid-cols-2 gap-2"><MIn l="姓" v={T.last}/><MIn l="名" v={T.first}/></div>
         <MIn l="慣用稱呼" v={T.nick} opt/>
@@ -3506,7 +3536,7 @@ function PunchDesk({op,people,recs,setRecs}){
   };
   const Chip=({p})=>{const l=lastOf(p.uid,role(p));const on=l&&l.k==='in';const ct=role(p)==='counter';return (
     <button onClick={()=>{setShow(null);setPick(p)}} className={'rounded-xl border px-3 py-2 text-left min-w-[6.5rem] '+(on?'bg-sageL border-sage':'bg-card border-line')}>
-      <div className="num font-semibold">{ct?p.name:(p.tc||p.name)}{!ct&&p.tc&&<span className="font-normal text-xs text-mute ml-1">{p.name}</span>}{ct&&p.tc&&<span className="font-normal text-[10px] text-brown ml-1">卡班</span>}{p.test&&<span className="font-normal text-[10px] text-warn ml-1">測試</span>}</div>
+      <div className="num font-semibold">{ct?p.name:(p.tc||p.name)}{!ct&&p.tc&&<span className="font-normal text-xs text-mute ml-1">{p.name}</span>}{ct&&p.tc&&<span className="font-normal text-[10px] text-brown ml-1">卡班</span>}{p.test&&<TestTag uid={p.uid}/>}</div>
       <div className={'text-[11px] '+(on?'text-sageD':'text-mute')}>{l?PK[role(p)][l.k]+' '+l.t:'未'+PK[role(p)].in}</div>
     </button>)};
   return (
@@ -4058,7 +4088,7 @@ function AttMonth({ym,ask,toast}){
     {rows.length===0&&<div className="text-sm text-mute">名單上沒有櫃台人員。</div>}
     {rows.map(({p,R})=>{const op=open===p.uid;return (<div key={p.uid} className="border-b border-line last:border-0">
       <button className="w-full flex items-center gap-2 py-2 text-left text-sm" onClick={()=>setOpen(op?null:p.uid)}>
-        <span className="flex-1 min-w-0"><b>{p.name}</b>{p.test&&<TestTag/>}<span className="ml-1 text-xs text-mute">{R.kb?'老師卡班':R.sup?'支援':R.monthly?'月薪':'未設定'}</span>
+        <span className="flex-1 min-w-0"><b>{p.name}</b>{p.test&&<TestTag uid={p.uid}/>}<span className="ml-1 text-xs text-mute">{R.kb?'老師卡班':R.sup?'支援':R.monthly?'月薪':'未設定'}</span>
           <span className="block text-xs text-mute num">出勤 {R.n.work} 天・{hrTxt(R.n.min)}{R.monthly?'・遲到早退 '+(R.n.late+R.n.early)+' 次':''}{R.n.issue?<span className="text-warn">・異常 {R.n.issue} 天</span>:''}{R.law.some(x=>x.lv==='bad')?<span className="text-warn">・⚠ 勞基法</span>:''}</span></span>
         <span className="text-right num">{R.sup?money(R.n.pay):R.monthly?money(R.net):'—'}<span className="block text-[10px] text-mute">{R.sup?'支援費用':R.monthly?(R.ded?'扣 '+money(R.ded):'無扣薪'):''}</span></span>
         <span className="text-xs text-mute">{op?'▲':'▼'}</span>
@@ -4241,6 +4271,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-064','10-09','錄取後選上牌時間：老師只能選 10:00～14:00 整點，下牌時間自動＝上牌＋12 小時（營業 10:00～02:00，之後可在「我的資料」修改；需 GAS gas-4.15）；老闆頁的分身標籤寫出是誰的分身，例如「122分身1」'],
+  ['v0.1-063','10-09','應徵流程（需 GAS gas-4.14）：約面試改用日期＋時間選擇器（不再跳文字框），面試時間連同進度寫進開通名單（沒有個資），申請人一打開就看得到；履歷的可上班時段只留白班、晚班；「可到職日」改成「最快可上班日期」；新增方便聯絡時間、方便面試時間（上午／中午／下午／晚上／均可）'],
   ['v0.1-062','10-09','櫃台排休（需 GAS gas-4.13）：老闆在「設定 → 差勤檢查（櫃台）」設每月休假天數（預設 8 天）與每日休息（預設 1 小時，不算工時）；櫃台請「休假」超過當月天數就不能送出，只能請事假或病假；排休時假設其他日子都正常上下班，預先檢查勞基法（連續上班、每週工時、換班休息等）並顯示提示；實際差勤的勞基法檢查也扣掉每日休息'],
   ['v0.1-061','10-09','老闆頁「設定 → 差勤檢查（櫃台）」：10 條檢查（異常、遲到、早退、每日 8／12 小時、每週 40 小時、每月加班 46 小時、連續 6 天、換班休息 11 小時、工作 4 小時休息）可逐條關閉，下方列出誰在什麼時候開關了哪一條；關掉遲到／早退也不扣那部分的薪水（需 GAS gas-4.12）。測試分身改成預設開放給主管，老闆可個別關閉'],
   ['v0.1-060','10-09','老闆可在「設定 → 測試分身」開放個別主管使用分身（需 GAS gas-4.11）；「人員資料」分成老師（依編號排序、可查編號）、櫃台、客人（依手機排序、可查手機，含稱呼、生日、加入時間）三個區塊'],
