@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-066</title>
+<title>緩緩門店 v0.1-067</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-066';
+const VER='v0.1-067';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -923,6 +923,12 @@ function payDay(ym,p){const a=ym.split('-').map(Number);if(p==='h1')return new D
 const fmtPayDay=d=>d?(d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()):'';
 const adjIn=(list,p)=>p==='all'?list:list.filter(j=>(j.p||'h2')===p);   // 舊資料沒標期別的，視為下期（月底結算）
 const adjSumOf=list=>list.reduce((s,x)=>s+(Number(x.amt)||0),0);
+/* v0.1-067：老師費用發放紀錄。老闆 5／20 號自己帶現金來發，不從櫃台現金出，也不是當天的支出（老師費用每天已算進公司淨利）。
+   只記「已發放」：存在該月薪資資料 pay[tc].paid[h1|h2]＝{date,amt,at,by}，跟加扣項一起上傳雲端 */
+const paidOf=(ym,tc,h)=>(((loadMonth(ym).pay||{})[tc]||{}).paid||{})[h]||null;
+function setPaid(ym,tc,h,rec){mutateMonth(ym,md=>{md.pay=md.pay||{};const p=Object.assign({},md.pay[tc]||{});const pd=Object.assign({},p.paid||{});if(rec)pd[h]=rec;else delete pd[h];p.paid=pd;md.pay[tc]=p})}
+const whoName=()=>{const c=cloudCfg();return (c.who&&c.who.name)||c.name||'本機'};
+const mdTxt=d=>d?Number(d.slice(5,7))+'/'+Number(d.slice(8)):'';
 
 function monthData(ym,S,p){
   const md=loadMonth(ym);const [from,to]=periodRange(ym,p||'all');
@@ -962,14 +968,15 @@ function PeriodSeg({value,onChange,ym,noAll}){
   );
 }
 
-function MonthPage({S,rev,goDay,openPay}){
+function MonthPage({S,rev,goDay,openPay,ask,toast}){
   const testTc=useTestTcs();
+  const [rv,setRv]=useState(0);   // 發放紀錄改了之後重算
   const [ym,setYm]=useState(()=>monKey(bizToday(S.cutoff)));
   const [per,setPer]=useState('all');
   const [catOpen,setCatOpen]=useState(null);
   const shift=n=>{const a=ym.split('-').map(Number);const d=new Date(a[0],a[1]-1+n,1);setYm(d.getFullYear()+'-'+pad(d.getMonth()+1))};
-  const data=useMemo(()=>monthData(ym,S,per),[ym,rev,S,per]);
-  const halves=useMemo(()=>({h1:monthData(ym,S,'h1').tot,h2:monthData(ym,S,'h2').tot}),[ym,rev,S]);
+  const data=useMemo(()=>monthData(ym,S,per),[ym,rev,S,per,rv]);
+  const halves=useMemo(()=>({h1:monthData(ym,S,'h1').tot,h2:monthData(ym,S,'h2').tot}),[ym,rev,S,rv]);
   const a=ym.split('-');
   const cats=Object.keys(data.tot.byCat).sort((x,y)=>data.tot.byCat[y]-data.tot.byCat[x]);
   const pd=payDay(ym,per);
@@ -993,6 +1000,7 @@ function MonthPage({S,rev,goDay,openPay}){
               <div className="text-lg">{money(halves[h].amt)}</div>
               <div className="text-xs text-mute">老師費用 {money(halves[h].cm-halves[h].supCm)}</div>
               <div className="text-xs text-brown">{fmtPayDay(payDay(ym,h))} 發薪</div>
+              {(()=>{const ts=sortT(halves[h].byT).filter(t=>!isSup(S,t.tc)&&t.cm>0);if(!ts.length)return null;const n=ts.filter(t=>paidOf(ym,t.tc,h)).length;return <div className={'text-xs mt-0.5 '+(n===ts.length?'text-sageD':'text-warn')}>{n===ts.length?'✓ 已全部發放':'已發放 '+n+'／'+ts.length+' 位'}</div>})()}
             </button>))}
         </div>}
       </Card>
@@ -1019,6 +1027,10 @@ function MonthPage({S,rev,goDay,openPay}){
         <div className="flex items-baseline justify-between mt-5 mb-2 px-1">
           <div className="text-sm text-mute">老師{per==='all'?'月':PERIOD_LABEL[per]}統計</div><div className="text-xs text-mute">點老師可產生薪資條</div>
         </div>
+        {per!=='all'&&(()=>{const ts=sortT(data.tot.byT).filter(t=>!isSup(S,t.tc)&&t.cm>0);const left=ts.filter(t=>!paidOf(ym,t.tc,per));if(!ts.length)return null;const def=ymd(payDay(ym,per));
+          const amtOf=t=>t.cm+adjSumOf(adjIn((data.pay[t.tc]||{}).adj||[],per));
+          return <div className="mb-2 rounded-xl border border-line bg-card px-3 py-2 text-sm flex items-center gap-2"><span className="flex-1">{PERIOD_LABEL[per]}老師費用 {fmtPayDay(payDay(ym,per))} 發放：<b className={left.length?'text-warn':'text-sageD'}>{left.length?'已發放 '+(ts.length-left.length)+'／'+ts.length+' 位':'✓ 全部已發放'}</b><span className="block text-[11px] text-mute">老闆帶現金發放，只做紀錄，不算當天支出、不影響櫃台現金</span></span>
+            {left.length>0&&<button className="h-9 px-3 rounded-full bg-brown text-white text-xs" onClick={async()=>{if(await ask({title:'其餘 '+left.length+' 位標記已發放？',msg:left.map(t=>t.tc+' 號 '+money(amtOf(t))).join('\n')+'\n合計 '+money(left.reduce((s,t)=>s+amtOf(t),0))+'\n發放日 '+mdTxt(def),okText:'全部已發放'})){left.forEach(t=>setPaid(ym,t.tc,per,{date:def,amt:amtOf(t),at:Date.now(),by:whoName()}));setRv(v=>v+1);toast('已標記 '+left.length+' 位已發放')}}}>其餘全部已發放</button>}</div>})()}
         <Card className="overflow-hidden">
           <table className="w-full text-sm num">
             <thead className="text-xs text-mute bg-brownL/50"><tr>
@@ -1029,7 +1041,7 @@ function MonthPage({S,rev,goDay,openPay}){
               return (
               <tr key={t.tc} className="border-t border-line active:bg-sageL cursor-pointer" onClick={()=>openPay(ym,t.tc,per)}>
                 <td className="px-3 py-3"><span className="underline decoration-line underline-offset-4">{t.tc}</span>{testTc[String(t.tc)]&&<TestTag uid={testTc[String(t.tc)]}/>}{sp&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-[10px]">支援</span>}</td><td className="text-center">{t.n}</td><td className="text-center">{t.zh}</td><td className="text-center">{t.ld}</td>
-                <td className="text-right px-3">{sp?<span className="text-mute"><span className="text-[11px] mr-1">已現結</span>{money(t.cm)}</span>:money(t.cm+adj)} <span className="text-mute">›</span></td>
+                <td className="text-right px-3">{sp?<span className="text-mute"><span className="text-[11px] mr-1">已現結</span>{money(t.cm)}</span>:<>{per!=='all'&&paidOf(ym,t.tc,per)&&<span className="text-[11px] mr-1 text-sageD">✓已發</span>}{money(t.cm+adj)}</>} <span className="text-mute">›</span></td>
               </tr>);})}</tbody>
           </table>
         </Card>
@@ -1378,6 +1390,10 @@ function TeacherPaySheet({S,ym,tc,rev,bump,onClose,toast,ask,per:per0}){
         <div className="flex items-end justify-between pt-2 mt-1 border-t border-line">
           <span>{TT.total}</span><span className="serif text-3xl text-brown">{money(sumFee+adjSum)}</span>
         </div>
+        {per!=='all'&&!isSup(S,tc)&&(()=>{const pr=paidOf(ym,tc,per);const def=(()=>{const d=payDay(ym,per);return d?ymd(d):ymd(new Date())})();return pr?
+          <div className="mt-3 rounded-xl bg-sageL px-3 py-2 text-sm text-sageD flex items-center gap-2"><span className="flex-1">✓ 已發放 {mdTxt(pr.date)}・{money(pr.amt)}{pr.by?'（'+pr.by+'）':''}{pr.amt!==sumFee+adjSum&&<span className="block text-xs text-warn">發放後金額有變動，目前應領 {money(sumFee+adjSum)}</span>}</span>
+            <button className="text-xs text-mute underline" onClick={async()=>{if(await ask({title:'取消發放紀錄？',okText:'取消紀錄',danger:true})){setPaid(ym,tc,per,null);bump()}}}>取消</button></div>:
+          <button className="w-full mt-3 h-11 rounded-xl border border-brown text-brown" onClick={async()=>{if(await ask({title:'標記已發放？',msg:'老師 '+tc+' '+PERIOD_LABEL[per]+' '+money(sumFee+adjSum)+'\n發放日 '+mdTxt(def)+'\n（老闆帶現金發放，不會記成當天支出，也不影響櫃台現金）',okText:'已發放'})){setPaid(ym,tc,per,{date:def,amt:sumFee+adjSum,at:Date.now(),by:whoName()});bump();toast('已標記發放')}}}>標記已發放 {money(sumFee+adjSum)}</button>})()}
       </Card>
 
       {orders.filter(o=>o.skip&&o.skipBy==='teacher').length>0&&<Card className="p-3 mb-3 border-warn">
@@ -2793,6 +2809,7 @@ function TeacherLive({me,mode}){
         </>:<>
           {adj.map((j,i)=><div key={i} className="flex justify-between text-sm py-1"><span className="text-mute">{j.amt<0?'扣項':'加項'}：{j.name}</span><span className={'num '+(j.amt<0?'text-warn':'')}>{smoney(j.amt)}</span></div>)}
           <div className="flex justify-between items-end pt-2 border-t border-line"><span className="text-mute">預估應領</span><span className="serif text-2xl text-brown num">{money(fee(pl)+adjSum)}</span></div>
+          {D&&D.paid&&D.paid[per]&&<div className="mt-2 rounded-lg bg-sageL px-3 py-1.5 text-sm text-sageD">✓ 已於 {mdTxt(D.paid[per].date)} 領取 {money(D.paid[per].amt)}</div>}
           <div className="text-[11px] text-mute mt-1">實際金額以領取時的費用明細為準。</div>
         </>}
       </Sec>),
@@ -4282,6 +4299,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-067','10-10','老師費用發放紀錄：老闆 5／20 號自己帶現金發放，不記成當天支出、不影響櫃台現金與公司淨利（老師費用每天已算）；薪資明細可「標記已發放」，月報上期／下期顯示已發放幾位、可一鍵「其餘全部已發放」；老師頁顯示「已領取」（需 GAS gas-4.16）'],
   ['v0.1-066','10-10','設定頁拿掉老師抽成（只留在人員 → 老師）；人員頁的老師、櫃台最上面先顯示本月休假月曆（只列老師或只列櫃台），再來是人員列表；列表上的上下班時間改寫成小時，例如 10-22'],
   ['v0.1-065','10-10','老闆頁底部分頁改成「報表｜人員｜設定」：報表上方切換日報／月報；人員頁分應徵（應徵與會員、可選編號、測試分身）、老師（老師資料、編號與支援、抽成、老師請假）、櫃台（櫃台資料與人事、差勤檢查、櫃台請假）、客人（會員名單）；老師抽成暫時兩邊都有；設定頁新增「主櫃系統已上線」開關（預設關閉），打開後日報改由主櫃登打，老闆／主管按「修正」才能改，修改會記在當天的修正紀錄'],
   ['v0.1-064','10-09','錄取後選上牌時間：老師只能選 10:00～14:00 整點，下牌時間自動＝上牌＋12 小時（營業 10:00～02:00，之後可在「我的資料」修改；需 GAS gas-4.15）；老闆頁的分身標籤寫出是誰的分身，例如「122分身1」'],
@@ -5120,7 +5138,7 @@ function App(){
     </header>
   );
   const otherTabs=(<>
-    {tab==='month'&&<MonthPage S={S} rev={rev} goDay={d=>{setDate(d);setTab('day');setRepLast('day')}} openPay={(ym,tc,per)=>setPay({ym,tc,per})}/>}
+    {tab==='month'&&<MonthPage S={S} rev={rev} ask={ask} toast={toast} goDay={d=>{setDate(d);setTab('day');setRepLast('day')}} openPay={(ym,tc,per)=>setPay({ym,tc,per})}/>}
     {tab==='people'&&<SettingsPage key="people" page="people" sub={pSub} setSub={setPSub} S={S} saveS={saveS} ask={ask} toast={toast} lay={lay} onImported={()=>{setS(loadSettings());bump()}}/>}
     {tab==='set'&&<SettingsPage key="set" page="set" S={S} saveS={saveS} ask={ask} toast={toast} lay={lay} onImported={()=>{setS(loadSettings());bump()}}/>}
   </>);
@@ -5203,4 +5221,3 @@ ReactDOM.createRoot(document.getElementById('root')).render(IS_JOIN?<JoinPage/>:
 </script>
 </body>
 </html>
-9
