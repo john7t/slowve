@@ -4,7 +4,6 @@
     {"uid":"U46ddda7096889852bbcb8aaf66e02d9c","name":"158 Ally～☺️歡迎私訊預約","roles":["teacher","counter","guest"],"tc":"77","admin":"owner"},
     {"uid":"U6dc94958428943f3499d82a5972bc946","name":"穎","roles":["teacher","counter","guest"],"tc":"258","admin":"manager","shift":"10:00-21:00"},
     {"uid":"U客人…","name":"王小姐","roles":["guest"]},
-    {"uid":"U86122b1dde18d801e39dd3b2ebddc31e","name":"許維仁","roles":["teacher"],"shift":"14:00-02:00","tc":"69"},
-    {"uid":"U6dc94958428943f3499d82a5972bc9461","name":"李小姐","roles":["teacher"],"shift":"11:00-23:00","tc":"61","test":true}
+    {"uid":"U86122b1dde18d801e39dd3b2ebddc31e","name":"許維仁","roles":["teacher"],"shift":"14:00-02:00","tc":"69"}
   ]
 }
