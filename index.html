@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-069</title>
+<title>緩緩門店 v0.1-075</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-069';
+const VER='v0.1-075';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -118,7 +118,13 @@ function mergeSettings(s){
   r.joinMax=Math.max(JOIN_MIN,Math.min(JOIN_HARD_MAX,Number(r.joinMax)||50));
   r.expCats=(Array.isArray(s.expCats)&&s.expCats.length)?s.expCats:d.expCats;
   r.expNames=Array.isArray(s.expNames)?s.expNames:[];
-  r.maincLive=!!s.maincLive;                                      // v0.1-065：主櫃系統已上線（日報改由主櫃登打）
+  r.maincLive=!!s.maincLive;
+  // v0.1-070：主櫃座位與規則（腳位、床位、開放床位、清潔時間）
+  r.seatFoot=Math.max(1,Math.min(20,Number(s.seatFoot)||4));
+  r.seatBed=Math.max(1,Math.min(20,Number(s.seatBed)||6));
+  r.bedOpen=(Array.isArray(s.bedOpen)?s.bedOpen:[]).map(Number).filter(n=>n>=1&&n<=r.seatBed);   // v0.1-071：6 張都是封閉
+  r.bedMerge=(Array.isArray(s.bedMerge)?s.bedMerge:[1,2,3,4,5]).map(Number).filter(n=>n>=1&&n<=r.seatBed);   // 拉門打開可以合成一大間的床（6 號在 L 形轉角，不能打通）
+  r.cleanMin=s.cleanMin==null||s.cleanMin===''?30:Math.max(0,Math.min(120,Number(s.cleanMin)||0));                                      // v0.1-065：主櫃系統已上線（日報改由主櫃登打）
   r.attChecks=Object.assign({},s.attChecks||{});                 // v0.1-061：差勤檢查開關（沒寫的＝開）
   r.attLog=(Array.isArray(s.attLog)?s.attLog:[]).slice(-200);   // 誰在什麼時候開關了哪一條
   r.attOffDays=s.attOffDays==null||s.attOffDays===''?8:Math.max(0,Math.min(31,Number(s.attOffDays)||0));   // v0.1-062：櫃台每月休假天數
@@ -2232,7 +2238,7 @@ const VIEWS={
 function viewsOf(m){
   const info=memberInfo(m);const v=[];
   if(info.admin==='owner'){v.push('owner');v.push('mainc')}
-  else if(info.admin==='manager')v.push('owner');   // 現階段主管也可進入老闆模式（登打日報表、雲端同步）
+  else if(info.admin==='manager'){v.push('owner');v.push('mainc')}   // 現階段主管也可進入老闆模式（登打日報表、雲端同步）；v0.1-075 主管也可進主櫃系統
   ['teacher','counter','guest'].forEach(r=>{if(info.roles.includes(r))v.push(r)});
   // v0.1-054：老師、櫃台也可以切到客人身分（自己預約）
   if(!v.includes('guest')&&(info.roles.includes('teacher')||info.roles.includes('counter')))v.push('guest');
@@ -2908,13 +2914,13 @@ function TeacherHome({me,mode,real}){
 
 /* 櫃台範例情境（範例時間 14:50）：
    5 位老師在班；3 個預約＋1 位現場候位 → 4 位老師已被「壓牌」（保留給某位客人）。
-   訂單分「服務中（未結帳）」與「已結帳」；營業額、應有現金只算已結帳。
+   訂單分「服務進行中」「服務結束（待買單）」「已買單」。主櫃不顯示營業額，金額只在點開單筆訂單時顯示。
    空檔規則：被壓牌的老師，只要壓牌前的空檔 ≥ 服務時間（預設 60 分），仍可先接現場客。 */
 const DEMO_NOW='14:50';
 const DEMO_ORDERS=[
   {t:'14:25',sn:'0424',st:'serving',g:[{svc:'foot',min:60,tc:'58'}]},
   {t:'13:30',sn:'0423',st:'serving',g:[{svc:'dry',min:120,tc:'122',ld:1}]},
-  {t:'12:25',sn:'0417',st:'paid',pay:'14:30',g:[{svc:'oil',min:90,tc:'77',ld:1,ex:1,ad:['guasha']}]},
+  {t:'12:25',sn:'0417',st:'done',end:'14:25',g:[{svc:'oil',min:90,tc:'77',ld:1,ex:1,ad:['guasha']}]},
   {t:'13:00',sn:'0419',st:'paid',pay:'14:05',g:[{svc:'foot',min:60,tc:'58'},{svc:'foot',min:60,tc:'36',emp:1}]},
   {t:'11:15',sn:'0413',st:'paid',pay:'12:20',g:[{svc:'foot',min:60,tc:'77',ad:['xiujiao']}]},
   {t:'10:05',sn:'0409',st:'paid',pay:'11:40',g:[{svc:'dry',min:90,tc:'77',promo:1,ld:1}]},
@@ -2931,6 +2937,9 @@ const DEMO_BOOK=[
 const DEMO_SHIFT={'122':['09:00','21:00'],'77':['10:00','20:00'],'36':['12:00','22:00'],'58':['13:00','23:00'],'12':['14:00','24:00'],'25':['18:00','02:00']};
 // 範例的支援老師（正式版依設定的 support／之後 members.json 的 support 標記）
 const DEMO_SUPPORT=['58','36'];
+// 老師性別（牌卡號碼顏色：男藍、女紅）。正式版性別只在 Sheet，由 GAS 只回傳 m／f 給主櫃，不放 members.json
+const DEMO_SEX={'122':'f','77':'f','58':'m','36':'f','12':'m','25':'f','9':'m'};
+const DEMO_OFFDONE=[{tc:'9',t:'14:00'}];   // 今天已下牌的老師（範例）
 const DEMO_REST=[{tc:'12',s:'14:30',e:'15:40'}];
 // 老師狀態：avail 可接客（rot＝輪班順位，先下鐘先輪）／serving 服務中（end＝預計下鐘）／rest 休息中
 const DEMO_TSTAT=[
@@ -2970,7 +2979,7 @@ const SLOT_LEN=60;                 // 空檔至少要能做 60 分鐘
 const BK={done:{label:'已服務',cls:'bg-sageL text-sageD'},serve:{label:'服務中',cls:'bg-brownL text-brown'},book:{label:'預約',cls:'bg-warnL text-warn'},walk:{label:'現場',cls:'bg-warnL text-warn'},rest:{label:'休息',cls:'bg-bg text-mute border border-line'}};
 function demoBlocks(){
   const b=[];
-  DEMO_ORDERS.forEach(o=>o.g.forEach(x=>{const s=tm(o.t);b.push({tc:x.tc,s,e:s+x.min+(Number(x.ex)||0)*30,kind:o.st==='paid'?'done':'serve',who:'#'+o.sn,item:SVC_SHORT[x.svc]+' '+x.min})}));
+  DEMO_ORDERS.forEach(o=>o.g.forEach(x=>{const s=tm(o.t);b.push({tc:x.tc,s,e:s+x.min+(Number(x.ex)||0)*30,kind:o.st!=='serving'?'done':'serve',who:'#'+o.sn,item:SVC_SHORT[x.svc]+' '+x.min})}));
   DEMO_BOOK.forEach(k=>{const s=tm(k.at);b.push({tc:k.hold,s,e:s+k.min,kind:k.kind,who:k.who,item:k.item,how:k.how})});
   DEMO_REST.forEach(r=>b.push({tc:r.tc,s:tm(r.s),e:tm(r.e),kind:'rest',who:'',item:'休息'}));
   return b.sort((x,y)=>x.s-y.s);
@@ -3145,17 +3154,66 @@ function SupportSheet({list,onPay,onClose}){
   );
 }
 
-function CounterHome({me,mode,desk,hideRev,sup}){
-  const M=v=>hideRev?'＊＊＊':money(v);   // 老闆設定「主櫃隱藏營業額」時遮住金額合計
+/* 主櫃最上層：老師牌況（v0.1-074）
+   底色：上牌＝白、下牌＝灰、近 2 小時有老點（指定）＝黃、休息＝綠、服務中＝紅；號碼：男藍、女紅（放在白色圓牌上，任何底色都看得清楚）
+   第 1 排：上牌／有老點／休息（依輪班順位）；第 2 排：服務中（先下鐘在前）；第 3 排：下牌（含還沒上牌、已下牌） */
+const TB_TONE={on:{bg:'bg-white border-neutral-300',l:'上牌'},off:{bg:'bg-neutral-300 border-neutral-400',l:'下牌'},ld:{bg:'bg-yellow-200 border-yellow-400',l:'2 小時內有老點'},rest:{bg:'bg-green-200 border-green-400',l:'休息'},serv:{bg:'bg-red-200 border-red-400',l:'服務中'}};
+function TeacherBoard({now}){
+  const N=tm(now);
+  const ldOf=tc=>DEMO_BOOK.find(b=>b.hold===tc&&b.how==='指定'&&tm(b.at)>=N&&tm(b.at)-N<=120);
+  const Chip=({tc,k,sub})=><div className={'w-[4.6rem] rounded-xl border px-1 pt-1.5 pb-1 flex flex-col items-center '+TB_TONE[k].bg}>
+      <span className={'w-11 h-11 rounded-full bg-white shadow-sm ring-1 ring-black/10 flex items-center justify-center num text-xl font-bold '+(DEMO_SEX[tc]==='m'?'text-blue-600':'text-red-600')}>{tc}</span>
+      <span className="text-[10px] leading-tight mt-1 text-ink/80 num text-center whitespace-nowrap">{sub}</span></div>;
+  const r1=DEMO_TSTAT.filter(t=>t.st!=='serving').slice().sort((a,b)=>(a.rot||99)-(b.rot||99)).map(t=>{const b=ldOf(t.tc);
+    return t.st==='rest'?{tc:t.tc,k:'rest',sub:'休・'+String(t.note||'').replace(' 回來','回')}:b?{tc:t.tc,k:'ld',sub:'老點 '+b.at}:{tc:t.tc,k:'on',sub:'輪 '+t.rot}});
+  const r2=DEMO_TSTAT.filter(t=>t.st==='serving').slice().sort((a,b)=>tm(a.end)-tm(b.end)).map(t=>({tc:t.tc,k:'serv',sub:'～'+t.end}));
+  const onSet=DEMO_TSTAT.map(t=>t.tc);
+  const r3=Object.keys(DEMO_SHIFT).filter(tc=>!onSet.includes(tc)).map(tc=>({tc,k:'off',sub:DEMO_SHIFT[tc][0]+' 上牌'})).concat(DEMO_OFFDONE.map(x=>({tc:x.tc,k:'off',sub:x.t+' 已下'})));
+  const Row=({t,list})=><div className="mb-2 last:mb-0"><div className="text-[11px] text-mute mb-1">{t}（{list.length}）</div><div className="flex flex-wrap gap-1.5">{list.map(x=><Chip key={x.tc} {...x}/>)}{!list.length&&<span className="text-xs text-mute">—</span>}</div></div>;
+  return <Sec title="老師牌況" demo right={<span className="text-xs text-mute num">{now}</span>}>
+    <Row t="上牌／有老點／休息" list={r1}/>
+    <Row t="服務中" list={r2}/>
+    <Row t="下牌" list={r3}/>
+    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 pt-2 border-t border-line text-[11px] text-mute">
+      {['on','ld','rest','serv','off'].map(k=><span key={k} className="flex items-center gap-1"><span className={'w-3 h-3 rounded border '+TB_TONE[k].bg}></span>{TB_TONE[k].l}</span>)}
+      <span><b className="text-blue-600">藍號</b> 男・<b className="text-red-600">紅號</b> 女</span>
+    </div>
+  </Sec>;
+}
+
+/* 主櫃：點訂單後的明細彈窗（只有這裡顯示金額） */
+function OrderSheet({o,S,st,onClose}){
+  const tot=o.g.reduce((a,x)=>a+x.amt,0);
+  return <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={onClose}>
+    <div className="w-full max-w-md bg-card rounded-2xl p-5 max-h-[92vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+      <div className="flex items-center gap-2 mb-1"><span className="text-lg">訂單 <span className="num">#{o.sn}</span></span><span className={'ml-auto text-sm '+st.cls}>{st.label}</span></div>
+      <div className="text-xs text-mute mb-3 num">{o.t} 開單{o.end?'・'+o.end+' 下鐘':''}{o.pay?'・'+o.pay+' 買單':''}・{o.g.length} 位客人</div>
+      {o.g.map((x,j)=><div key={j} className="py-2 border-b border-line text-sm">
+        <div className="flex justify-between gap-2"><span>{o.g.length>1&&<span className="text-xs text-mute mr-1">客{j+1}</span>}{SVC_SHORT[x.svc]} {x.min} 分{x.promo?<span className="text-brown text-xs"> 平日限定</span>:''}</span><span className="num">{money(x.amt)}</span></div>
+        <div className="text-xs text-mute mt-0.5">老師 <span className="num text-ink">{x.tc}</span>{x.ld?'・老點':''}・{x.zh} 支{x.adName?'・'+x.adName:''}{x.emp?'・員工價 '+Math.round(S.empRate*10)+' 折':''}</div>
+      </div>)}
+      <div className="flex justify-between items-baseline pt-3"><span>合計</span><span className="serif text-2xl text-brown num">{money(tot)}</span></div>
+      {o.st!=='paid'&&<DisBtn cls="w-full mt-3">{o.st==='done'?'買單（收款）':'服務中，結束後才能買單'}</DisBtn>}
+      <button className="w-full h-11 mt-2 rounded-xl border border-line" onClick={onClose}>關閉</button>
+    </div>
+  </div>;
+}
+
+function CounterHome({me,mode,desk,sup}){   // v0.1-073：主櫃日報不顯示營業額等金額（老闆看老闆頁）；單筆金額點開訂單才顯示
   mode=mode||'phone';
   const S=loadSettings();
   const [tsort,setTsort]=useState('rot');
   const [of,setOf]=useState('all');
   const orders=DEMO_ORDERS.map(o=>Object.assign({},o,{g:o.g.map(x=>demoCalc(S,x))}));
   const oAmt=o=>o.g.reduce((a,x)=>a+x.amt,0);
-  const paid=orders.filter(o=>o.st==='paid'),serving=orders.filter(o=>o.st==='serving');
+  const paid=orders.filter(o=>o.st==='paid'),serving=orders.filter(o=>o.st==='serving'),done=orders.filter(o=>o.st==='done');
   const guests=orders.reduce((s,o)=>s+o.g.length,0);
-  const rev=paid.reduce((s,o)=>s+oAmt(o),0),unpaid=serving.reduce((s,o)=>s+oAmt(o),0);
+  const [selO,setSelO]=useState(null);
+  const OST={serving:{label:'服務進行中',cls:'text-brown'},done:{label:'服務結束・待買單',cls:'text-warn'},paid:{label:'已買單',cls:'text-sageD'}};
+  // 老師統計（不含抽成）：單數、支數（含加購給別的老師的支數）、老點
+  const tstat=(()=>{const m={};const g=tc=>m[tc]||(m[tc]={tc,n:new Set(),zh:0,ld:0});
+    orders.forEach(o=>o.g.forEach(x=>{const r=g(x.tc);r.n.add(o.sn);r.zh+=x.zh;if(x.ld)r.ld++;(x.xs||[]).forEach(y=>{const q=g(y.tc);q.n.add(o.sn);q.zh+=y.zh})}));
+    return Object.values(m).map(r=>Object.assign(r,{n:r.n.size})).sort((a,b)=>(Number(a.tc)||0)-(Number(b.tc)||0))})();
   const exp=350;
   const zhOf=tc=>orders.reduce((s,o)=>s+o.g.filter(x=>x.tc===tc).reduce((a,x)=>a+x.zh,0),0);
   const holdOf=tc=>DEMO_BOOK.filter(b=>b.hold===tc);
@@ -3186,23 +3244,25 @@ function CounterHome({me,mode,desk,hideRev,sup}){
   const Seg=({opts,val,set})=><div className="flex rounded-lg border border-line overflow-hidden text-xs">{opts.map(o=><button key={o.id} className={'px-2.5 h-7 '+(val===o.id?'bg-sage text-white':'bg-card')} onClick={()=>set(o.id)}>{o.label}</button>)}</div>;
   const B=[
     (<Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
-        <div className="grid grid-cols-3 gap-2 mb-1"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="已結帳營業額" v={M(rev)} cls="text-brown"/></div>
-        <div className="text-xs text-mute mb-3">服務中 {serving.length} 單・未結帳 <span className="num">{M(unpaid)}</span></div>
+        <div className="grid grid-cols-5 gap-2 mb-3"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="服務中" v={serving.length} cls="text-brown"/><KV k="待買單" v={done.length} cls="text-warn"/><KV k="已買單" v={paid.length} cls="text-sageD"/></div>
         {supBtn}
         <DisBtn cls="w-full mt-2">＋ 登打訂單</DisBtn>
       </Sec>),
-    (<Sec title="訂單" demo right={<Seg opts={[{id:'all',label:'全部'},{id:'serving',label:'服務中'},{id:'paid',label:'已結帳'}]} val={of} set={setOf}/>}>
-        {shown.map((o,i)=>(
-          <div key={i} className={'flex items-start gap-3 py-2 border-b border-line last:border-0 text-sm '+(o.st==='paid'?'':'')}>
+    (<Sec title="訂單" demo right={<Seg opts={[{id:'all',label:'全部'},{id:'serving',label:'服務中'},{id:'done',label:'服務結束'},{id:'paid',label:'已買單'}]} val={of} set={setOf}/>}>
+        {['serving','done','paid'].filter(k=>of==='all'||of===k).map(k=>{const list=shown.filter(o=>o.st===k);return <React.Fragment key={k}>
+        <div className={'text-xs mt-2 mb-1 font-semibold '+OST[k].cls}>{OST[k].label}（{list.length}）</div>
+        {list.map((o,i)=>(
+          <button key={i} className="w-full text-left flex items-start gap-3 py-2 border-b border-line last:border-0 text-sm active:bg-bg" onClick={()=>setSelO(o)}>
             <span className="num text-xs text-mute w-12 shrink-0 pt-0.5">#{o.sn}<br/><span className="whitespace-nowrap">{o.t} 開</span></span>
             <span className="flex-1">{o.g.map((x,j)=><span key={j} className="block">{SVC_SHORT[x.svc]} {x.min}{x.promo?<span className="text-brown text-xs"> 平日</span>:''}<span className="text-mute">・</span><span className="num">{x.tc}</span>{x.ld?<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>:''}{x.adName?<span className="text-xs text-mute"> ＋{x.adName}</span>:''}{x.emp?<span className="ml-1 text-[10px] px-1 rounded bg-brownL text-brown">員工{Math.round(S.empRate*10)}折</span>:''}</span>)}</span>
-            <span className="text-right">
-              <span className="block num">{money(oAmt(o))}</span>
-              {o.st==='paid'?<span className="block text-[11px] text-sageD">✓ 已結帳 <span className="num">{o.pay}</span></span>:<span className="block text-[11px] text-brown">服務中・未結帳</span>}
+            <span className="text-right text-[11px] whitespace-nowrap">
+              {o.st==='paid'?<span className="block text-sageD">✓ 已買單 <span className="num">{o.pay}</span></span>:o.st==='done'?<span className="block text-warn"><span className="num">{o.end}</span> 下鐘</span>:<span className="block text-brown">服務中</span>}
+              <span className="block text-mute">明細 ›</span>
             </span>
-          </div>))}
-        {!shown.length&&<Ph>沒有訂單</Ph>}
-        {of!=='paid'&&serving.length>0&&<DisBtn cls="w-full mt-3">結帳（選擇服務中訂單）</DisBtn>}
+          </button>))}
+        {!list.length&&<div className="text-xs text-mute py-1">沒有訂單</div>}
+        </React.Fragment>})}
+        <div className="text-xs text-mute mt-2">列表不顯示金額；點訂單看明細與金額。</div>
       </Sec>),
     (<Sec title="老師狀態" demo right={<Seg opts={T_SORTS} val={tsort} set={setTsort}/>}>
         <div className="text-xs text-mute mb-2">在班 {DEMO_TSTAT.length} 位・可接 {cnt('avail')}・服務中 {cnt('serving')}・休息 {cnt('rest')}　|　<span className="text-warn">已壓牌 {held} 位</span>・現在可接 {SLOT_LEN} 分 <b className={free?'text-sageD':'text-warn'}>{free}</b> 位</div>
@@ -3244,8 +3304,8 @@ function CounterHome({me,mode,desk,hideRev,sup}){
         <div className="grid grid-cols-2 gap-2 mt-3"><DisBtn>＋ 新增預約</DisBtn><DisBtn>＋ 現場候位</DisBtn></div>
       </Sec>),
     (<Sec title="交班／日結" demo>
-        <div className="grid grid-cols-4 gap-2 mb-3"><KV k="已結帳現金" v={M(rev)}/><KV k="支出" v={'-'+money(exp)}/><KV k="支援現結" v={'-'+money(supPaidSum)}/><KV k="應有現金" v={M(rev-exp-supPaidSum)} cls="text-brown"/></div>
-        <div className="text-xs text-mute mb-2">支出：耗材（毛巾洗滌）{money(exp)}・另有服務中未結帳 {M(unpaid)}，結帳後才計入</div>
+        <div className="grid grid-cols-2 gap-2 mb-3"><KV k="支出" v={'-'+money(exp)}/><KV k="支援現結" v={'-'+money(supPaidSum)}/></div>
+        <div className="text-xs text-mute mb-2">支出：耗材（毛巾洗滌）{money(exp)}。營業額與應有現金只在老闆頁顯示；交班時點清抽屜現金輸入即可。</div>
         {supBtn}
         {supUnpaid>0&&<div className="text-xs text-warn mb-2">還有 {supUnpaid} 位支援老師未付款（日結前請確認）</div>}
         <div className="grid grid-cols-2 gap-2"><DisBtn>登記支出</DisBtn><DisBtn>{desk?'交班請按上方「換人登入（交班）」':'交班'}</DisBtn></div>
@@ -3253,19 +3313,28 @@ function CounterHome({me,mode,desk,hideRev,sup}){
     (null),   // 主櫃不需要自己的打卡卡片（人員打卡改由「人員上牌／打卡」）
     (<Sec title={'今日 '+fmtDate(ymd(new Date()))} demo>
         <div className="flex items-center gap-6 flex-wrap">
-          <KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="已結帳營業額" v={M(rev)} cls="text-brown"/>
-          <KV k="服務中・未結帳" v={serving.length+' 單・'+M(unpaid)}/><KV k="應有現金" v={M(rev-exp-supPaidSum)}/>
+          <KV k="單數" v={orders.length}/><KV k="客人" v={guests}/>
+          <KV k="服務進行中" v={serving.length} cls="text-brown"/><KV k="服務結束・待買單" v={done.length} cls="text-warn"/><KV k="已買單" v={paid.length} cls="text-sageD"/>
           <div className="flex-1"></div>
           <DisBtn cls="px-8">＋ 登打訂單</DisBtn>
         </div>
         {supBtn&&<div className="max-w-xl">{supBtn}</div>}
       </Sec>),
-    (desk||null)
+    (desk||null),
+    (<Sec title="老師統計" demo>
+        <table className="w-full text-sm num">
+          <thead><tr className="text-xs text-mute border-b border-line"><th className="text-left py-1 font-normal">老師</th><th className="font-normal">單數</th><th className="font-normal">支數</th><th className="font-normal">老點</th></tr></thead>
+          <tbody>{tstat.map(r=><tr key={r.tc} className="border-b border-line last:border-0"><td className="py-1.5">{r.tc}{DEMO_SUPPORT.includes(r.tc)&&<span className="ml-1 px-1 rounded bg-brownL text-brown text-[10px]">支援</span>}</td><td className="text-center">{r.n}</td><td className="text-center">{r.zh}</td><td className="text-center">{r.ld||''}</td></tr>)}</tbody>
+          <tfoot><tr className="text-xs text-mute"><td className="py-1.5">合計</td><td className="text-center">{orders.length}</td><td className="text-center">{tstat.reduce((a,r)=>a+r.zh,0)}</td><td className="text-center">{tstat.reduce((a,r)=>a+r.ld,0)||''}</td></tr></tfoot>
+        </table>
+      </Sec>),
+    (<TeacherBoard now={DEMO_NOW}/>)
   ];
   const head=(<><DemoNote/>
       <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span></div></>);
   return <>
-    <RolePage mode={mode} head={head} B={B} phone={[8,0,1,2,3,4,5]} wide={{top:[8,7,3],cols:[[2,4],[1,5]]}} xwide={{top:[8,7,3],cols:[[2],[1],[4,5]]}}/>
+    <RolePage mode={mode} head={head} B={B} phone={[10,8,0,1,2,3,4,9,5]} wide={{top:[10,8,7,3],cols:[[2,4],[1,9,5]]}} xwide={{top:[10,8,7,3],cols:[[2],[1,9],[4,5]]}}/>
+    {selO&&<OrderSheet o={selO} S={S} st={OST[selO.st]} onClose={()=>setSelO(null)}/>}
     {supOpen&&<SupportSheet list={supList} onPay={r=>sup&&sup.onPay(r)} onClose={()=>setSupOpen(false)}/>}
   </>;
 }
@@ -3625,15 +3694,18 @@ function PunchDesk({op,people,recs,setRecs}){
 /* ---- 主櫃系統（店內 iPad）：操作人＋上牌打卡台＋櫃台營運畫面 ----
    操作人：老闆模式，或由櫃台人員用 LINE（QR Code）登入。
    換人登入前必須先「交班點清」：本班營業額（累計已結帳 − 前面各班已交的）− 本班支出 ＝ 應有現金，輸入實點現金記錄差額。
-   櫃台人員須先完成上班打卡才能登入主櫃。老闆可設定主櫃隱藏營業額（交班時改為盲點：只輸入實點現金，差額只有老闆看得到）。 */
+   櫃台人員須先完成上班打卡才能登入主櫃。v0.1-073 起主櫃一律不顯示營業額；櫃台人員交班為盲點（只輸入實點現金，差額只有老闆看得到）。 */
+let __maincAuto=false;   // 主櫃 iPad 用 LINE 登入後自動進來＝已登入，不再顯示未登入畫面
 function MainCounter({me,mode,real,member}){
+  // v0.1-075：從身分切換頁進來，預設是「未登入」畫面；目前都在本機，點一下就進入（主櫃正式上線後移除，待討論）
+  const [locked,setLocked]=useState(()=>!(real&&__maincAuto));
   const [people,setPeople]=useState(real?[]:DEMO_STAFF);   // 正式版：members.json 中有 teacher／counter 的人
   useEffect(()=>{if(!real)return;fetchMembers().then(list=>setPeople(list.map(x=>{const i=memberInfo(x);return {uid:x.uid,name:x.name||'',tc:i.roles.includes('teacher')?x.tc:'',roles:i.roles,test:!!x.test}}).filter(x=>x.tc||x.roles.includes('counter')))).catch(()=>{})},[]);
   const day=ymd(new Date());
   const [recs,setRecsS]=useState(()=>jget('punch-'+day,[]));
   const setRecs=n=>{setRecsS(n);jset('punch-'+day,n)};
   const [op,setOpS]=useState(()=>{
-    if(real&&member){const i=memberInfo(member);return {name:member.name||'',kind:i.admin==='owner'?'owner':'counter',uid:member.uid,at:hm(new Date())}}
+    if(real&&member){const i=memberInfo(member);return {name:member.name||'',kind:i.admin==='owner'?'owner':i.admin==='manager'?'manager':'counter',uid:member.uid,at:hm(new Date())}}
     return jget('mainc-op',null)||{name:'老闆',kind:'owner',at:hm(new Date())};
   });
   const [hand,setHandS]=useState(()=>jget('handover-'+day,[]));
@@ -3646,8 +3718,8 @@ function MainCounter({me,mode,real,member}){
   const [warn,setWarn]=useState('');
   const [showSet,setShowSet]=useState(false);
   const [showHand,setShowHand]=useState(false);
-  const isOwner=op.kind==='owner';
-  const hide=!!cfg.hideRev&&!isOwner;      // 老闆模式自己永遠看得到
+  const isOwner=op.kind==='owner'||op.kind==='manager';   // 主管比照老闆模式
+  const hide=!isOwner;      // v0.1-073：櫃台人員一律不顯示營業額，交班改盲點（只輸入實點現金，差額老闆看）
 
   // 本班金額（範例資料：今天累計已結帳 − 前面各班已交班的；支出 350 算在第一班）
   const S=loadSettings();
@@ -3680,16 +3752,16 @@ function MainCounter({me,mode,real,member}){
   },[]);
   const notIn=real&&op.kind==='counter'&&!clockedIn(op.uid);
   const wide=mode!=='phone';
-  const canSeeDiff=isOwner||!cfg.hideRev;
+  const canSeeDiff=isOwner;
   const opBar=(
     <div className={'bg-brownL/70 border-b border-line'}>
       <div className={(wide?'px-6':'max-w-md mx-auto px-4')+' py-2 flex items-center gap-3 flex-wrap'}>
         <span className="text-xs px-2 py-0.5 rounded bg-brown text-white">主櫃系統</span>
-        <span className="text-sm">操作人：<b>{op.name}</b>{isOwner?'（老闆模式）':'（櫃台）'}<span className="text-xs text-mute ml-1 num">{op.at} 起</span></span>
+        <span className="text-sm">操作人：<b>{op.name}</b>{op.kind==='manager'?'（主管）':isOwner?'（老闆模式）':'（櫃台）'}<span className="text-xs text-mute ml-1 num">{op.at} 起</span></span>
         {hand.length>0&&<button className="text-xs text-mute underline" onClick={()=>setShowHand(true)}>今日交班 {hand.length} 次</button>}
-        {cfg.hideRev&&<span className="text-[11px] px-1.5 rounded bg-card border border-line text-mute">營業額隱藏中</span>}
         <span className="ml-auto flex gap-2">
           {isOwner&&<button className="h-8 px-3 rounded-full bg-card border border-line text-sm" onClick={()=>setShowSet(true)}>主櫃設定</button>}
+          <button className="h-8 px-3 rounded-full bg-card border border-line text-sm text-mute" onClick={()=>setLocked(true)}>登出</button>
           <button className="h-8 px-3 rounded-full bg-card border border-brown text-brown text-sm" onClick={openLogin}>{pend?'換人登入':'交班／換人登入'}</button>
         </span>
       </div>
@@ -3701,11 +3773,21 @@ function MainCounter({me,mode,real,member}){
     </Sec>
   );
   const Row=({k,v,cls,big})=><div className={'flex justify-between py-1 '+(big?'pt-2 mt-1 border-t border-line':'')}><span className={big?'':'text-mute'}>{k}</span><span className={'num '+(big?'serif text-2xl text-brown ':'')+(cls||'')}>{v}</span></div>;
+  if(locked)return (
+    <div className="min-h-[80vh] flex items-center justify-center px-6 py-10">
+      <div className="w-full max-w-sm text-center">
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-brown text-white text-3xl flex items-center justify-center">▣</div>
+        <div className="serif text-2xl tracking-widest text-sageD mt-4">主櫃系統</div>
+        <div className="text-sm text-mute mt-1">尚未登入</div>
+        <button className="w-full h-14 mt-6 rounded-2xl bg-sage text-white text-lg" onClick={()=>{setLocked(false);const n=Object.assign({},op,{at:hm(new Date())});setOpS(n);if(!real)jset('mainc-op',n)}}>點一下進入{op.name?'（'+op.name+'）':''}</button>
+        <div className="text-xs text-mute mt-4 leading-relaxed">目前都在本機測試，點一下就能進入。<br/>主櫃正式上線後，這個按鈕會移除，改成 LINE 掃碼登入（待討論）。</div>
+      </div>
+    </div>);
   return (
     <>
       {opBar}
       {notIn&&<div className="bg-warnL text-warn text-sm px-4 py-2 text-center">{op.name} 今天還沒有上班打卡，請先由老闆或上一班產生確認碼完成打卡。</div>}
-      <CounterHome me={me} mode={mode} desk={desk} hideRev={hide} sup={{paid:supPaid,onPay}}/>
+      <CounterHome me={me} mode={mode} desk={desk} sup={{paid:supPaid,onPay}}/>
 
       {login&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setLogin(null)}>
         <div className="w-full max-w-md bg-card rounded-2xl p-5 max-h-[92vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
@@ -3715,7 +3797,7 @@ function MainCounter({me,mode,real,member}){
           {login==='count'&&<>
             <div className="text-lg">交班點清</div>
             <div className="text-sm text-mute mb-3">{op.name}・本班 <span className="num">{op.at}</span>～<span className="num">{hm(new Date())}</span>。請點清抽屜現金後輸入。</div>
-            {hide?<div className="mb-3 px-3 py-2 rounded-xl bg-bg border border-line text-sm text-mute">老闆已設定隱藏營業額：請直接點清現金並輸入，差額由老闆查看。</div>:
+            {hide?<div className="mb-3 px-3 py-2 rounded-xl bg-bg border border-line text-sm text-mute">主櫃不顯示營業額：請直接點清抽屜現金並輸入，差額由老闆查看。</div>:
               <div className="rounded-xl border border-line bg-bg px-3 py-2 mb-3 text-sm">
                 <Row k="本班已結帳營業額" v={money(shift.rev)}/>
                 <Row k="－ 本班現金支出" v={money(shift.exp)}/>
@@ -3755,11 +3837,8 @@ function MainCounter({me,mode,real,member}){
       {showSet&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setShowSet(false)}>
         <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
           <div className="text-lg mb-3">主櫃設定（老闆）</div>
-          <button className={'w-full rounded-xl border px-3 py-3 text-left '+(cfg.hideRev?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>setCfg(Object.assign({},cfg,{hideRev:!cfg.hideRev}))}>
-            <div>{cfg.hideRev?'☑':'☐'} 隱藏當前營業額</div>
-            <div className="text-xs text-mute mt-1">櫃台人員操作主櫃時，今日營業額、未結帳合計、應有現金都顯示「＊＊＊」（單筆訂單金額仍顯示，才能收款）。交班點清改為只輸入實點現金，差額只有老闆看得到。</div>
-          </button>
-          <div className="text-xs text-mute mt-3">設定只存在這台主櫃。老闆模式下一律顯示完整金額。</div>
+          <div className="rounded-xl border border-line bg-bg px-3 py-3 text-sm">主櫃日報不顯示營業額、應有現金；訂單列表不顯示金額，點單筆訂單才看得到明細與金額；支出照常顯示。<div className="text-xs text-mute mt-1">櫃台人員交班時只輸入實點現金，差額只有老闆看得到（老闆模式交班仍顯示應有現金）。營業額請看老闆頁的報表。</div></div>
+          <div className="mt-3 pt-3 border-t border-line max-h-64 overflow-y-auto"><div className="text-sm mb-1">主櫃規則</div><MaincRules S={loadSettings()} compact/><div className="text-[11px] text-mute">腳位、床位、清潔時間在老闆頁「設定 → 主櫃系統」調整。</div></div>
           <button className="w-full h-11 mt-3 rounded-xl bg-sage text-white" onClick={()=>setShowSet(false)}>完成</button>
         </div>
       </div>}
@@ -4280,7 +4359,7 @@ function LineGate(){
       // 這台被設為主櫃（店內 iPad）：櫃台人員或老闆登入後直接進主櫃系統，操作人＝登入的人
       let mc=false;try{mc=localStorage.getItem('slowve.mainc')==='1'}catch(_e){}
       const mi=memberInfo(m);
-      if(mc&&(mi.roles.includes('counter')||mi.admin==='owner')){setMe(mine||{uid:p.userId,name:m.name||p.displayName,code:m.tc||''});setView('mainc');setSt('view');return}
+      if(mc&&(mi.roles.includes('counter')||mi.admin==='owner')){__maincAuto=true;setMe(mine||{uid:p.userId,name:m.name||p.displayName,code:m.tc||''});setView('mainc');setSt('view');return}
       setSt(mine?'welcome':'profile');
     }catch(e){setErr(String(e&&e.message||e));setSt('error')}
   };
@@ -4310,6 +4389,12 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-075','10-12','老師牌況顏色改成上牌白、下牌灰；主櫃系統也出現在主管的身分切換頁（老闆、主管可見，主管比照老闆模式）；從身分切換頁進主櫃預設是「未登入」畫面，目前在本機點一下即可進入（主櫃上線後移除，待討論）；主櫃上方新增「登出」回到未登入畫面'],
+  ['v0.1-074','10-12','主櫃最上層新增「老師牌況」：每位老師一張色塊（上牌灰、下牌白、2 小時內有老點黃、休息綠、服務中紅），號碼男藍女紅；第 1 排上牌／有老點／休息，第 2 排服務中，第 3 排下牌'],
+  ['v0.1-073','10-12','主櫃日報不再顯示營業額、應有現金等金額；訂單列表不顯示金額，分成「服務進行中」「服務結束（待買單）」「已買單」三區，點訂單跳出明細與金額；支出照常顯示金額；新增老師統計（單數、支數、老點，沒有抽成）；主櫃設定拿掉「隱藏營業額」開關，櫃台人員交班一律盲點'],
+  ['v0.1-072','10-12','主櫃規則新增 A8（客人指定老師時，頭班維持第一位）、A9（同行有人指定時，以被指定的老師當作「頭」，沒指定的客人給輪班中排在他之後的老師）'],
+  ['v0.1-071','10-12','主櫃規則修正：6 張床都是封閉床位；新增「可以打通的床位」設定（預設 1～5 號拉門可合成一大間，6 號 L 形轉角不能打通）；B6 清潔時間改成具體說明（回神整理、結帳回饋、清潔還原各約 5～10 分）；B7 說明是因為 B6 才從整點／半點開始'],
+  ['v0.1-070','10-12','設定 → 主櫃系統：新增腳位數（預設 4）、床位數（預設 6）、清潔時間（填分鐘，預設 30）、每張床是封閉（拉門）或開放（預設 1～5 封閉、6 開放）；新增「主櫃規則」逐條編號（A 排班／壓牌、B 座位），主櫃設定也看得到，之後溝通講編號即可'],
   ['v0.1-069','10-11','成為會員改填姓、先生／小姐、手機、生日（生日改必填，未滿 18 歲不能加入，說明本店服務對象為成年人，未成年人請由成年人代為預約並陪同；個資告知事項也加上確認年滿 18 歲）；會員稱呼自動帶成「王小姐」；手機顯示成 09xx-xxx-xxx（需 GAS gas-4.17）'],
   ['v0.1-068','10-10','月報拿掉本月請假月曆與櫃台差勤（櫃台差勤、補打卡審核移到「人員 → 櫃台」）；老師費用領取狀態改成到了發薪日才出現（上期 20 號、下期次月 5 號），文字改為「已領取」'],
   ['v0.1-067','10-10','老師費用發放紀錄：老闆 5／20 號自己帶現金發放，不記成當天支出、不影響櫃台現金與公司淨利（老師費用每天已算）；薪資明細可「標記已發放」，月報上期／下期顯示已發放幾位、可一鍵「其餘全部已發放」；老師頁顯示「已領取」（需 GAS gas-4.16）'],
@@ -4399,6 +4484,38 @@ function ChangelogList(){
 function NumIn({value,onChange,className}){
   return <input className={'h-10 px-2 rounded-lg border border-line bg-card num text-center '+(className||'w-full')} inputMode="numeric" value={value} onChange={e=>onChange(e.target.value.replace(/[^\d]/g,''))}/>;
 }
+/* v0.1-070：主櫃規則（逐條編號，溝通時講編號，例如「B4」）。A＝排班／壓牌，B＝座位。數字跟著設定變 */
+const rng=a=>{a=a.slice().sort((x,y)=>x-y);const o=[];for(let i=0;i<a.length;){let j=i;while(j+1<a.length&&a[j+1]===a[j]+1)j++;o.push(j>i+1?a[i]+'～'+a[j]:j===i+1?a[i]+'、'+a[j]:String(a[i]));i=j+1}return o.join('、')};
+function maincRules(S){
+  const all=Array.from({length:S.seatBed},(_,i)=>i+1),open=S.bedOpen||[],closed=all.filter(n=>!open.includes(n)),mg=S.bedMerge||[],noMg=all.filter(n=>!mg.includes(n));
+  return [
+    ['A','排班（頭班、壓牌）',[
+      '上牌的老師依順序排成輪班，排第一位的是「頭班」。',
+      '有預約時，依序從空著的上牌老師「壓牌」：預約幾位就壓幾張牌；休息中的老師跳過，但保留原本的位置。',
+      '客人進場報到時才配老師（配頭班），不是預約時就指定。',
+      '老師做完回牌，排到輪班最後面。',
+      '被壓牌的老師，如果在預約時間前有足夠空檔（含 10 分鐘緩衝），可以先接現場客。',
+      '預約客人超過 10 分鐘沒到，由櫃台手動取消。',
+      '不提供指定男／女老師；客人有需求寫在備註。',
+      '客人指定老師時，由被指定的老師服務；原本的頭班維持第一位，繼續等下一位客人。',
+      '2 人以上同行、其中有人指定老師時：這組客人以被指定的老師當作「頭」，沒指定的客人依序給輪班中排在被指定老師之後的老師；原本的頭班維持第一位。']],
+    ['B','座位（腳位、床位）',[
+      '腳位 '+S.seatFoot+' 個、床位 '+S.seatBed+' 張，兩種不能互相替代。',
+      '腳底只用腳位；指壓、油壓、刮痧、拔罐都用床位。',
+      open.length?'封閉床位：'+(closed.length?rng(closed)+' 號':'無')+'；開放床位：'+rng(open)+' 號。':'全部 '+S.seatBed+' 張都是封閉床位（'+rng(all)+' 號）。',
+      '刮痧、拔罐要脫上衣，女性客人只能排封閉床位。',
+      (mg.length?rng(mg)+' 號是拉門房，拉門打開可以合成一大間，多人同行時可以安排在一起':'沒有可以打通的床位')+(noMg.length?'；'+rng(noMg)+' 號無法打通':'')+'。',
+      '每位客人結束後，那個位子要空出 '+S.cleanMin+' 分鐘才能排下一位：客人回神、整理衣物約 5～10 分鐘，到櫃台結帳、聊聊剛才的體驗約 5～10 分鐘，再回到房間清潔、還原床位約 5～10 分鐘，合計約 15～30 分鐘。做身體的客人，尤其是 60 分鐘以上的，通常需要比較久。',
+      '因為 B6 的清潔時間'+(S.cleanMin===30?'是 30 分鐘':'')+'，預約時間一律從整點或半點開始，前一位結束加上清潔時間，剛好接上下一個半點，位子不會空等也不會撞到。',
+      '預約先保留腳位或床位的名額，客人報到時再指定幾號，跟頭班老師一起配。',
+      '客人臨時加其他項目時，先做腳或先做身體都可以，依現場哪邊有空位調度。']],
+  ];
+}
+function MaincRules({S,compact}){
+  return (<div className={compact?'text-xs':'text-sm'}>{maincRules(S).map(([g,t,list])=>(
+    <div key={g} className="mb-2"><div className="font-semibold text-sageD mb-1">{g}・{t}</div>
+      {list.map((x,i)=><div key={i} className="flex gap-2 py-0.5"><span className="num w-7 shrink-0 font-semibold text-brown">{g}{i+1}</span><span className="flex-1">{x}</span></div>)}</div>))}</div>);
+}
 function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub}){
   page=page||'set';const P_=page==='people',T_=P_&&sub==='teacher',C_=P_&&sub==='counter',G_=P_&&sub==='guest',J_=P_&&sub==='join',ST_=page==='set';
   const [dr,setDr]=useState(()=>clone(S));
@@ -4463,7 +4580,21 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub}){
         <button type="button" className={'w-full rounded-xl border px-3 py-2.5 text-left '+(dr.maincLive?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>up(n=>{n.maincLive=!n.maincLive})}>
           {dr.maincLive?'☑':'☐'} 主櫃系統已上線<span className="block text-xs text-mute mt-0.5">打開後，日報的登打訂單、新增支出、日結按鈕會收起來，改由主櫃登打；老闆／主管要改錯時按「修正」，修改會記在那一天的修正紀錄。改完按下方「儲存設定」。</span>
         </button>
-      </Card></>}
+        <div className="grid grid-cols-3 gap-2 mt-3">
+          <label><div className="text-xs text-mute mb-1">腳位</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.seatFoot)} onChange={v=>up(n=>{n.seatFoot=num(v)})}/><span>個</span></div></label>
+          <label><div className="text-xs text-mute mb-1">床位</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.seatBed)} onChange={v=>up(n=>{n.seatBed=num(v)})}/><span>張</span></div></label>
+          <label><div className="text-xs text-mute mb-1">清潔時間</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.cleanMin)} onChange={v=>up(n=>{n.cleanMin=v===''?'':num(v)})}/><span>分</span></div></label>
+        </div>
+        <div className="text-xs text-mute mt-1">清潔時間：每位客人結束後，那個位子要空出來的分鐘數（想讓預約都從整點／半點開始，可以設 30 分）。</div>
+        <div className="text-xs text-mute mt-3 mb-1">床位類型（點一下切換；封閉＝有拉門，女性客人刮痧、拔罐只能排封閉床位）</div>
+        <div className="flex flex-wrap gap-2">{Array.from({length:Math.max(1,Math.min(20,num(dr.seatBed)||6))},(_,i)=>i+1).map(b=>{const op=(dr.bedOpen||[]).map(Number).includes(b);return (
+          <button key={b} type="button" className={'h-10 px-3 rounded-xl border num '+(op?'bg-card border-line':'bg-sageL border-sage text-sageD')} onClick={()=>up(n=>{const a=(n.bedOpen||[]).map(Number);n.bedOpen=op?a.filter(x=>x!==b):a.concat([b])})}>床{b}<span className="text-[11px] ml-1">{op?'開放':'封閉'}</span></button>)})}</div>
+        <div className="text-xs text-mute mt-3 mb-1">可以打通的床位（拉門打開可合成一大間，多人同行時排在一起）</div>
+        <div className="flex flex-wrap gap-2">{Array.from({length:Math.max(1,Math.min(20,num(dr.seatBed)||6))},(_,i)=>i+1).map(b=>{const mg=(dr.bedMerge||[1,2,3,4,5]).map(Number).includes(b);return (
+          <button key={b} type="button" className={'h-10 px-3 rounded-xl border num '+(mg?'bg-brownL border-brown text-brown':'bg-card border-line text-mute')} onClick={()=>up(n=>{const a=(n.bedMerge||[1,2,3,4,5]).map(Number);n.bedMerge=mg?a.filter(x=>x!==b):a.concat([b])})}>床{b}<span className="text-[11px] ml-1">{mg?'可打通':'不能打通'}</span></button>)})}</div>
+      </Card>
+      <div className={sec}>主櫃規則（用編號溝通，例如「B4」）</div>
+      <Card className="p-3"><MaincRules S={mergeSettings(dr)}/></Card></>}
       {ST_&&lay&&<>
         <div className={sec.replace('mt-5','mt-0')}>畫面版型（這台裝置）</div>
         <Card className="p-3 text-sm mb-1">
