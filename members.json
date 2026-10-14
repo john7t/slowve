@@ -6,6 +6,7 @@
     {"uid":"U客人…","name":"王小姐","roles":["guest"]},
     {"uid":"U86122b1dde18d801e39dd3b2ebddc31e","name":"許維仁","roles":["teacher"],"shift":"14:00-02:00","tc":"69"},
     {"uid":"Ud864ac1fb447fcc839cee7e9940fb6de","roles":["applicant"],"apply":"teacher","stage":"hired"},
-    {"uid":"U8c3e5a0572035618c54ee3dc3989964e","name":"16","roles":["teacher"],"shift":"14:00-02:00","tc":"16","support":true}
+    {"uid":"U8c3e5a0572035618c54ee3dc3989964e","name":"16","roles":["teacher"],"shift":"14:00-02:00","tc":"16","support":true},
+    {"uid":"Ueca2cdbd11ed1887629143471d4eb644","roles":["applicant"],"apply":"teacher","stage":"applied"}
   ]
 }
