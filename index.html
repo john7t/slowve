@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-093</title>
+<title>緩緩門店 v0.1-096</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-093';
+const VER='v0.1-096';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -388,6 +388,10 @@ function Dialog({dlg,onDone}){
     </div>
   );
 }
+/* v0.1-095：讀取中的動態圖示 */
+const Spin=()=><span aria-hidden="true" className="inline-block shrink-0 w-3.5 h-3.5 mr-1.5 rounded-full border-2 border-sage/30 border-t-sage animate-spin"></span>;
+const Ld=({t})=><span className="inline-flex items-center"><Spin/>{t||'讀取中…'}</span>;
+const ldTxt=m=>typeof m==='string'&&/^(讀取|載入|確認中|同步中|上傳中|下載中)/.test(m)?<Ld t={m}/>:m;
 const Card=({children,className})=><div className={'bg-card rounded-2xl border border-line '+(className||'')}>{children}</div>;
 function Stat({label,value,big,tone}){
   return (
@@ -1810,7 +1814,7 @@ function JoinPageOld(){
     <div className="min-h-screen max-w-md mx-auto p-6">
       <div className="serif text-3xl tracking-widest text-sageD text-center">緩緩</div>
       <div className="text-center text-xs tracking-[0.3em] text-brown mb-5">SLOWVE BODY SPA</div>
-      {st==='loading'&&<div className="text-center text-mute">載入中…</div>}
+      {st==='loading'&&<div className="text-center text-mute"><Ld t="載入中…"/></div>}
       {st==='error'&&<Card className="p-4 text-warn text-sm whitespace-pre-line">{err}</Card>}
       {prof&&st==='pick'&&<>
         <div className="text-center text-lg mb-1">帳號開通申請</div>
@@ -2033,7 +2037,7 @@ function JoinOnline({pre:pre0,prof0}){
   const age=ageOf(f.birth);
   return (
     <GateShell>
-      {st==='loading'&&<div className="text-center text-mute">載入中…</div>}
+      {st==='loading'&&<div className="text-center text-mute"><Ld t="載入中…"/></div>}
       {st==='error'&&<Card className="p-4 text-center"><div className="text-warn text-sm whitespace-pre-line mb-3">{err}</div><button className="h-11 px-6 rounded-xl bg-sage text-white" onClick={()=>location.reload()}>重試</button></Card>}
       {st==='approved'&&info&&<Card className="p-5 text-center bg-sageL">
         <div className="text-lg text-sageD font-semibold">✓ 帳號已開通（{memberInfo(info.member).label}）</div>
@@ -2108,7 +2112,7 @@ function JoinOnline({pre:pre0,prof0}){
 
       {st==='status'&&app&&<>
         {app.status==='applied'&&<div className="mb-3 px-4 py-3 rounded-xl bg-brownL text-brown"><div className="font-semibold">簡歷已送出</div><div className="text-sm mt-1">店家會以{app.phone?<>手機 <span className="num">{fmtPhone(app.phone)}</span> </>:'你留的手機'}與你聯繫面試，請留意來電。</div></div>}
-        {app.status==='interview'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">已安排面試</div>{app.iv?<div className="text-sm mt-1">面試時間：<b className="num">{ivText(app.iv)}</b></div>:app._pre?<div className="text-sm mt-1 text-mute">讀取面試時間…</div>:app.note&&<div className="text-sm mt-1">{app.note}</div>}<div className="text-sm mt-1">如需改期，請直接聯繫店家。</div></div>}
+        {app.status==='interview'&&<div className="mb-3 px-4 py-3 rounded-xl bg-sageL text-sageD"><div className="font-semibold">已安排面試</div>{app.iv?<div className="text-sm mt-1">面試時間：<b className="num">{ivText(app.iv)}</b></div>:app._pre?<div className="text-sm mt-1 text-mute"><Ld t="讀取面試時間…"/></div>:app.note&&<div className="text-sm mt-1">{app.note}</div>}{info&&info.shop&&<div className="text-sm mt-1">地點：{info.shop}</div>}<div className="text-sm mt-1">如需改期，請直接回覆 LINE 官方帳號或聯繫店家。</div></div>}
         {app.status==='rejected'&&<div className="mb-3 px-4 py-3 rounded-xl bg-bg border border-line text-mute"><div className="font-semibold text-ink">感謝你的應徵</div><div className="text-sm mt-1">這次未能錄取，期待日後有機會合作。</div></div>}
         <Card className="p-4 text-sm mb-3">
           <div className="flex justify-between py-1 border-b border-line"><span className="text-mute">應徵職務</span><span>{joinRoleLabel(app.role)}</span></div>
@@ -2139,7 +2143,7 @@ function JoinOnline({pre:pre0,prof0}){
           </div></div>}
         {app.role==='teacher'&&<>
           <div className="text-xs text-mute mb-1">選擇編號{f.tc&&<b className="ml-2 text-sageD num text-sm">{f.tc} 號</b>}</div>
-          <div className="mb-4">{info._pre?<div className="h-24 rounded-xl border border-line bg-card flex items-center justify-center text-sm text-mute">讀取可選的編號…</div>:<NumberPicker min={info.min} max={info.max} taken={info.taken||{}} value={f.tc} onPick={v=>set('tc',v)}/>}</div>
+          <div className="mb-4">{info._pre?<div className="h-24 rounded-xl border border-line bg-card flex items-center justify-center text-sm text-mute"><Ld t="讀取可選的編號…"/></div>:<NumberPicker min={info.min} max={info.max} taken={info.taken||{}} value={f.tc} onPick={v=>set('tc',v)}/>}</div>
         </>}
         <Err/>
         <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy||info._pre} onClick={setup}>{busy?'開通中…':'送出，開通帳號'}</button>
@@ -2170,11 +2174,11 @@ function AltAdmin({S,saveS,toast,ask}){
     {mgr.length>0&&<div className="mb-3"><div className="text-xs text-mute mb-1">開放主管使用分身（只有老闆能改）</div>
       {mgr.map(m=>{const ok=m.altOk!==false;return <button key={m.uid} type="button" disabled={busy||!st.on} className={'w-full mb-1.5 rounded-xl border px-3 py-2 text-left disabled:opacity-60 '+(ok?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>perm(m,!ok)}>
         {ok?'☑':'☐'} {m.tc?m.tc+' ':''}{m.name||'主管'}<span className="ml-2 text-xs text-mute">{ok?'可以使用分身 1～9':'不能使用分身'}</span></button>})}</div>}
-    {list===null?<div className="text-xs text-mute">讀取中…</div>:list.length===0?<div className="text-xs text-mute">目前沒有分身在開通名單上。</div>:
+    {list===null?<div className="text-xs text-mute"><Ld/></div>:list.length===0?<div className="text-xs text-mute">目前沒有分身在開通名單上。</div>:
       list.map(m=><div key={m.uid} className="flex items-center gap-2 py-1 border-b border-line last:border-0"><span className="text-warn text-xs w-20 num">{altLabel(m.uid,all)||'分身 '+m.uid.slice(-1)}</span><span className="flex-1">{m.stage?'應徵中':(m.tc?m.tc+' ':'')+(m.name||'')}</span><span className="text-xs text-mute">{m.stage?'':memberInfo(m).label}</span></div>)}
     {!st.on?<div className="text-xs text-mute mt-2">登入雲端同步（老闆）後才能清除。</div>:
       <button className="w-full h-10 mt-3 rounded-xl border border-warn text-warn disabled:opacity-40" disabled={busy} onClick={clear}>{busy?'清除中…':'清除分身資料'}</button>}
-    {msg&&<div className={'text-xs mt-2 '+(msg[0]==='✗'?'text-warn':'text-sageD')}>{msg}</div>}
+    {msg&&<div className={'text-xs mt-2 '+(msg[0]==='✗'?'text-warn':'text-sageD')}>{ldTxt(msg)}</div>}
   </div>);
 }
 /* 老闆頁：應徵與會員（約面試、錄取、不錄取；錄取後由申請人自己選編號開通） */
@@ -2217,7 +2221,7 @@ function JoinReview({S,saveS,toast,ask}){
       </div>
       {meta.github===false&&<div className="mb-2 px-3 py-2 rounded-lg bg-warnL text-warn text-xs">GAS 尚未設定 GITHUB_TOKEN，會員與錄取人員無法開通。</div>}
       <MsgQuota m={meta.msgInfo}/>
-      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{msg}</div>}
+      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{ldTxt(msg)}</div>}
       {list&&!shown.length&&<div className="text-xs text-mute py-2">{tab==='todo'?'目前沒有待處理的應徵。':tab==='hired'?'沒有等待開通的人。':'最近 60 天沒有紀錄。'}</div>}
       {shown.map(a=>{const nm=a.role==='guest'?a.nick:(a.last||'')+(a.first||'');const op=openId===a.uid;const age=ageOf(a.birth);return (
         <div key={a.uid} className={'rounded-xl border p-3 mb-2 '+(a.status==='applied'?'border-brown/50 bg-brownL/30':'border-line bg-card')}>
@@ -2486,7 +2490,7 @@ function ProfilePanel({me,kind,onData,data,managed,onResp}){   // managed：資�
     catch(e){setMsg('✗ '+e.message)}
     setBusy(false);
   };
-  if(!d)return <div className="text-sm text-mute">{msg||'讀取中…'}</div>;
+  if(!d)return <div className="text-sm text-mute">{msg?ldTxt(msg):<Ld/>}</div>;
   const P=d.profile;
   const fin='w-full min-w-0 h-11 px-3 rounded-xl border border-line bg-card';
   const KVr=({k,v})=><div className="flex gap-3 py-1.5 border-b border-line last:border-0 text-sm"><span className="w-16 shrink-0 text-mute">{k}</span><span className="flex-1 min-w-0 break-words num">{v||<span className="text-mute">—</span>}</span></div>;
@@ -2547,7 +2551,7 @@ function ProfileReview({toast,only}){   // only：'t' 老師／'c' 櫃台／'g' 
   return (
     <div className="text-sm">
       <div className="flex items-center justify-between mb-2"><span>{d?(d.review?'待審核 '+pend.length+' 筆・':'')+'工作人員 '+list.length+' 人・客人 '+((d.guests||[]).length)+' 人':'—'}</span><button className="h-8 px-3 rounded-full border border-line text-xs" onClick={load}>重新整理</button></div>
-      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{msg}</div>}
+      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{ldTxt(msg)}</div>}
       {pend.map(P=>(
         <div key={P.uid} className="rounded-xl border border-brown/50 bg-brownL/30 p-3 mb-2">
           <div className="mb-1"><b className="num">{P.tc}</b> {P.name}<span className="ml-2 text-xs text-brown">修改待審核</span></div>
@@ -2690,7 +2694,7 @@ function LeavePanel({onList,kind,data,managed,onResp,plan}={}){   // plan（櫃�
         <div className="grid grid-cols-3 gap-2 mt-3">{Object.keys(LEAVE_KIND).map(k=>(
           <div key={k} className="rounded-xl bg-bg border border-line px-2 py-2 text-center"><div className="text-xs text-mute">本月{LEAVE_KIND[k]}</div><div className="num text-lg" style={{color:LEAVE_COL[k]}}>{dayHr(sm[k])}</div></div>))}</div>);})()}
       <div className="text-xs text-mute mt-3 mb-1">{Number(ym.slice(5))} 月請假紀錄</div>
-      {list===null?<Ph>讀取中…</Ph>:mine.length===0?<Ph>本月沒有請假</Ph>:
+      {list===null?<Ph><Ld/></Ph>:mine.length===0?<Ph>本月沒有請假</Ph>:
         mine.map(L=>(
           <div key={L.id} className="flex items-center gap-2 py-2 border-b border-line last:border-0 text-sm">
             <span className="px-1.5 rounded bg-brownL text-brown text-xs shrink-0">{LEAVE_KIND[L.kind]}</span>
@@ -2717,7 +2721,7 @@ function LeaveCalendar({ym,role}){   // role：只看老師或櫃台的請假（
   useEffect(()=>{if(!st.on)return;setD(null);setSel(null);setErr('');preCall({action:'leavelist',ym}).then(setD).catch(e=>setErr(e.message))},[st.on,ym]);
   if(!st.on)return <Card className="p-3 text-sm text-mute">用 LINE 登入雲端同步後，這裡會顯示本月請假月曆。</Card>;
   if(err)return <Card className="p-3 text-sm text-warn">✗ {err}</Card>;
-  if(!d)return <Card className="p-3 text-sm text-mute">讀取中…</Card>;
+  if(!d)return <Card className="p-3 text-sm text-mute"><Ld/></Card>;
   const list=(d.list||[]).filter(leaveActive).filter(L=>!role||(L.role||'teacher')===role);
   const a=ym.split('-').map(Number);const dim=new Date(a[0],a[1],0).getDate();const first=new Date(a[0],a[1]-1,1).getDay();
   const byDay={};list.forEach(L=>leaveInMonth(L,ym).dates.forEach(x=>{(byDay[x]=byDay[x]||[]).push(L)}));
@@ -2782,7 +2786,7 @@ function LeaveReview({ask,toast,role}){   // role：teacher／counter，只列�
   return (
     <div className="text-sm">
       <div className="flex items-center justify-between mb-2"><span>{d?(d.review?'待審核 '+pend.length+' 筆・':'')+'今天之後 '+up.length+' 筆':'—'}</span><button className="h-8 px-3 rounded-full border border-line text-xs" onClick={load}>重新整理</button></div>
-      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{msg}</div>}
+      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{ldTxt(msg)}</div>}
       {pend.length>0&&<><div className="text-xs text-brown mb-1">待審核</div>{pend.map(L=><Row key={L.id} L={L}/>)}</>}
       {d&&<><div className="text-xs text-mute mt-2 mb-1">今天與之後</div>{up.length?up.map(L=><Row key={L.id} L={L}/>):<div className="text-xs text-mute py-1">沒有請假</div>}</>}
       {past.length>0&&<details className="mt-2"><summary className="text-xs text-mute">最近 30 天 {past.length} 筆</summary>{past.map(L=><Row key={L.id} L={L}/>)}</details>}
@@ -2870,7 +2874,7 @@ function TeacherLive({me,mode}){
   const status=(
     <div className="mb-3 rounded-xl border border-line bg-card px-3 py-2 text-xs flex items-center gap-2">
       <span className="flex-1 min-w-0">
-        {D?<>資料更新：<span className="num">{D.updatedAt?clockText(D.updatedAt):'本月尚無紀錄'}</span>{busy?<span className="text-mute">・確認中…</span>:upd?<span className="text-sageD">・{upd}</span>:''}</>:busy?'讀取中…':'尚未讀取'}
+        {D?<>資料更新：<span className="num">{D.updatedAt?clockText(D.updatedAt):'本月尚無紀錄'}</span>{busy?<span className="text-mute inline-flex items-center">・<Ld t="確認中…"/></span>:upd?<span className="text-sageD">・{upd}</span>:''}</>:busy?<Ld/>:'尚未讀取'}
         <span className="block text-mute">服務紀錄由櫃台／主管登打後上傳，可能晚一點才會出現。</span>
         {err&&<span className="block text-warn">✗ {err}{D?'（顯示上次讀到的資料）':''}</span>}
       </span>
@@ -2904,7 +2908,7 @@ function TeacherLive({me,mode}){
         </>}
       </Sec>),
     (<Sec title={'服務明細・'+(per==='h1'?'上期':'下期')}>
-        {dates.length===0&&<Ph>{D?'這段期間沒有服務紀錄':'讀取中…'}</Ph>}
+        {dates.length===0&&<Ph>{D?'這段期間沒有服務紀錄':<Ld/>}</Ph>}
         {dates.map(d=>{const a=byDay[d];const op=open[d]!==false;return (
           <div key={d} className="border-b border-line last:border-0">
             <button className="w-full flex items-center justify-between py-2 text-sm" onClick={()=>setOpen(o=>Object.assign({},o,{[d]:!op}))}>
@@ -3420,7 +3424,7 @@ function CounterHome({me,mode,desk,sup,cust}){   // v0.1-073：主櫃日報不�
   const head=(<><DemoNote/>
       <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span></div></>);
   return <>
-    <RolePage mode={mode} head={head} B={B} phone={[10,8,0,1,2,3,4,9,5,11]} wide={{top:[10,8,7,3],cols:[[2,4,11],[1,9,5]]}} xwide={{top:[10,8,7,3],cols:[[2],[1,9],[4,5,11]]}}/>
+    <RolePage mode={mode} head={head} B={B} phone={[11,10,8,0,1,2,3,4,9,5]} wide={{top:[11,10,8,7,3],cols:[[2,4],[1,9,5]]}} xwide={{top:[11,10,8,7,3],cols:[[2],[1,9],[4,5]]}}/>
     {selO&&<OrderSheet o={selO} S={S} st={OST[selO.st]} onClose={()=>setSelO(null)}/>}
     {supOpen&&<SupportSheet list={supList} onPay={r=>sup&&sup.onPay(r)} onClose={()=>setSupOpen(false)}/>}
   </>;
@@ -4298,7 +4302,7 @@ function CounterLive({me,mode,member}){
     (<Sec title="打卡" key="p"><PunchPanel me={me} kind="counter" cloudRecs={D&&D.punches&&D.punches[today]} onDone={r=>{jset(pqKey(uid),jget(pqKey(uid),[]).concat([r]));setQn(q=>q+1);afterPunch()}}/>
       {qn>0&&<div className="mt-2 text-xs text-brown">有 {qn} 筆打卡還沒上傳，連上網路後會自動上傳。<button className="ml-1 underline" onClick={afterPunch}>現在上傳</button></div>}</Sec>),
     (<Sec title="差勤" right={<div className="flex items-center gap-1"><button className="w-8 h-8 rounded-full border border-line bg-card" onClick={()=>setYm(shiftYm(ym,-1))} aria-label="上個月">◀</button><span className="num text-sm w-16 text-center">{Number(ym.slice(5))} 月</span><button className="w-8 h-8 rounded-full border border-line bg-card disabled:opacity-30" disabled={isCur} onClick={()=>setYm(shiftYm(ym,1))} aria-label="下個月">▶</button></div>}>
-      {!R?<Ph>{busy?'讀取中…':err||'讀取中…'}</Ph>:<>
+      {!R?<Ph>{busy?<Ld/>:err||<Ld/>}</Ph>:<>
         <div className="grid grid-cols-4 gap-2 mb-3">
           <KV k="出勤" v={R.n.work+' 天'}/>
           {R.sup?<KV k="時數" v={hrTxt(R.n.min)}/>:<KV k="遲到早退" v={(R.n.late+R.n.early)+' 次'} cls={R.n.late+R.n.early?'text-warn':''}/>}
@@ -4317,8 +4321,8 @@ function CounterLive({me,mode,member}){
         <div className="text-[11px] text-mute mt-2">{R.sup?(R.kb?'卡班只列有打櫃台卡的日子，不記異常。':'支援人員只列有來的日子，不記異常。'):R.monthly?<>上班時間 <span className="num">{sIn||'未設定'}</span>，晚到算遲到、早走算早退；沒打卡又沒請假的日子記「異常」，可以申請補打卡。休息日請用「請假 → 休假」登記。</>:'老闆設定到職日後，才會開始檢查異常。'}</div>
       </>}
     </Sec>),
-    (<Sec title={R&&R.sup?(isT?'卡班支援費用':'本月費用'):'薪資試算'}>{R?<PayCalc R={R}/>:<Ph>讀取中…</Ph>}</Sec>),
-    (<Sec title="勞基法工時提醒">{R?<LawBox law={R.law} demo/>:<Ph>讀取中…</Ph>}</Sec>),
+    (<Sec title={R&&R.sup?(isT?'卡班支援費用':'本月費用'):'薪資試算'}>{R?<PayCalc R={R}/>:<Ph><Ld/></Ph>}</Sec>),
+    (<Sec title="勞基法工時提醒">{R?<LawBox law={R.law} demo/>:<Ph><Ld/></Ph>}</Sec>),
     (<Sec title="我的班表">{R&&R.sup?<div className="text-sm text-mute">{isT?'卡班':'支援人員'}沒有固定班表，依店裡需要上班。</div>:<>
       <div className="grid grid-cols-7 gap-1 text-center text-xs">
         {week.map((d,i)=>{const k=ymd(d);const L=leaveOn(lvAll,k);const full=L.find(x=>x.all);return (
@@ -4379,8 +4383,8 @@ function peoplePrefetch(){
   loadMemAll();
 }
 // v0.1-085：GAS 用 LINE 通知對方的結果（約面試、錄取）
-const msgTxt=m=>!m?'':m.sent?'・已用 LINE 通知對方':m.why==='limit'?'・本月 LINE 訊息額度已用完，請自行聯絡對方':m.why==='alt'?'・（測試分身不發通知）':m.why==='notoken'?'':'・LINE 通知失敗，請自行聯絡對方';
-const MsgQuota=({m})=>!m?null:<div className="text-[11px] text-mute px-1 mb-2">{m.on?<>LINE 通知：本月已用 <b className={'num '+(m.used>=m.limit?'text-warn':'')}>{m.used}</b> / {m.limit} 則（新應徵通知老闆；約面試、錄取通知應徵者）</>:'LINE 通知尚未設定（GAS 指令碼屬性 LINE_MSG_TOKEN）'}</div>;
+const msgTxt=m=>!m?'':m.sent?(m.test?'・已用 LINE 發【測試】通知給你本人':'・已用 LINE 通知對方'):m.why==='limit'?'・本月 LINE 訊息額度已用完，請自行聯絡對方':m.why==='alt'?'・（測試分身不發通知；要測試可到「人員 → 應徵 → 測試分身」打開）':m.why==='notoken'?'':'・LINE 通知失敗，請自行聯絡對方';
+const MsgQuota=({m})=>!m?null:<div className="text-[11px] text-mute px-1 mb-2">{m.on?<>LINE 通知：本月已用 <b className={'num '+(m.used>=m.limit?'text-warn':'')}>{m.used}</b> / {m.limit} 則（新應徵通知老闆、主管；約面試、錄取通知應徵者）</>:'LINE 通知尚未設定（GAS 指令碼屬性 LINE_MSG_TOKEN）'}</div>;
 /* v0.1-086 客戶資料（紙本建檔）：存在 GAS 工作表「客戶資料」，只有老闆、主管看得到。
    顯示名稱＝姓＋稱謂＋手機末 3 碼（王小姐 678）；同一範圍（例如當天的客人）有重複時多顯示一碼（王小姐 5678）。 */
 const digits=v=>String(v||'').replace(/\D/g,'');
@@ -4441,7 +4445,7 @@ function CustPick({value,onChange,demo,peers}){
       <button type="button" className="h-12 px-3 rounded-xl border border-sage text-sageD whitespace-nowrap" onClick={startAdd}>＋ 新增</button></div>
     {q&&<div className="mt-1 rounded-xl border border-line overflow-hidden">{res.map(c=><button key={c.id} type="button" className="w-full flex items-center gap-2 px-3 py-2 border-b border-line last:border-0 text-left text-sm bg-card active:bg-sageL" onClick={()=>{onChange(custRef(c));setQ('')}}>
         <span className="w-12 text-xs text-mute num">{c.id}</span><span className="flex-1 num">{custLabel(c)}</span><span className="text-xs text-mute num">{c.phone?fmtPhone(c.phone):c.birth}</span></button>)}
-      {!res.length&&<div className="px-3 py-2 text-xs text-mute bg-card">{list?'找不到，按「＋ 新增」建檔':'讀取中…'}</div>}</div>}
+      {!res.length&&<div className="px-3 py-2 text-xs text-mute bg-card">{list?'找不到，按「＋ 新增」建檔':<Ld/>}</div>}</div>}
     {err&&<div className="text-xs text-warn mt-1">{err}</div>}
   </div>);
 }
@@ -4459,16 +4463,20 @@ function CustBook({toast,ask,mode,ks,admin}){
   const [list,setList]=useState(()=>mode==='demo'?jget('cust-demo',DEMO_CUSTS0):null);const [q,setQ]=useState('');const [f,setF]=useState(null);
   const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const [max,setMax]=useState(50);
   const canDel=mode==='owner'||!!admin;
+  const [hist,setHist]=useState(null);   // v0.1-096：點會員時讀以往的消費 {id,list}|{id,err}
+  const openC=async c=>{setErr('');setF(Object.assign({note:'',inote:'',first:'',fdate:'',health:[],src:[],srcOther:''},c));setHist({id:c.id});
+    try{const j=await api('orders',{id:c.id});setHist({id:c.id,list:j.list||[]})}catch(e){setHist({id:c.id,err:e.message})}};
   const api=async(op,b)=>{
     if(mode==='demo'){let L=jget('cust-demo',DEMO_CUSTS0).slice(),id=b&&b.id;
       if(op==='save'){const fm=b.form;if(!fm.last)throw new Error('請輸入姓');if(!/^09\d{8}$/.test(fm.phone||'')&&!fm.birth)throw new Error('手機（09 開頭 10 碼）和生日至少填一個');
         if((fm.health||[]).includes('以上皆無')&&fm.health.length>1)throw new Error('身體狀況勾了「以上皆無」，就不能再勾其他項目');
         if(id)L=L.map(c=>c.id===id?Object.assign({},c,fm):c);else{let mx=0;L.forEach(c=>{const n=parseInt(c.id.slice(1),10);if(n>mx)mx=n});id='C'+String(mx+1).padStart(4,'0');L.push(Object.assign({id},fm))}}
       if(op==='del')L=L.filter(c=>c.id!==id);
+      if(op==='orders')return {id,list:id==='C0001'?[{date:'2026-10-10',sn:'12',t:'15:20',item:'油壓90＋加鐘30分',tc:'77',ld:true,amt:2100,cp:0},{date:'2026-09-28',sn:'7',t:'',item:'指壓60',tc:'122',ld:false,amt:1000,cp:100}]:[]};
       jset('cust-demo',L);return {list:L,id}}
     if(mode==='line'){const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請重新登入');
       return cloud.call(Object.assign({action:'cust',op,idToken:t},ks?{ks}:{},b||{}),30000)}
-    return op==='list'?preCall({action:'custlist'}):cloud.call(Object.assign({action:op==='save'?'custsave':'custdel'},b||{}),30000);
+    return op==='list'?preCall({action:'custlist'}):cloud.call(Object.assign({action:op==='save'?'custsave':op==='orders'?'custorders':'custdel'},b||{}),30000);
   };
   const put=L=>{__custs=L;setList(L)};
   const load=async()=>{setErr('');try{const j=await api('list');put(j.list||[])}catch(e){setErr(e.message)}};
@@ -4485,9 +4493,19 @@ function CustBook({toast,ask,mode,ks,admin}){
       <input className="flex-1 min-w-0 h-10 px-3 rounded-xl border border-line bg-card num" placeholder="會員編號（15）、手機、生日（0512）或姓" value={q} onChange={e=>setQ(e.target.value)}/>
       <button className="h-10 px-4 rounded-xl bg-sage text-white whitespace-nowrap" onClick={()=>{setErr('');setF({last:'',first:'',title:'小姐',phone:/^0/.test(q.trim())?digits(q).slice(0,10):'',birth:'',note:'',inote:'',fdate:ymd(new Date()),health:[],src:[],srcOther:''})}}>＋ 新增會員</button>
     </div>
-    <div className="text-[11px] text-mute mb-2">{list?'共 '+list.length+' 位'+(q?'・符合 '+shown.length+' 位':''):'讀取中…'}・依手機排序・點一位可以修改。{mode==='demo'?'（示範資料，只存在這台）':''}</div>
+    <div className="text-[11px] text-mute mb-2">{list?'共 '+list.length+' 位'+(q?'・符合 '+shown.length+' 位':''):<Ld/>}・依手機排序・點一位可以修改。{mode==='demo'?'（示範資料，只存在這台）':''}</div>
     {f&&<div className="mb-3 rounded-xl border border-sage bg-sageL/30 p-3 space-y-2">
       <div className="text-sm text-sageD">{f.id?'修改 '+f.id+(f.uid?'（LINE 會員）':''):'新增會員'}</div>
+      {f.id&&hist&&hist.id===f.id&&<div className="rounded-xl border border-line bg-card p-2">
+        <div className="text-xs text-mute mb-1">消費紀錄{hist.list&&hist.list.length>0&&<span className="ml-1 num">・來店 {new Set(hist.list.map(x=>x.date+'#'+x.sn)).size} 次・合計 {money(hist.list.reduce((a,x)=>a+x.amt,0))}・最近 {mdTxt(hist.list[0].date)}</span>}</div>
+        {!hist.list&&!hist.err&&<div className="text-xs text-mute"><Ld/></div>}
+        {hist.err&&<div className="text-xs text-warn">✗ {hist.err}</div>}
+        {hist.list&&!hist.list.length&&<div className="text-xs text-mute">還沒有消費紀錄（訂單要選這位客人，並上傳雲端後才會出現）</div>}
+        {hist.list&&hist.list.length>0&&<div className="max-h-56 overflow-y-auto">{hist.list.map((x,i)=><div key={i} className="flex items-baseline gap-2 py-1 border-b border-line last:border-0 text-xs num">
+          <span className="w-11 text-mute">{mdTxt(x.date)}</span><span className="w-8 text-mute">#{x.sn}</span>
+          <span className="flex-1 min-w-0">{x.item}<span className="text-mute">・{x.tc}{x.ld?' 老點':''}</span>{x.skip&&<span className="ml-1 text-warn">跳單</span>}</span>
+          <span className="text-right">{money(x.amt)}{x.cp>0&&<span className="block text-brown">券 −{x.cp}</span>}</span></div>)}</div>}
+      </div>}
       <label className="block"><div className="text-xs text-mute mb-1">① 填表日期</div><input type="date" className={inp+' num'} value={f.fdate||''} onChange={e=>set('fdate',e.target.value)}/></label>
       <div className="text-xs text-mute -mb-1">② 客人基本資料</div>
       <div className="grid grid-cols-[4.5rem_1fr_auto] gap-2">
@@ -4514,7 +4532,7 @@ function CustBook({toast,ask,mode,ks,admin}){
       {f.id&&!f.uid&&canDel&&<button className="w-full h-9 text-xs text-warn" onClick={()=>del(f)}>刪除這筆</button>}
     </div>}
     {!f&&err&&<div className="text-xs text-warn mb-2">{err}</div>}
-    {shown.slice(0,max).map(c=><button key={c.id} className="w-full flex items-center gap-2 py-2 border-b border-line last:border-0 text-left text-sm" onClick={()=>{setErr('');setF(Object.assign({note:'',inote:'',first:'',fdate:'',health:[],src:[],srcOther:''},c))}}>
+    {shown.slice(0,max).map(c=><button key={c.id} className="w-full flex items-center gap-2 py-2 border-b border-line last:border-0 text-left text-sm" onClick={()=>openC(c)}>
       <span className="w-12 text-xs text-mute num">{c.id}</span>
       <span className="w-28 num">{c.phone?fmtPhone(c.phone):<span className="text-mute">—</span>}</span>
       <span className="flex-1 min-w-0">{custLabel(c)}{c.uid&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">LINE 會員</span>}{healthN(c)>0&&<span className="ml-1 text-[10px] px-1 rounded bg-warnL text-warn">⚕ {c.health.filter(h=>h!=='以上皆無').join('、')}</span>}{c.inote&&<span className="ml-1 text-[10px] px-1 rounded bg-warnL text-warn">🔒 有公司備註</span>}{c.note&&<span className="block text-xs text-mute truncate">{c.note}</span>}</span>
@@ -4531,7 +4549,7 @@ function AttMonth({ym,ask,toast}){
   const load=f=>{setErr('');fetchAtt(ym,f).then(setD).catch(e=>setErr(e.message))};
   useEffect(()=>{if(st.on){setD(null);load(false)}},[st.on,ym]);
   if(!st.on)return <Card className="p-4 text-sm text-mute">登入雲端同步（老闆／主管）後，這裡會顯示櫃台人員的出勤、異常、補打卡申請與扣薪試算。</Card>;
-  if(!d)return <Card className="p-4 text-sm text-mute">{err?'✗ '+err:'讀取中…'}</Card>;
+  if(!d)return <Card className="p-4 text-sm text-mute">{err?'✗ '+err:<Ld/>}</Card>;
   const today=d.today||ymd(new Date());
   const stage=async(F,to)=>{let note='';if(to==='rejected'){note=window.prompt('退回原因（本人看得到，可留空）','');if(note===null)return}
     setBusy(F.id);try{await cloud.call({action:'fixstage',id:F.id,to,note});load(true);toast&&toast(to==='approved'?'已核准補打卡':'已退回')}catch(e){setErr(e.message)}setBusy('')};
@@ -4719,7 +4737,7 @@ function LineGate(){
   }
   return (
     <GateShell>
-      {st==='loading'&&<div className="text-center text-mute">確認帳號中…</div>}
+      {st==='loading'&&<div className="text-center text-mute"><Ld t="確認帳號中…"/></div>}
       {st==='error'&&<Card className="p-4 text-center"><div className="text-warn text-sm whitespace-pre-line mb-3">{err}</div><button className="h-11 px-6 rounded-xl bg-sage text-white" onClick={run}>重試</button></Card>}
       {st==='notmember'&&<Card className="p-5 text-center">
         <div className="text-lg mb-1">{prof?prof.displayName+'，':''}你的帳號尚未開通</div>
@@ -4737,6 +4755,9 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-096','10-15','主櫃系統的「會員資料」移到最上面；點會員可以看到以往的消費紀錄（日期、單號、項目、老師、金額、折價券，來店次數與合計），老闆頁也一樣（GAS gas-4.32）'],
+  ['v0.1-095','10-15','讀取中、載入中、確認中等文字前面加上轉動的載入圖示；面試、錄取的 LINE 通知改成卡片訊息（附「查看詳細資訊」「進入門店系統」按鈕），面試時間、地點改在系統的應徵進度頁查看（GAS gas-4.31）'],
+  ['v0.1-094','10-14','測試分身新增兩個 LINE 通知開關：老闆、主管會收到分身的應徵通知；分身本身的面試、錄取通知會發到開分身的那個人本人（userId 扣掉最後一碼），訊息開頭加【測試】（GAS gas-4.30）'],
   ['v0.1-093','10-14','公務機從加入會員的連結打開時，也會自動轉到主櫃首頁；登入頁最下方顯示版本號，方便確認手機上是不是最新版'],
   ['v0.1-092','10-14','主櫃公務機綁定店內 iPad 的 LINE 帳號：公務機打開系統直接進主櫃首頁、用登入碼換人；拿掉老闆、主管切換身分頁的「主櫃（公務機）」預覽入口（GAS gas-4.29：只有公務機可以兌換登入碼）'],
   ['v0.1-091','10-14','老師換編號：老師在「我的資料」可以申請新編號，從下一期開始生效（沒開審核＝申請日、有開審核＝核准日起算；1～15 號→16 號，16 號以後→下個月 1 號）；舊編號那段的支數、費用在老師頁照樣看得到；舊號保留 40 天；登打訂單輸入換過的舊號或還沒生效的新號會提醒（GAS gas-4.28）'],
@@ -5175,7 +5196,15 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub}){
       </>}
       {J_&&<>
       <div className={sec}>測試分身</div>
-      <Card className="p-3"><AltAdmin S={S} saveS={saveS} toast={toast} ask={ask}/></Card>
+      <Card className="p-3"><AltAdmin S={S} saveS={saveS} toast={toast} ask={ask}/>
+        <div className="mt-3 pt-3 border-t border-line text-sm">
+          <div className="text-xs text-mute mb-1.5">分身的 LINE 通知（測試用，會用掉每月訊息額度；訊息開頭加「【測試】」）</div>
+          {[['altNotifyAdmin','老闆、主管會收到分身的相關通知','分身送出應徵履歷時，老闆和主管會收到「新的應徵履歷」通知'],['altNotifySelf','分身本身也會收到相關通知','約面試、錄取時發給分身；分身是 userId＋1 碼，會扣掉最後一碼，發到開分身的那個人本人的 LINE']].map(([k,t,d])=>
+            <button key={k} type="button" className={'w-full mb-2 rounded-xl border px-3 py-2.5 text-left '+(dr[k]?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>up(n=>{n[k]=!n[k]})}>
+              {dr[k]?'☑':'☐'} {t}<span className="block text-xs text-mute mt-0.5">{d}</span></button>)}
+          <div className="text-[11px] text-mute">改完按下方「儲存設定」，上傳雲端後生效。</div>
+        </div>
+      </Card>
 
       </>}
       {(T_||C_)&&<>
@@ -5529,7 +5558,7 @@ function CloudCard({toast,ask,onPulled}){
         </>}
       {st.on&&<label className="block mb-2"><div className="text-xs text-mute mb-1">這台裝置的名稱（其他主管看到「由誰上傳」用）</div>
         <input className="w-full h-10 px-3 rounded-lg border border-line bg-card" placeholder={st.who?st.who.name+'（預設用開通名單上的姓名）':'例：小美主管'} value={name} onChange={e=>setName(e.target.value)} onBlur={()=>cloudSave({name:name.trim()})}/></label>}
-      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-sageD')}>{msg}</div>}
+      {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-sageD')}>{ldTxt(msg)}</div>}
       {st.on&&<>
         <div className="rounded-lg bg-bg border border-line px-3 py-2 mb-2 text-xs num space-y-0.5">
           <div className="flex justify-between"><span className="text-mute">狀態</span><span>{cloudChip(st).t}</span></div>
