@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-089</title>
+<title>緩緩門店 v0.1-090</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-089';
+const VER='v0.1-090';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -61,7 +61,8 @@ const SVC_SHORT={dry:'指壓',oil:'油壓',foot:'腳底'};
 const MINS=[60,90,120];
 const WK='日一二三四五六';
 const STORAGE_LIMIT=5*1024*1024;
-const JOIN_MIN=10,JOIN_HARD_MAX=100;   // 線上開通可選的編號範圍（老闆可設定上限，最多 100）
+const JOIN_MIN=0,JOIN_HARD_MAX=999;   // v0.1-090：線上開通可選的編號範圍（老闆設定起迄，預設 00～50；0～9 顯示成 00～09）
+const tcFmt=n=>{n=Number(n);return n<10?'0'+n:String(n)};
 const DEFAULT_SETTINGS={
   prices:{dry:[1000,1400,1800],oil:[1200,1600,2000],foot:[1000,1400,1800]},
   promo:{svc:'dry',min:90,price:1300},
@@ -79,6 +80,7 @@ const DEFAULT_SETTINGS={
   zhiMin:30,                      // 幾分鐘算 1 支
   cutoff:'05:00',
   teachers:[],
+  joinMin:0,
   joinMax:50,
   leaveReview:false,
   profileReview:false,            // 老師／櫃台修改個人資料是否需要審核（預設不用，存檔即生效）              // 請假是否需要老闆／主管審核（預設不用，送出即登記）                     // 線上開通：老師可選的編號 10～joinMax（最多 100）
@@ -119,7 +121,8 @@ function mergeSettings(s){
   if(r.coupon==null)r.coupon=d.coupon;
   r.teachers=Array.isArray(s.teachers)?s.teachers:[];
   r.support=Array.isArray(s.support)?s.support.map(String):[];
-  r.joinMax=Math.max(JOIN_MIN,Math.min(JOIN_HARD_MAX,Number(r.joinMax)||50));
+  r.joinMin=Math.max(JOIN_MIN,Math.min(JOIN_HARD_MAX,Number(r.joinMin)||0));
+  r.joinMax=Math.max(r.joinMin,Math.min(JOIN_HARD_MAX,r.joinMax==null||r.joinMax===''?50:Number(r.joinMax)));
   r.expCats=(Array.isArray(s.expCats)&&s.expCats.length)?s.expCats:d.expCats;
   if(!r.expCats.includes('媒體宣傳'))r.expCats=r.expCats.filter(c=>c!=='其他'&&c!=='雜支').concat(['媒體宣傳'],r.expCats.filter(c=>c==='雜支'||c==='其他'));
   r.expNames=Array.isArray(s.expNames)?s.expNames:[];
@@ -1845,25 +1848,25 @@ const MEMBER_HINT='slowve.memberHint';   // 剛核准、GitHub Pages 還沒更�
 function hintSet(m){try{localStorage.setItem(MEMBER_HINT+altSfx(),JSON.stringify({m,at:Date.now()}))}catch(_e){}}
 function hintGet(uid){try{const x=JSON.parse(localStorage.getItem(MEMBER_HINT+altSfx())||'null');return x&&x.m&&x.m.uid===uid&&Date.now()-x.at<6*36e5?x.m:null}catch(_e){return null}}
 // 頁碼：第 1 頁 10～50 號，之後每頁 50 個，到老闆設定的上限為止（最多 100）
-function numPages(min,max){const out=[];let a=min,b=Math.min(max,50);while(a<=max){out.push([a,b]);a=b+1;b=Math.min(max,a+49)}return out}
+function numPages(min,max){const out=[];let a=min,b=Math.min(max,min+49);while(a<=max){out.push([a,b]);a=b+1;b=Math.min(max,a+49)}return out}
 function NumberPicker({min,max,taken,value,onPick}){
   const pages=numPages(min,max);
   const [pg,setPg]=useState(()=>{const v=Number(value);const i=pages.findIndex(r=>v>=r[0]&&v<=r[1]);return i<0?0:i});
   const r=pages[Math.min(pg,pages.length-1)]||[min,max];
   const nums=[];for(let n=r[0];n<=r[1];n++)nums.push(n);
-  const free=pages.reduce((a,x)=>{for(let n=x[0];n<=x[1];n++)if(!taken[String(n)])a++;return a},0);
+  const free=pages.reduce((a,x)=>{for(let n=x[0];n<=x[1];n++)if(!taken[tcFmt(n)])a++;return a},0);
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
         <button type="button" className="h-9 px-3 rounded-lg border border-line bg-card disabled:opacity-30" disabled={pg<=0} onClick={()=>setPg(pg-1)} aria-label="上一頁">‹ 上一頁</button>
-        <span className="text-sm num">{r[0]}～{r[1]} 號<span className="text-xs text-mute ml-1">（{pg+1}／{pages.length}）</span></span>
+        <span className="text-sm num">{tcFmt(r[0])}～{tcFmt(r[1])} 號<span className="text-xs text-mute ml-1">（{pg+1}／{pages.length}）</span></span>
         <button type="button" className="h-9 px-3 rounded-lg border border-line bg-card disabled:opacity-30" disabled={pg>=pages.length-1} onClick={()=>setPg(pg+1)} aria-label="下一頁">下一頁 ›</button>
       </div>
       <div className="grid grid-cols-6 gap-1.5">
-        {nums.map(n=>{const t=taken[String(n)];const on=String(value)===String(n);return (
-          <button key={n} type="button" disabled={!!t} onClick={()=>onPick(String(n))} aria-label={n+' 號'+(t?'（已使用）':'')}
+        {nums.map(n=>{const k=tcFmt(n);const t=taken[k];const on=String(value)===k;return (
+          <button key={n} type="button" disabled={!!t} onClick={()=>onPick(k)} aria-label={k+' 號'+(t?'（已使用）':'')}
             className={'h-11 rounded-lg border num leading-none '+(on?'bg-sage border-sage text-white font-semibold':t?'bg-bg border-line text-mute/50':'bg-card border-line active:bg-sageL')}>
-            {n}{t&&<span className="block text-[9px] mt-0.5">{t==='pending'?'申請中':'已使用'}</span>}
+            {k}{t&&<span className="block text-[9px] mt-0.5">{t==='pending'?'申請中':'已使用'}</span>}
           </button>);})}
       </div>
       <div className="text-xs text-mute mt-2">可選 {free} 個號碼（灰色為已使用或別人申請中）</div>
@@ -4711,6 +4714,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-090','10-14','老師可選的編號改成起迄都可以設定（預設 00～50，最多到 999），0～9 號寫成 00～09；新的應徵履歷除了老闆，主管也會收到 LINE 通知（GAS gas-4.27）'],
   ['v0.1-089','10-14','會員資料欄位依店內「服務前身體狀況確認表」更新：填表日期、姓＋名、先生／小姐、電話、生日、身體狀況（8 項可複選，以上皆無與其他互斥）、特別注意事項（客人填寫）、如何得知緩緩（FB、IG、Threads、Google、親友推薦、前會員、附近住戶、其他＋說明）；列表上有身體狀況的會員標⚕（GAS gas-4.26）'],
   ['v0.1-088','10-14','會員資料：老闆頁「人員 → 客人」與主櫃系統都有「會員資料」區塊，可以搜尋、新增、修改會員；新增「🔒 公司備註」（只有老闆、主管、櫃台看得到）；線上加入的會員也自動列進來，跟紙本建檔的放在一起（GAS gas-4.25）'],
   ['v0.1-087','10-14','打訂單時可以選客人或直接新增會員（老闆頁新增訂單、主櫃結帳）；搜尋會員：1～9 開頭是會員編號（15＝C0015）、0 開頭是手機或生日、其他是姓；日報訂單顯示客人名稱（王小姐 678），當天重複時多顯示一碼；老師頁服務明細也看得到客人名稱（GAS gas-4.24）'],
@@ -5115,12 +5119,12 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub}){
         <JoinReview S={S} saveS={saveS} toast={toast} ask={ask}/>
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-line text-sm">
           <span className="flex-1">老師可選的編號</span>
-          <span className="num text-mute">{JOIN_MIN} ～</span>
-          <select className="h-10 px-2 rounded-lg border border-line bg-card num" value={dr.joinMax} onChange={e=>up(n=>{n.joinMax=Number(e.target.value)})}>
-            {[20,30,40,50,60,70,80,90,100].map(v=><option key={v} value={v}>{v}</option>)}
-          </select><span>號</span>
+          <NumIn className="w-16" value={String(dr.joinMin)} onChange={v=>up(n=>{n.joinMin=v===''?0:Math.min(JOIN_HARD_MAX,Number(v))})}/>
+          <span className="text-mute">～</span>
+          <NumIn className="w-16" value={String(dr.joinMax)} onChange={v=>up(n=>{n.joinMax=v===''?0:Math.min(JOIN_HARD_MAX,Number(v))})}/><span>號</span>
         </div>
-        <div className="text-xs text-mute mt-1">錄取的老師自己選編號：第 1 頁 10～50 號，超過 50 號在下一頁，最多開放到 100 號。改完按下方「儲存設定」，上傳雲端後生效。</div>
+        {Number(dr.joinMax)<Number(dr.joinMin)&&<div className="text-xs text-warn mt-1">結束號碼不能小於起始號碼。</div>}
+        <div className="text-xs text-mute mt-1">錄取的老師自己選編號，目前開放 <b className="num">{tcFmt(dr.joinMin)}～{tcFmt(Math.max(dr.joinMin,dr.joinMax))}</b> 號（0～9 號顯示成 00～09），每頁 50 個號碼，最多到 999 號。改完按下方「儲存設定」，上傳雲端後生效。</div>
       </Card>
 
       </>}
