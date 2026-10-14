@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-087</title>
+<title>緩緩門店 v0.1-088</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-087';
+const VER='v0.1-088';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -3259,7 +3259,7 @@ function OrderSheet({o,S,st,onClose}){
   </div>;
 }
 
-function CounterHome({me,mode,desk,sup}){   // v0.1-073：主櫃日報不顯示營業額等金額（老闆看老闆頁）；單筆金額點開訂單才顯示
+function CounterHome({me,mode,desk,sup,cust}){   // v0.1-073：主櫃日報不顯示營業額等金額（老闆看老闆頁）；單筆金額點開訂單才顯示
   mode=mode||'phone';
   const S=loadSettings();
   const [tsort,setTsort]=useState('rot');
@@ -3388,12 +3388,13 @@ function CounterHome({me,mode,desk,sup}){   // v0.1-073：主櫃日報不顯示�
           <tfoot><tr className="text-xs text-mute"><td className="py-1.5">合計</td><td className="text-center">{orders.length}</td><td className="text-center">{tstat.reduce((a,r)=>a+r.zh,0)}</td><td className="text-center">{tstat.reduce((a,r)=>a+r.ld,0)||''}</td></tr></tfoot>
         </table>
       </Sec>),
-    (<TeacherBoard now={DEMO_NOW}/>)
+    (<TeacherBoard now={DEMO_NOW}/>),
+    (<Sec title="會員資料"><CustBook mode={(cust&&cust.mode)||'demo'} ks={cust&&cust.ks} admin={cust&&cust.admin}/></Sec>)
   ];
   const head=(<><DemoNote/>
       <div className="mt-2 text-xs text-mute px-1">範例時間 <span className="num">{DEMO_NOW}</span></div></>);
   return <>
-    <RolePage mode={mode} head={head} B={B} phone={[10,8,0,1,2,3,4,9,5]} wide={{top:[10,8,7,3],cols:[[2,4],[1,9,5]]}} xwide={{top:[10,8,7,3],cols:[[2],[1,9],[4,5]]}}/>
+    <RolePage mode={mode} head={head} B={B} phone={[10,8,0,1,2,3,4,9,5,11]} wide={{top:[10,8,7,3],cols:[[2,4,11],[1,9,5]]}} xwide={{top:[10,8,7,3],cols:[[2],[1,9],[4,5,11]]}}/>
     {selO&&<OrderSheet o={selO} S={S} st={OST[selO.st]} onClose={()=>setSelO(null)}/>}
     {supOpen&&<SupportSheet list={supList} onPay={r=>sup&&sup.onPay(r)} onClose={()=>setSupOpen(false)}/>}
   </>;
@@ -3958,7 +3959,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
     <>
       {opBar}
       {notIn&&<div className="bg-warnL text-warn text-sm px-4 py-2 text-center">{op.name} 今天還沒有上班打卡，請先由老闆或上一班產生確認碼完成打卡。</div>}
-      <CounterHome me={me} mode={mode} desk={desk} sup={{paid:supPaid,onPay}}/>
+      <CounterHome me={me} mode={mode} desk={desk} sup={{paid:supPaid,onPay}} cust={{mode:real&&GAS_URL?'line':'demo',ks,admin:isOwner}}/>
 
       {login&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setLogin(null)}>
         <div className="w-full max-w-md bg-card rounded-2xl p-5 max-h-[92vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
@@ -4418,50 +4419,68 @@ function CustPick({value,onChange,demo,peers}){
     {err&&<div className="text-xs text-warn mt-1">{err}</div>}
   </div>);
 }
-function CustBook({toast,ask}){
+/* 會員資料（v0.1-088）：老闆頁「人員 → 客人」與主櫃系統共用。新增、修改、搜尋；刪除只限老闆、主管。
+   mode：'owner'（老闆頁，雲端同步通行證）／'line'（主櫃：櫃台、主管、老闆的 LINE 身分；公務機帶 ks）／'demo'（示範，存在這台）
+   欄位：姓、先生／小姐、手機、生日、偏好備註、公司備註（只有公司看得到：老闆、主管、櫃台；老師看不到） */
+function CustBook({toast,ask,mode,ks,admin}){
+  mode=mode||'owner';
   const st=useCloud();
-  const [list,setList]=useState(null);const [q,setQ]=useState('');const [f,setF]=useState(null);
+  const ready=mode==='demo'||(mode==='line'?!!GAS_URL:st.on);
+  const [list,setList]=useState(()=>mode==='demo'?jget('cust-demo',DEMO_CUSTS0):null);const [q,setQ]=useState('');const [f,setF]=useState(null);
   const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const [max,setMax]=useState(50);
-  const load=async()=>{setErr('');try{const j=await preCall({action:'custlist'});__custs=j.list||[];setList(__custs)}catch(e){setErr(e.message)}};
-  useEffect(()=>{if(st.on)load()},[st.on]);
-  if(!st.on)return <Card className="p-3 text-sm text-mute">用 LINE 登入雲端同步後，才能建檔與查詢客戶資料。</Card>;
-  const shown=custMatch(list||[],q).slice()
-    .sort((a,b)=>(digits(a.phone)||'z').localeCompare(digits(b.phone)||'z'));
+  const canDel=mode==='owner'||!!admin;
+  const api=async(op,b)=>{
+    if(mode==='demo'){let L=jget('cust-demo',DEMO_CUSTS0).slice(),id=b&&b.id;
+      if(op==='save'){const fm=b.form;if(!fm.last)throw new Error('請輸入姓');if(!/^09\d{8}$/.test(fm.phone||'')&&!fm.birth)throw new Error('手機（09 開頭 10 碼）和生日至少填一個');
+        if(id)L=L.map(c=>c.id===id?Object.assign({},c,fm):c);else{let mx=0;L.forEach(c=>{const n=parseInt(c.id.slice(1),10);if(n>mx)mx=n});id='C'+String(mx+1).padStart(4,'0');L.push(Object.assign({id},fm))}}
+      if(op==='del')L=L.filter(c=>c.id!==id);
+      jset('cust-demo',L);return {list:L,id}}
+    if(mode==='line'){const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請重新登入');
+      return cloud.call(Object.assign({action:'cust',op,idToken:t},ks?{ks}:{},b||{}),30000)}
+    return op==='list'?preCall({action:'custlist'}):cloud.call(Object.assign({action:op==='save'?'custsave':'custdel'},b||{}),30000);
+  };
+  const put=L=>{__custs=L;setList(L)};
+  const load=async()=>{setErr('');try{const j=await api('list');put(j.list||[])}catch(e){setErr(e.message)}};
+  useEffect(()=>{if(ready&&mode!=='demo')load()},[ready]);
+  if(!ready)return <Card className="p-3 text-sm text-mute">用 LINE 登入雲端同步後，才能查看與編輯會員資料。</Card>;
+  const shown=custMatch(list||[],q).slice().sort((a,b)=>(digits(a.phone)||'z').localeCompare(digits(b.phone)||'z'));
   const set=(k,v)=>{setF(p=>Object.assign({},p,{[k]:v}));setErr('')};
-  const save=async()=>{setBusy(true);setErr('');try{const j=await cloud.call({action:'custsave',id:f.id||'',form:{last:f.last,title:f.title,phone:digits(f.phone),birth:f.birth,note:f.note}});__custs=j.list||[];setList(__custs);toast&&toast((f.id?'已更新 ':'已建檔 ')+j.id);setF(null)}catch(e){setErr(e.message)}setBusy(false)};
-  const del=async c=>{if(ask&&!await ask({title:'刪除這筆客戶資料？',msg:c.id+'　'+custLabel(c)+'（'+(c.phone?fmtPhone(c.phone):c.birth)+'）',okText:'刪除',danger:true}))return;
-    try{const j=await cloud.call({action:'custdel',id:c.id});setList(j.list||[]);setF(null);toast&&toast('已刪除 '+c.id)}catch(e){setErr(e.message)}};
+  const save=async()=>{setBusy(true);setErr('');try{const j=await api('save',{id:f.id||'',form:{last:f.last,title:f.title,phone:digits(f.phone),birth:f.birth,note:f.note||'',inote:f.inote||''}});put(j.list||[]);toast&&toast((f.id?'已更新 ':'已新增會員 ')+j.id);setF(null)}catch(e){setErr(e.message)}setBusy(false)};
+  const del=async c=>{if(ask&&!await ask({title:'刪除這筆會員資料？',msg:c.id+'　'+custLabel(c)+'（'+(c.phone?fmtPhone(c.phone):c.birth)+'）',okText:'刪除',danger:true}))return;
+    try{const j=await api('del',{id:c.id});put(j.list||[]);setF(null);toast&&toast('已刪除 '+c.id)}catch(e){setErr(e.message)}};
   const inp='w-full h-11 px-3 rounded-xl border border-line bg-card';
   return (<Card className="p-3">
     <div className="flex items-center gap-2 mb-2">
       <input className="flex-1 min-w-0 h-10 px-3 rounded-xl border border-line bg-card num" placeholder="會員編號（15）、手機、生日（0512）或姓" value={q} onChange={e=>setQ(e.target.value)}/>
-      <button className="h-10 px-4 rounded-xl bg-sage text-white whitespace-nowrap" onClick={()=>{setErr('');setF({last:'',title:'小姐',phone:'',birth:'',note:''})}}>＋ 建檔</button>
+      <button className="h-10 px-4 rounded-xl bg-sage text-white whitespace-nowrap" onClick={()=>{setErr('');setF({last:'',title:'小姐',phone:/^0/.test(q.trim())?digits(q).slice(0,10):'',birth:'',note:'',inote:''})}}>＋ 新增會員</button>
     </div>
-    <div className="text-[11px] text-mute mb-2">{list?'共 '+list.length+' 筆'+(q?'・符合 '+shown.length+' 筆':''):'讀取中…'}・依手機排序。顯示名稱用姓＋末 3 碼（例：王小姐 678），老師端只會看到這個。</div>
+    <div className="text-[11px] text-mute mb-2">{list?'共 '+list.length+' 位'+(q?'・符合 '+shown.length+' 位':''):'讀取中…'}・依手機排序・點一位可以修改。{mode==='demo'?'（示範資料，只存在這台）':''}</div>
     {f&&<div className="mb-3 rounded-xl border border-sage bg-sageL/30 p-3 space-y-2">
-      <div className="text-sm text-sageD">{f.id?'修改 '+f.id:'新增客戶資料'}</div>
+      <div className="text-sm text-sageD">{f.id?'修改 '+f.id+(f.uid?'（LINE 會員）':''):'新增會員'}</div>
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <input className={inp} placeholder="姓（必填）" maxLength={4} value={f.last} onChange={e=>set('last',e.target.value.trim())}/>
         <div className="flex rounded-xl border border-line overflow-hidden">{['先生','小姐'].map(t=><button key={t} type="button" className={'px-4 '+(f.title===t?'bg-sage text-white':'bg-card')} onClick={()=>set('title',t)}>{t}</button>)}</div>
       </div>
       <input className={inp+' num'} inputMode="tel" placeholder="手機 09xx-xxx-xxx" value={fmtPhone(f.phone)} onChange={e=>set('phone',digits(e.target.value).slice(0,10))}/>
-      <label className="block"><div className="text-xs text-mute mb-1">生日（手機、生日至少填一個）</div><input type="date" className={inp+' num'} value={f.birth} onChange={e=>set('birth',e.target.value)}/></label>
-      <input className={inp} placeholder="備註（例：喜歡力道重、肩頸）" maxLength={200} value={f.note} onChange={e=>set('note',e.target.value)}/>
-      {f.last&&f.title&&digits(f.phone).length>=3&&<div className="text-xs text-mute">顯示名稱：<b className="text-ink num">{custLabel(f,list||[])}</b></div>}
+      <label className="block"><div className="text-xs text-mute mb-1">生日（手機、生日至少填一個）</div><input type="date" className={inp+' num'} value={f.birth||''} onChange={e=>set('birth',e.target.value)}/></label>
+      <label className="block"><div className="text-xs text-mute mb-1">偏好備註（例：喜歡力道重、肩頸）</div><input className={inp} maxLength={200} value={f.note||''} onChange={e=>set('note',e.target.value)}/></label>
+      <label className="block"><div className="text-xs text-warn mb-1">🔒 公司備註（只有老闆、主管、櫃台看得到；老師和會員本人都看不到）</div>
+        <textarea className="w-full min-h-[4.5rem] px-3 py-2 rounded-xl border border-warn/40 bg-warnL/30 text-sm" maxLength={300} placeholder="例：曾跳單、需先收款、指定女老師" value={f.inote||''} onChange={e=>set('inote',e.target.value)}/></label>
+      {f.last&&f.title&&digits(f.phone).length>=3&&<div className="text-xs text-mute">顯示名稱：<b className="text-ink num">{custLabel(f)}</b></div>}
       {err&&<div className="text-xs text-warn">{err}</div>}
       <div className="grid grid-cols-[1fr_2fr] gap-2"><button className="h-10 rounded-xl border border-line bg-card" onClick={()=>{setF(null);setErr('')}}>取消</button><button className="h-10 rounded-xl bg-sage text-white disabled:opacity-50" disabled={busy} onClick={save}>{busy?'儲存中…':'儲存'}</button></div>
-      {f.id&&!f.uid&&<button className="w-full h-9 text-xs text-warn" onClick={()=>del(f)}>刪除這筆</button>}
+      {f.id&&!f.uid&&canDel&&<button className="w-full h-9 text-xs text-warn" onClick={()=>del(f)}>刪除這筆</button>}
     </div>}
     {!f&&err&&<div className="text-xs text-warn mb-2">{err}</div>}
-    {shown.slice(0,max).map(c=><button key={c.id} className="w-full flex items-center gap-2 py-2 border-b border-line last:border-0 text-left text-sm" onClick={()=>{setErr('');setF(Object.assign({},c))}}>
+    {shown.slice(0,max).map(c=><button key={c.id} className="w-full flex items-center gap-2 py-2 border-b border-line last:border-0 text-left text-sm" onClick={()=>{setErr('');setF(Object.assign({note:'',inote:''},c))}}>
       <span className="w-12 text-xs text-mute num">{c.id}</span>
       <span className="w-28 num">{c.phone?fmtPhone(c.phone):<span className="text-mute">—</span>}</span>
-      <span className="flex-1 min-w-0 truncate">{custLabel(c)}{c.uid&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">已綁定會員</span>}{c.note&&<span className="block text-xs text-mute truncate">{c.note}</span>}</span>
+      <span className="flex-1 min-w-0">{custLabel(c)}{c.uid&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">LINE 會員</span>}{c.inote&&<span className="ml-1 text-[10px] px-1 rounded bg-warnL text-warn">🔒 有公司備註</span>}{c.note&&<span className="block text-xs text-mute truncate">{c.note}</span>}</span>
       <span className="text-xs text-mute num">{c.birth?c.birth.slice(5).replace('-','/'):''}</span>
     </button>)}
-    {list&&!shown.length&&<div className="text-xs text-mute py-2">{q?'找不到符合的客戶':'還沒有建檔的客戶'}</div>}
-    {shown.length>max&&<button className="w-full h-9 mt-1 text-xs text-sageD" onClick={()=>setMax(max+50)}>再顯示 50 筆（共 {shown.length} 筆）</button>}
-    <div className="text-[11px] text-mute mt-2">資料只存在 Google 試算表「客戶資料」，不會出現在公開的開通名單。客人之後加入會員時，手機和姓都對得上，就會自動綁定這筆舊資料。</div>
+    {list&&!shown.length&&<div className="text-xs text-mute py-2">{q?'找不到符合的會員，可以按「＋ 新增會員」':'還沒有會員資料'}</div>}
+    {shown.length>max&&<button className="w-full h-9 mt-1 text-xs text-sageD" onClick={()=>setMax(max+50)}>再顯示 50 位（共 {shown.length} 位）</button>}
+    <div className="text-[11px] text-mute mt-2">紙本建檔、線上加入的會員都在這裡。資料只存在 Google 試算表「客戶資料」，不會出現在公開的開通名單；客人線上加入時手機和姓對得上，就自動接上舊資料。</div>
   </Card>);
 }
 function AttMonth({ym,ask,toast}){
@@ -4676,6 +4695,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-088','10-14','會員資料：老闆頁「人員 → 客人」與主櫃系統都有「會員資料」區塊，可以搜尋、新增、修改會員；新增「🔒 公司備註」（只有老闆、主管、櫃台看得到）；線上加入的會員也自動列進來，跟紙本建檔的放在一起（GAS gas-4.25）'],
   ['v0.1-087','10-14','打訂單時可以選客人或直接新增會員（老闆頁新增訂單、主櫃結帳）；搜尋會員：1～9 開頭是會員編號（15＝C0015）、0 開頭是手機或生日、其他是姓；日報訂單顯示客人名稱（王小姐 678），當天重複時多顯示一碼；老師頁服務明細也看得到客人名稱（GAS gas-4.24）'],
   ['v0.1-086','10-14','人員 → 客人新增「客戶資料（紙本建檔）」：可以把紙本客戶資料（姓、先生／小姐、手機、生日、備註）建檔，用手機、生日或姓查詢；顯示名稱用姓＋手機末 3 碼（王小姐 678），重複時多顯示一碼；客人之後加入會員時手機和姓對得上就自動綁定（GAS gas-4.23）'],
   ['v0.1-085','10-14','LINE 通知：新的應徵履歷通知老闆、約面試與錄取通知應徵者（GAS gas-4.22，需設定 LINE_MSG_TOKEN；每月計數，到 200 則就停）；主櫃「交班／換人登入」改成「交班」：點清後回首頁，下一個登入的人自動記為接手；沒交班就有別人登入時跳出「尚未交班」提醒，繼續操作會記成「未交班・直接接手」'],
@@ -4935,16 +4955,16 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub}){
       {(T_||C_)&&<><div className={sec}>{Number(bizToday(S.cutoff).slice(5,7))} 月{T_?'老師':'櫃台'}休假</div>
         <LeaveCalendar ym={bizToday(S.cutoff).slice(0,7)} role={T_?'teacher':'counter'}/></>}
       {C_&&<><div className={sec}>{Number(bizToday(S.cutoff).slice(5,7))} 月櫃台差勤</div><AttMonth ym={bizToday(S.cutoff).slice(0,7)} toast={toast}/></>}
-      {(T_||C_||G_)&&<>
-      <div className={sec}>{T_?'老師資料':C_?'櫃台資料':'客人（會員）'}</div>
+      {(T_||C_)&&<>
+      <div className={sec}>{T_?'老師資料':'櫃台資料'}</div>
       <Card className="p-3">
         <ProfileReview toast={toast} only={T_?'t':C_?'c':'g'}/>
         {!G_&&<button type="button" className={'w-full mt-3 rounded-xl border px-3 py-2.5 text-left text-sm '+(dr.profileReview?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>up(n=>{n.profileReview=!n.profileReview})}>
           {dr.profileReview?'☑':'☐'} 修改個人資料需要審核<span className="block text-xs text-mute mt-0.5">目前{S.profileReview?'開啟：老師修改顯示名稱、上下牌時間、性別、手機、地址後，要老闆／主管核准才生效':'關閉：老師修改後立即生效'}。改完按下方「儲存設定」。老師、櫃台共用這個開關。</span>
         </button>}
       </Card>
-      {G_&&<><div className={sec}>客戶資料（紙本建檔）</div><CustBook toast={toast} ask={ask}/></>}
       </>}
+      {G_&&<><div className={sec}>會員資料</div><CustBook toast={toast} ask={ask} mode="owner"/></>}
       {ST_&&<><div className={sec.replace('mt-5','mt-0')}>主櫃系統</div>
       <Card className="p-3 text-sm mb-1">
         <button type="button" className={'w-full rounded-xl border px-3 py-2.5 text-left '+(dr.maincLive?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>up(n=>{n.maincLive=!n.maincLive})}>
