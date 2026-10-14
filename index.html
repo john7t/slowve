@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-090</title>
+<title>緩緩門店 v0.1-092</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -52,7 +52,7 @@ input,select,textarea{font-size:16px}/* 防 iOS 聚焦放大 */
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-090';
+const VER='v0.1-092';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -63,6 +63,15 @@ const WK='日一二三四五六';
 const STORAGE_LIMIT=5*1024*1024;
 const JOIN_MIN=0,JOIN_HARD_MAX=999;   // v0.1-090：線上開通可選的編號範圍（老闆設定起迄，預設 00～50；0～9 顯示成 00～09）
 const tcFmt=n=>{n=Number(n);return n<10?'0'+n:String(n)};
+function nextPeriodYmd(d){const t=ymd(d||new Date());if(Number(t.slice(8,10))<=15)return t.slice(0,7)+'-16';let y=Number(t.slice(0,4)),m=Number(t.slice(5,7))+1;if(m>12){m=1;y++}return y+'-'+String(m).padStart(2,'0')+'-01'}
+// 登打訂單時：輸入的編號是換過號的舊號，或還沒生效的新號 → 提醒（用老闆頁讀到的開通名單）
+function tcNote(tc){
+  tc=String(tc||'').trim();if(!tc||!__memAll)return '';const k=/^\d+$/.test(tc)?tcFmt(tc):tc;
+  for(const m of __memAll){if(!m)continue;
+    if(m.tcNext&&String(m.tcNext.tc)===k)return k+' 號要到 '+mdTxt(m.tcNext.from)+' 才生效，在那之前這位老師仍是 '+m.tc+' 號';
+    if((m.tcHist||[]).some(h=>String(h.tc)===k)&&String(m.tc)!==k)return k+' 號已改為 '+m.tc+' 號，請確認';}
+  return '';
+}
 const DEFAULT_SETTINGS={
   prices:{dry:[1000,1400,1800],oil:[1200,1600,2000],foot:[1000,1400,1800]},
   promo:{svc:'dry',min:90,price:1300},
@@ -543,11 +552,12 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
           <div className="mb-3"><CustPick value={it.cu||null} onChange={c=>setIt(()=>({cu:c}))} peers={f.items.filter((x,i)=>i!==cur&&x.cu).map(x=>x.cu)}/></div>
           <div className="text-xs text-mute mb-1">老師編號</div>
           <div className="flex gap-2 mb-2">
-            <input className="flex-1 h-12 px-3 rounded-xl border border-line bg-card text-lg num" inputMode="numeric" placeholder="例：122" value={it.tc} onChange={e=>{const v=e.target.value;setIt(()=>({tc:v}))}}/>
+            <input className="flex-1 h-12 px-3 rounded-xl border border-line bg-card text-lg num" inputMode="numeric" placeholder="例：122" value={it.tc} onChange={e=>{const v=e.target.value;setIt(()=>({tc:v}))}} onFocus={()=>{loadMemAll()}}/>
             <button type="button" className={'px-4 h-12 rounded-xl border whitespace-nowrap '+(it.ld?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setIt(x=>({ld:!x.ld}))}>
               {it.ld?'✓ ':''}老點
             </button>
           </div>
+          {tcNote(it.tc)&&<div className="-mt-1 mb-2 px-3 py-1.5 rounded-lg bg-warnL text-warn text-xs">⚠ {tcNote(it.tc)}</div>}
           {recent.length>0&&<div className="flex flex-wrap gap-2 mb-4">
             {recent.map(t=><button key={t} type="button" disabled={usedTc.includes(t)} className={'min-w-[2.75rem] h-9 px-3 rounded-full border text-sm num disabled:opacity-30 '+(String(it.tc)===t?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setIt(()=>({tc:t}))}>{t}</button>)}
           </div>}
@@ -1717,7 +1727,9 @@ const isApplicant=m=>!!(m&&m.stage);
 async function fetchMembers(all){
   const r=await fetch('./members.json?t='+Date.now(),{cache:'no-store'});
   if(!r.ok)throw new Error(r.status===404?'nofile':'http '+r.status);
-  const j=await r.json();const list=Array.isArray(j)?j:(j.members||[]);
+  const j=await r.json();let list=Array.isArray(j)?j:(j.members||[]);
+  // v0.1-091：換編號的生效日到了，就用新編號（GAS 之後也會把名單正式改掉）
+  const td=ymd(new Date());list=list.map(m=>m&&m.tcNext&&td>=m.tcNext.from?Object.assign({},m,{tcHist:(m.tcHist||[]).concat([{tc:String(m.tc),to:'(生效前)'}]),tc:String(m.tcNext.tc),tcNext:undefined}):m);
   return all?list:list.filter(m=>!isApplicant(m));
 }
 function JoinCard({name,role,uid}){
@@ -2281,8 +2293,8 @@ const VIEWS={
 };
 function viewsOf(m){
   const info=memberInfo(m);const v=[];
-  if(info.admin==='owner'){v.push('owner');v.push('mainc');v.push('kiosk')}
-  else if(info.admin==='manager'){v.push('owner');v.push('mainc');v.push('kiosk')}   // v0.1-080：公務機先開放老闆、主管預覽版面   // 現階段主管也可進入老闆模式（登打日報表、雲端同步）；v0.1-075 主管也可進主櫃系統
+  if(info.admin==='owner'){v.push('owner');v.push('mainc')}
+  else if(info.admin==='manager'){v.push('owner');v.push('mainc')}   // v0.1-092：公務機已綁定 userId，拿掉老闆、主管的預覽入口   // 現階段主管也可進入老闆模式（登打日報表、雲端同步）；v0.1-075 主管也可進主櫃系統
   ['teacher','counter','guest'].forEach(r=>{if(info.roles.includes(r))v.push(r)});
   // v0.1-054：老師、櫃台也可以切到客人身分（自己預約）
   if(!v.includes('guest')&&(info.roles.includes('teacher')||info.roles.includes('counter')))v.push('guest');
@@ -2463,7 +2475,8 @@ function ProfilePanel({me,kind,onData,data,managed,onResp}){   // managed：資�
     if(ph&&!/^09\d{8}$/.test(ph))return setMsg('✗ 請輸入正確的手機號碼（09 開頭 10 碼）');
     if(!!f.in!==!!f.out)return setMsg('✗ '+L[0]+'、'+L[1]+'時間要一起填');
     setBusy(true);
-    try{const j=await call({op:'save',form:Object.assign({},f,{phone:ph})});setEdit(false);
+    if(kind==='teacher'&&String(f.tc||'').trim()&&!/^\d{1,3}$/.test(String(f.tc).trim()))return setMsg('✗ 編號請填數字');
+    try{const j=await call({op:'save',form:Object.assign({},f,{phone:ph},kind==='teacher'?{tc:String(f.tc||'').trim()}:{})});setEdit(false);
       if(!j.review&&me&&me.uid){const m=meGet(me.uid);if(m)meSet(Object.assign({},m,{name:j.profile.name}))}
       setMsg(j.warn?'✗ '+j.warn:j.review?'✓ 已送出，等待老闆／主管審核':'✓ 已儲存')}
     catch(e){setMsg('✗ '+e.message)}
@@ -2477,7 +2490,9 @@ function ProfilePanel({me,kind,onData,data,managed,onResp}){   // managed：資�
     <div>
       {d.pending&&<div className="mb-2 px-3 py-2 rounded-xl bg-brownL text-brown text-xs">有修改正在等待審核，核准後才會生效。</div>}
       {d.rejected&&!d.pending&&<div className="mb-2 px-3 py-2 rounded-xl bg-warnL text-warn text-xs">上次的修改未通過：{d.rejected}</div>}
+      {kind==='teacher'&&d.tcNext&&<div className="mb-2 px-3 py-2 rounded-xl bg-sageL text-sageD text-xs">已申請換編號：<b className="num">{d.tc} → {d.tcNext.tc}</b>，<b className="num">{mdTxt(d.tcNext.from)}</b> 起生效。生效前的服務仍記在 {d.tc} 號，老師頁兩段都看得到。</div>}
       {!edit&&<>
+        {kind==='teacher'&&<KVr k="編號" v={d.tc}/>}
         <KVr k="顯示名稱" v={P.name}/>
         <KVr k={L[0]+'／'+L[1]} v={P.in&&P.out?P.in+'～'+P.out:''}/>
         <KVr k="性別" v={P.gender==='F'?'女':P.gender==='M'?'男':''}/>
@@ -2486,6 +2501,9 @@ function ProfilePanel({me,kind,onData,data,managed,onResp}){   // managed：資�
         <button className="w-full h-11 mt-3 rounded-xl border border-sage text-sageD" onClick={()=>{setEdit(true);setMsg('')}}>修改我的資料</button>
       </>}
       {edit&&f&&<div className="space-y-3">
+        {kind==='teacher'&&<label className="block"><div className="text-xs text-mute mb-1">編號（目前 {d.tc}{d.tcNext?'，已申請換成 '+d.tcNext.tc:''}）</div>
+          <input className={fin+' num'} inputMode="numeric" maxLength={3} placeholder={d.tc} value={f.tc==null?(d.tcNext?d.tcNext.tc:d.tc):f.tc} onChange={e=>set('tc',e.target.value.replace(/\D/g,''))}/>
+          <div className="text-[11px] text-mute mt-1">換編號從下一期開始生效：{d.review?'核准那天':'今天'}送出的話是 <b className="num">{mdTxt(d.nextFrom||nextPeriodYmd())}</b> 起。這一期的支數、費用仍記在原編號，0～9 號寫成 00～09。{d.tcNext?'填回 '+d.tc+' 就是取消換號。':''}</div></label>}
         <label className="block"><div className="text-xs text-mute mb-1">顯示名稱（店內看到的名字）</div><input className={fin} maxLength={20} value={f.name} onChange={e=>set('name',e.target.value)}/></label>
         <div><div className="text-xs text-mute mb-1">{L[0]}／{L[1]}時間</div>
           <div className="flex items-center gap-2"><input type="time" step="1800" aria-label={L[0]+'時間'} className={fin+' w-0 flex-1 num'} value={f.in} onChange={e=>set('in',e.target.value)}/><span className="text-mute">～</span><input type="time" step="1800" aria-label={L[1]+'時間'} className={fin+' w-0 flex-1 num'} value={f.out} onChange={e=>set('out',e.target.value)}/></div></div>
@@ -2529,6 +2547,7 @@ function ProfileReview({toast,only}){   // only：'t' 老師／'c' 櫃台／'g' 
       {pend.map(P=>(
         <div key={P.uid} className="rounded-xl border border-brown/50 bg-brownL/30 p-3 mb-2">
           <div className="mb-1"><b className="num">{P.tc}</b> {P.name}<span className="ml-2 text-xs text-brown">修改待審核</span></div>
+          {P.pending.tcNew&&<div className="text-xs num py-0.5 text-brown"><span className="text-mute w-14 inline-block">編號</span>{P.tc} → <b>{P.pending.tcNew==='cancel'?'取消換號':P.pending.tcNew+'（核准後，下一期 '+mdTxt(nextPeriodYmd())+' 起生效）'}</b></div>}
           {Object.keys(lab).filter(k=>String(P[k]||'')!==String(P.pending[k]||'')).map(k=><div key={k} className="text-xs num py-0.5"><span className="text-mute w-14 inline-block">{lab[k]}</span>{gv(k,P[k])||'—'} → <b>{gv(k,P.pending[k])||'（空白）'}</b></div>)}
           <div className="grid grid-cols-[1fr_2fr] gap-2 mt-2">
             <button className="h-9 rounded-lg border border-warn text-warn" disabled={!!busy} onClick={()=>stage(P,'rejected')}>退回</button>
@@ -3764,7 +3783,7 @@ function PunchDesk({op,people,recs,setRecs}){
 let __maincAuto=false;   // 主櫃 iPad 用 LINE 登入後自動進來＝已登入，不再顯示首頁
 let __maincDeny='';
 let __kiosk=false;       // 這台是主櫃公務機
-const KIOSK_UIDS=[];     // 主櫃公務機的 LINE userId（由「成為會員」頁最下方複製）；GAS 的 KIOSK_UIDS 也要加同一個。也可以在 members.json 標 kiosk:true
+const KIOSK_UIDS=['Ua5fed1244016ca09ada7a62679c796dc'];   // v0.1-092：店內公務機     // 主櫃公務機的 LINE userId（由「成為會員」頁最下方複製）；GAS 的 KIOSK_UIDS 也要加同一個。也可以在 members.json 標 kiosk:true
 const KIOSK_DEMO={'111111':{name:'老闆',kind:'owner'},'222222':{uid:'Udemo000000000000000000000000mei1',name:'小美',kind:'manager'},'333333':{uid:'Udemo000000000000000000000000lili',name:'麗麗',kind:'counter'},'444444':{uid:'Udemo0000000000000000000000000077',name:'77 卡班',kind:'counter'}};
 /* 要登入公務機的人：用自己手機產生 6 位數登入碼（5 分鐘內有效、只能用一次） */
 function KioskCodePanel({demo}){
@@ -4714,6 +4733,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-092','10-14','主櫃公務機綁定店內 iPad 的 LINE 帳號：公務機打開系統直接進主櫃首頁、用登入碼換人；拿掉老闆、主管切換身分頁的「主櫃（公務機）」預覽入口（GAS gas-4.29：只有公務機可以兌換登入碼）'],
+  ['v0.1-091','10-14','老師換編號：老師在「我的資料」可以申請新編號，從下一期開始生效（沒開審核＝申請日、有開審核＝核准日起算；1～15 號→16 號，16 號以後→下個月 1 號）；舊編號那段的支數、費用在老師頁照樣看得到；舊號保留 40 天；登打訂單輸入換過的舊號或還沒生效的新號會提醒（GAS gas-4.28）'],
   ['v0.1-090','10-14','老師可選的編號改成起迄都可以設定（預設 00～50，最多到 999），0～9 號寫成 00～09；新的應徵履歷除了老闆，主管也會收到 LINE 通知（GAS gas-4.27）'],
   ['v0.1-089','10-14','會員資料欄位依店內「服務前身體狀況確認表」更新：填表日期、姓＋名、先生／小姐、電話、生日、身體狀況（8 項可複選，以上皆無與其他互斥）、特別注意事項（客人填寫）、如何得知緩緩（FB、IG、Threads、Google、親友推薦、前會員、附近住戶、其他＋說明）；列表上有身體狀況的會員標⚕（GAS gas-4.26）'],
   ['v0.1-088','10-14','會員資料：老闆頁「人員 → 客人」與主櫃系統都有「會員資料」區塊，可以搜尋、新增、修改會員；新增「🔒 公司備註」（只有老闆、主管、櫃台看得到）；線上加入的會員也自動列進來，跟紙本建檔的放在一起（GAS gas-4.25）'],
