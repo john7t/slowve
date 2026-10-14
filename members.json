@@ -5,6 +5,7 @@
     {"uid":"U6dc94958428943f3499d82a5972bc946","name":"穎","roles":["teacher","counter","guest"],"tc":"258","admin":"manager","shift":"10:00-21:00"},
     {"uid":"U客人…","name":"王小姐","roles":["guest"]},
     {"uid":"U86122b1dde18d801e39dd3b2ebddc31e","name":"許維仁","roles":["teacher"],"shift":"14:00-02:00","tc":"69"},
-    {"uid":"Ud864ac1fb447fcc839cee7e9940fb6de","roles":["applicant"],"apply":"teacher","stage":"hired"}
+    {"uid":"Ud864ac1fb447fcc839cee7e9940fb6de","roles":["applicant"],"apply":"teacher","stage":"hired"},
+    {"uid":"U8c3e5a0572035618c54ee3dc3989964e","roles":["applicant"],"apply":"teacher","stage":"applied"}
   ]
 }
