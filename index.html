@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-101</title>
+<title>緩緩門店 v0.1-102</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-101';
+const VER='v0.1-102';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -2199,12 +2199,13 @@ function JoinReview({S,saveS,toast,ask}){
   const [tab,setTab]=useState('todo');
   const [openId,setOpenId]=useState(null);
   const [busy,setBusy]=useState('');
-  const load=async()=>{setMsg('讀取中…');try{const j=await preCall({action:'applist'});setList(j.list||[]);setMeta(j);setMsg('');
+  const AB={action:'applist'};
+  const load=async m=>{setMsg(pcAt(AB)?'':'讀取中…');try{const use=j=>{setList(j.list||[]);setMeta(j);setMsg('');
     const s=syncGet();s.joinN=(j.list||[]).filter(a=>a.status==='applied').length;syncSet(s);cloud.emit();
     // 已開通的支援老師：自動標記為「支援」
     const sup=(j.list||[]).filter(a=>a.status==='approved'&&a.role==='teacher'&&a.tc);
     if(sup.length){const n=clone(S);let ch=false;sup.forEach(a=>{const t=String(a.tc);if(!n.teachers.map(String).includes(t)){n.teachers=[t,...n.teachers];ch=true}if(a.support&&!n.support.includes(t)){n.support=n.support.concat([t]);ch=true}});if(ch)saveS(mergeSettings(n))}
-  }catch(e){setMsg('✗ '+e.message)}};
+  };use(await preCall(AB,0,use,m))}catch(e){setMsg('✗ '+e.message)}};
   useEffect(()=>{if(st.on)load()},[st.on]);
   if(!st.on)return <div className="text-sm text-mute">請先在下方「雲端同步」用 LINE 登入（老闆／主管），才能查看應徵與會員資料。</div>;
   const stage=async(a,to,note)=>{
@@ -2226,8 +2227,9 @@ function JoinReview({S,saveS,toast,ask}){
         <div className="flex-1 flex rounded-lg border border-line overflow-hidden text-xs">
           {[['todo','待處理'],['hired','已錄取'],['done','已完成']].map(([k,l])=><button key={k} className={'flex-1 h-9 '+(tab===k?'bg-sage text-white':'bg-card')} onClick={()=>setTab(k)}>{l}{list?' '+groups[k].length:''}</button>)}
         </div>
-        <button className="h-9 px-3 rounded-lg border border-line text-xs" onClick={load}>重新整理</button>
+        <button className="h-9 px-3 rounded-lg border border-line text-xs" onClick={()=>load('check')}>重新整理</button>
       </div>
+      <PcNote b={AB} onForce={()=>load('force')}/>
       {meta.github===false&&<div className="mb-2 px-3 py-2 rounded-lg bg-warnL text-warn text-xs">GAS 尚未設定 GITHUB_TOKEN，會員與錄取人員無法開通。</div>}
       <MsgQuota m={meta.msgInfo}/>
       {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{ldTxt(msg)}</div>}
@@ -2547,7 +2549,8 @@ function ProfileReview({toast,only}){   // only：'t' 老師／'c' 櫃台／'g' 
   const [msg,setMsg]=useState('');
   const [open,setOpen]=useState(null);
   const [busy,setBusy]=useState('');
-  const load=async()=>{setMsg('讀取中…');try{const j=await preCall({action:'proflist'});setD(j);setMsg('');const s=syncGet();s.profN=(j.list||[]).filter(x=>x.pending).length;syncSet(s);cloud.emit()}catch(e){setMsg('✗ '+e.message)}};
+  const PB={action:'proflist'};
+  const load=async m=>{setMsg(pcAt(PB)?'':'讀取中…');try{const use=j=>{setD(j);setMsg('');const s=syncGet();s.profN=(j.list||[]).filter(x=>x.pending).length;syncSet(s);cloud.emit()};use(await preCall(PB,0,use,m))}catch(e){setMsg('✗ '+e.message)}};
   useEffect(()=>{if(st.on)load()},[st.on]);
   useEffect(()=>{const f=()=>{if(cloudOn())load()};window.addEventListener('slowve-people',f);return ()=>window.removeEventListener('slowve-people',f)},[]);   // 清除分身後重讀
   if(!st.on)return <div className="text-sm text-mute">請先在下方「雲端同步」用 LINE 登入（老闆／主管），才能查看人員資料。</div>;
@@ -2559,7 +2562,8 @@ function ProfileReview({toast,only}){   // only：'t' 老師／'c' 櫃台／'g' 
   const gv=(k,v)=>k==='gender'?(v==='F'?'女':v==='M'?'男':''):v;
   return (
     <div className="text-sm">
-      <div className="flex items-center justify-between mb-2"><span>{d?(d.review?'待審核 '+pend.length+' 筆・':'')+'工作人員 '+list.length+' 人・客人 '+((d.guests||[]).length)+' 人':'—'}</span><button className="h-8 px-3 rounded-full border border-line text-xs" onClick={load}>重新整理</button></div>
+      <div className="flex items-center justify-between mb-2"><span>{d?(d.review?'待審核 '+pend.length+' 筆・':'')+'工作人員 '+list.length+' 人・客人 '+((d.guests||[]).length)+' 人':'—'}</span><button className="h-8 px-3 rounded-full border border-line text-xs" onClick={()=>load('check')}>重新整理</button></div>
+      <PcNote b={PB} onForce={()=>load('force')}/>
       {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{ldTxt(msg)}</div>}
       {pend.map(P=>(
         <div key={P.uid} className="rounded-xl border border-brown/50 bg-brownL/30 p-3 mb-2">
@@ -2727,7 +2731,7 @@ function LeaveCalendar({ym,role}){   // role：只看老師或櫃台的請假（
   const [d,setD]=useState(null);
   const [err,setErr]=useState('');
   const [sel,setSel]=useState(null);
-  useEffect(()=>{if(!st.on)return;setD(null);setSel(null);setErr('');preCall({action:'leavelist',ym}).then(setD).catch(e=>setErr(e.message))},[st.on,ym]);
+  useEffect(()=>{if(!st.on)return;setD(null);setSel(null);setErr('');preCall({action:'leavelist',ym},0,setD).then(setD).catch(e=>setErr(e.message))},[st.on,ym]);
   if(!st.on)return <Card className="p-3 text-sm text-mute">用 LINE 登入雲端同步後，這裡會顯示本月請假月曆。</Card>;
   if(err)return <Card className="p-3 text-sm text-warn">✗ {err}</Card>;
   if(!d)return <Card className="p-3 text-sm text-mute"><Ld/></Card>;
@@ -2772,7 +2776,8 @@ function LeaveReview({ask,toast,role}){   // role：teacher／counter，只列�
   const [d,setD]=useState(null);
   const [msg,setMsg]=useState('');
   const [busy,setBusy]=useState('');
-  const load=async()=>{setMsg('讀取中…');try{const j=await preCall({action:'leavelist'});setD(j);setMsg('');const s=syncGet();s.leaveN=(j.list||[]).filter(x=>x.status==='pending').length;syncSet(s);cloud.emit()}catch(e){setMsg('✗ '+e.message)}};
+  const LB={action:'leavelist'};
+  const load=async m=>{setMsg(pcAt(LB)?'':'讀取中…');try{const use=j=>{setD(j);setMsg('');const s=syncGet();s.leaveN=(j.list||[]).filter(x=>x.status==='pending').length;syncSet(s);cloud.emit()};use(await preCall(LB,0,use,m))}catch(e){setMsg('✗ '+e.message)}};
   useEffect(()=>{if(st.on)load()},[st.on]);
   if(!st.on)return <div className="text-sm text-mute">請先在下方「雲端同步」用 LINE 登入（老闆／主管），才能查看請假紀錄。</div>;
   const stage=async(L,to)=>{let note='';if(to==='rejected'){note=window.prompt('退回原因（老師看得到，可留空）','');if(note===null)return}
@@ -2794,7 +2799,8 @@ function LeaveReview({ask,toast,role}){   // role：teacher／counter，只列�
     </div>);
   return (
     <div className="text-sm">
-      <div className="flex items-center justify-between mb-2"><span>{d?(d.review?'待審核 '+pend.length+' 筆・':'')+'今天之後 '+up.length+' 筆':'—'}</span><button className="h-8 px-3 rounded-full border border-line text-xs" onClick={load}>重新整理</button></div>
+      <div className="flex items-center justify-between mb-2"><span>{d?(d.review?'待審核 '+pend.length+' 筆・':'')+'今天之後 '+up.length+' 筆':'—'}</span><button className="h-8 px-3 rounded-full border border-line text-xs" onClick={()=>load('check')}>重新整理</button></div>
+      <PcNote b={LB} onForce={()=>load('force')}/>
       {msg&&<div className={'text-xs mb-2 '+(msg[0]==='✗'?'text-warn':'text-mute')}>{ldTxt(msg)}</div>}
       {pend.length>0&&<><div className="text-xs text-brown mb-1">待審核</div>{pend.map(L=><Row key={L.id} L={L}/>)}</>}
       {d&&<><div className="text-xs text-mute mt-2 mb-1">今天與之後</div>{up.length?up.map(L=><Row key={L.id} L={L}/>):<div className="text-xs text-mute py-1">沒有請假</div>}</>}
@@ -4365,30 +4371,55 @@ function HrKaban({P,onSaved}){
   </div>);
 }
 /* ---- 老闆端：櫃台差勤（月報）、支援櫃台日結（日報）、人事設定（設定 → 人員資料） ---- */
-const ATT_CACHE={},ATT_FLY={};
-async function fetchAtt(ym,force){
-  const c=ATT_CACHE[ym];if(!force&&c&&Date.now()-c.at<(c.pre?600000:60000)){if(c.pre)c.pre=false;return c.j}
-  if(!force&&ATT_FLY[ym])return ATT_FLY[ym];   // 同一個月已經在讀了：等同一個結果，不重複送
-  const p=cloud.call({action:'attlist',ym},40000);ATT_FLY[ym]=p;
-  let j;try{j=await p}finally{delete ATT_FLY[ym]}
-  ATT_CACHE[ym]={j,at:Date.now()};
-  const s=syncGet();s.fixN=(j.pending||[]).length;syncSet(s);cloud.emit();return j;
+/* v0.1-102 人員頁的資料存在本機（localStorage，只限老闆頁、依登入帳號分開；登出就清掉）。
+   GAS（gas-4.35 起）每次回應都附上各類資料的異動時間 revs：apps 應徵、prof 人員資料、leave 請假、cust 會員、att 差勤，mem＝開通名單。
+   讀取時：本機有資料 → 先直接顯示；異動時間跟本機那份一樣就不再下載，不一樣才下載並更新畫面。
+   15 秒內問過異動時間就直接比對（例如按了審核後重新讀取）；按「重新整理」會立刻問一次；「重新下載」不比對、直接下載。 */
+const PC_KIND={applist:'apps',proflist:'prof',leavelist:'leave',custlist:'cust',attlist:'att'};
+const PC_MAX=3*864e5,REV_FRESH=15000;
+let __revs=null,__revsAt=0,__revsP=null;const PC_FLY={};
+function revsPut(r){if(r&&typeof r==='object'){__revs=r;__revsAt=Date.now()}}
+const pcRev=(kind,r)=>r&&r[kind]!=null?String(r[kind])+(kind==='cust'||kind==='att'?'':'|'+(r.mem||'')):null;
+const pcUid=()=>{const c=cloudCfg();return (c.who&&c.who.uid)||''};
+function pcAll(){const u=pcUid();try{const o=JSON.parse(localStorage.getItem('slowve.pc')||'null');if(o&&o.uid===u&&o.m)return o}catch(_e){}return {uid:u,m:{}}}
+function pcGet(k){if(!pcUid())return null;const e=pcAll().m[k];return e&&Date.now()-e.at<PC_MAX?e:null}
+function pcSet(k,e){if(!pcUid())return;const o=pcAll();o.m[k]=e;
+  try{localStorage.setItem('slowve.pc',JSON.stringify(o))}catch(_e){try{localStorage.setItem('slowve.pc',JSON.stringify({uid:o.uid,m:{[k]:e}}))}catch(_e2){}}}
+function pcClear(){try{localStorage.removeItem('slowve.pc')}catch(_e){}__revs=null;__revsAt=0}
+const pcAt=b=>{const e=pcGet(JSON.stringify(b));return e?e.at:0};
+function revsNow(force){
+  if(!force&&__revs&&Date.now()-__revsAt<REV_FRESH)return Promise.resolve(__revs);
+  if(!__revsP)__revsP=cloud.call({action:'revs'},20000).then(j=>{__revsP=null;return j.revs||null},e=>{__revsP=null;throw e});
+  return __revsP;
 }
-/* v0.1-084 老闆頁開啟時（下載日報、月報資料的同時）一併預先抓人員頁的資料：應徵、個人資料、請假、本月差勤、開通名單。
-   預抓的結果只給「第一次」讀取用（10 分鐘內），之後的讀取（例如按了審核、重新整理）照常向 GAS 要最新的。 */
-const PRE={};
-function preCall(body,ms){
-  const k=JSON.stringify(body),h=PRE[k];
-  if(h&&Date.now()-h.at<600000){delete PRE[k];return h.p}
-  delete PRE[k];return cloud.call(body,ms);
+async function pcFetch(body,ms){
+  const k=JSON.stringify(body);if(PC_FLY[k])return PC_FLY[k];   // 同一份已經在下載：等同一個結果
+  const p=cloud.call(body,ms).then(j=>{const rv=pcRev(PC_KIND[body.action],j.revs);if(rv)pcSet(k,{rev:rv,at:Date.now(),j});return j});
+  PC_FLY[k]=p;try{return await p}finally{delete PC_FLY[k]}
+}
+// mode：''＝一般；'check'＝立刻問異動時間（重新整理）；'force'＝直接下載（重新下載）。onFresh：先顯示本機資料、背景發現有異動時，用新資料再呼叫一次
+function preCall(body,ms,onFresh,mode){
+  const k=JSON.stringify(body),kind=PC_KIND[body.action],e=mode!=='force'&&kind&&pcGet(k);
+  if(!e)return pcFetch(body,ms);
+  const same=r=>!!r&&pcRev(kind,r)===e.rev;
+  if(mode==='check'||(__revs&&Date.now()-__revsAt<REV_FRESH))return revsNow(mode==='check').then(r=>same(r)?e.j:pcFetch(body,ms),()=>pcFetch(body,ms));
+  revsNow().then(r=>{if(!same(r))return pcFetch(body,ms).then(j=>{onFresh&&onFresh(j)})}).catch(()=>{});
+  return Promise.resolve(e.j);
+}
+// 本機資料的下載時間＋「重新下載」
+function PcNote({b,onForce}){
+  const at=pcAt(b);if(!at)return null;const d=new Date(at),td=ymd(d)===ymd(new Date());
+  return <div className="text-[11px] text-mute mb-2">本機資料 <span className="num">{td?'':fmtDate(ymd(d))+' '}{String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}</span> 下載・雲端沒有異動就不重新下載・<button type="button" className="underline text-sageD" onClick={onForce}>重新下載</button></div>;
+}
+async function fetchAtt(ym,force,onFresh){
+  const use=j=>{const s=syncGet();s.fixN=(j.pending||[]).length;syncSet(s);cloud.emit();return j};
+  return use(await preCall({action:'attlist',ym},40000,j=>{use(j);onFresh&&onFresh(j)},force===true?'check':force||''));
 }
 let __preAt=0;
-function peoplePrefetch(){
+function peoplePrefetch(){   // 老闆頁開啟時一併準備人員頁的資料（本機有、也沒異動就不下載）
   if(!cloudOn()||Date.now()-__preAt<300000)return;__preAt=Date.now();
   const ym=ymd(new Date()).slice(0,7);
-  [{action:'applist'},{action:'proflist'},{action:'leavelist'},{action:'leavelist',ym},{action:'custlist'}].forEach(b=>{
-    const k=JSON.stringify(b);const p=cloud.call(b).catch(e=>{delete PRE[k];throw e});p.catch(()=>{});PRE[k]={p,at:Date.now()}});
-  fetchAtt(ym).then(()=>{if(ATT_CACHE[ym])ATT_CACHE[ym].pre=true}).catch(()=>{});
+  [{action:'applist'},{action:'proflist'},{action:'leavelist'},{action:'leavelist',ym},{action:'custlist'},{action:'attlist',ym}].forEach(b=>{preCall(b,b.action==='attlist'?40000:0).catch(()=>{})});
   loadMemAll();
 }
 // v0.1-085：GAS 用 LINE 通知對方的結果（約面試、錄取）
@@ -4421,7 +4452,7 @@ const cuLabel=(cu,peers)=>custLabel(Object.assign({},cu,{phone:cu.p4||''}),(peer
 let __custs=null,__custP=null;
 function loadCusts(force){
   if(!force&&__custs)return Promise.resolve(__custs);if(!force&&__custP)return __custP;
-  __custP=(force?cloud.call({action:'custlist'}):preCall({action:'custlist'})).then(j=>{__custs=j.list||[];__custP=null;return __custs}).catch(e=>{__custP=null;throw e});return __custP;
+  __custP=preCall({action:'custlist'},0,j=>{__custs=j.list||[]},force?'check':'').then(j=>{__custs=j.list||[];__custP=null;return __custs}).catch(e=>{__custP=null;throw e});return __custP;
 }
 const DEMO_CUSTS0=[{id:'C0001',last:'王',title:'小姐',phone:'0912345678',birth:'1980-05-12'},{id:'C0015',last:'陳',title:'先生',phone:'0933222111',birth:''},{id:'C0016',last:'林',title:'小姐',phone:'0955666678',birth:'1990-08-01'}];
 /* 打訂單時選客人／新增客人（老闆頁訂單、主櫃結帳共用）。demo：示範資料存在這台 */
@@ -4495,10 +4526,10 @@ function CustBook({toast,ask,mode,ks,admin,onOrder}){
       jset('cust-demo',L);return {list:L,id}}
     if(mode==='line'){const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請重新登入');
       return cloud.call(Object.assign({action:'cust',op,idToken:t},ks?{ks}:{},b||{}),30000)}
-    return op==='list'?preCall({action:'custlist'}):cloud.call(Object.assign({action:op==='save'?'custsave':op==='orders'?'custorders':'custdel'},b||{}),30000);
+    return op==='list'?preCall({action:'custlist'},0,b&&b.onFresh,b&&b.m):cloud.call(Object.assign({action:op==='save'?'custsave':op==='orders'?'custorders':'custdel'},b||{}),30000);
   };
   const put=L=>{__custs=L;setList(L)};
-  const load=async()=>{setErr('');try{const j=await api('list');put(j.list||[])}catch(e){setErr(e.message)}};
+  const load=async m=>{setErr('');try{const j=await api('list',{onFresh:j=>put(j.list||[]),m});put(j.list||[])}catch(e){setErr(e.message)}};
   useEffect(()=>{if(ready&&mode!=='demo')load()},[ready]);
   if(!ready)return <Card className="p-3 text-sm text-mute">用 LINE 登入雲端同步後，才能查看與編輯會員資料。</Card>;
   const shown=custMatch(list||[],q).slice().sort((a,b)=>(digits(a.phone)||'z').localeCompare(digits(b.phone)||'z'));
@@ -4513,6 +4544,7 @@ function CustBook({toast,ask,mode,ks,admin,onOrder}){
       <button className="h-10 px-4 rounded-xl bg-sage text-white whitespace-nowrap" onClick={()=>{setErr('');setF({last:'',first:'',title:'小姐',phone:/^0/.test(q.trim())?digits(q).slice(0,10):'',birth:'',note:'',inote:'',fdate:ymd(new Date()),health:[],hlog:[],src:[],srcOther:''})}}>＋ 新增會員</button>
     </div>
     <div className="text-[11px] text-mute mb-2">{list?'共 '+list.length+' 位'+(q?'・符合 '+shown.length+' 位':''):<Ld/>}・依手機排序・點一位可開新的訂單，或看消費紀錄、編輯會員資料。{mode==='demo'?'（示範資料，只存在這台）':''}
+      {mode==='owner'&&list&&<span className="block mt-0.5"><PcNote b={{action:'custlist'}} onForce={()=>load('force')}/></span>}
       <span className="block mt-0.5">搜尋範例：<b className="num">15</b> 找會員編號 C0015、<b className="num">800</b> 找手機末三碼、<b className="num">0975</b> 找手機、<b className="num">0410</b>／<b className="num">1012</b> 找生日、<b>江</b> 找姓</span></div>
     {f&&<div className="mb-3 rounded-xl border border-sage bg-sageL/30 p-3 space-y-2">
       <div className="text-sm text-sageD">{f.id?'修改 '+f.id+(f.uid?'（LINE 會員）':''):'新增會員'}</div>
@@ -4582,7 +4614,7 @@ function CustBook({toast,ask,mode,ks,admin,onOrder}){
 function AttMonth({ym,ask,toast}){
   const st=useCloud();
   const [d,setD]=useState(null);const [err,setErr]=useState('');const [open,setOpen]=useState(null);const [busy,setBusy]=useState('');
-  const load=f=>{setErr('');fetchAtt(ym,f).then(setD).catch(e=>setErr(e.message))};
+  const load=f=>{setErr('');fetchAtt(ym,f,setD).then(setD).catch(e=>setErr(e.message))};
   useEffect(()=>{if(st.on){setD(null);load(false)}},[st.on,ym]);
   if(!st.on)return <Card className="p-4 text-sm text-mute">登入雲端同步（老闆／主管）後，這裡會顯示櫃台人員的出勤、異常、補打卡申請與扣薪試算。</Card>;
   if(!d)return <Card className="p-4 text-sm text-mute">{err?'✗ '+err:<Ld/>}</Card>;
@@ -4615,13 +4647,13 @@ function AttMonth({ym,ask,toast}){
       </div>}
     </div>)})}
     <div className="mt-3"><LawBox law={[]} demo onlyDemo/></div>
-    <div className="flex justify-between items-center mt-2 text-[11px] text-mute"><span>到職日、月薪／時薪在「設定 → 人員資料」設定。</span><button className="h-7 px-3 rounded-full border border-line" onClick={()=>load(true)}>重新整理</button></div>
+    <div className="flex justify-between items-center mt-2 text-[11px] text-mute"><span>到職日、月薪／時薪在「設定 → 人員資料」設定。{pcAt({action:'attlist',ym})>0&&<button type="button" className="ml-1 underline text-sageD" onClick={()=>load('force')}>重新下載</button>}</span><button className="h-7 px-3 rounded-full border border-line" onClick={()=>load(true)}>重新整理</button></div>
   </Card>);
 }
 // 日報：當天有打卡的支援櫃台 → 一鍵記成現金支出（日結）
 function SupportCounterCard({S,date,bump,closed,expenses}){
   const st=useCloud();const [d,setD]=useState(null);
-  useEffect(()=>{if(st.on)fetchAtt(date.slice(0,7)).then(setD).catch(()=>{})},[st.on,date]);
+  useEffect(()=>{if(st.on)fetchAtt(date.slice(0,7),false,setD).then(setD).catch(()=>{})},[st.on,date]);
   if(!st.on||!d)return null;
   const list=d.list.filter(p=>p.teacher||(p.hr&&p.hr.payType==='none')).map(p=>{const io=inOutOf((p.punches||{})[date]);if(!io.in)return null;const min=io.out?workMin(io.in,io.out):null;
     return {p,io,min,amt:min!=null?Math.round(min/60*(Number((p.hr||{}).hourly)||0)):0,done:(expenses||[]).find(e=>e.sc===p.uid)}}).filter(Boolean);
@@ -4791,6 +4823,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-102','10-15','老闆頁人員資料（應徵、老師／櫃台資料、請假、會員、差勤）下載後存在本機；切換頁面時先顯示本機資料，向雲端確認異動時間，一樣就不重新下載，有異動才下載更新（GAS gas-4.35）。各區塊顯示本機資料的下載時間，可按「重新下載」；登出會清掉本機資料'],
   ['v0.1-101','10-15','會員資料：點搜尋結果會出現「＋ 新的訂單」與「編輯會員資料」（老闆頁按新的訂單會直接開今天的訂單並帶入客人）；表單的「填表日期」改名「建檔日期」並移到最後；手機文字置中；身體狀況只有重大疾病、慢性疾病是長期勾選，其他（懷孕、骨折、手術、發燒、皮膚紅腫）改成點一下就記一行「今天日期＋項目」，可逐筆刪除（GAS gas-4.33）'],
   ['v0.1-100','10-15','修正 10～12 月生日搜尋不到：4 碼數字（例如 1012）也會比對生日月日，打西元年（例如 1990）也能找出生年'],
   ['v0.1-099','10-15','會員資料列表只顯示編號、手機、名稱（例：江先生 800），身體狀況、備註、生日改到點開後才看得到；搜尋可以用手機末三碼（800）；搜尋框提示改成「編號、手機、末3碼、生日、姓」，下方附搜尋範例'],
@@ -5380,6 +5413,8 @@ const cloud={
       const txt=await r.text();let j=null;try{j=JSON.parse(txt)}catch(_e){}
       if(!j)throw tr(r.ok?'GAS 暫時沒有正常回應，請稍後再試':'連線失敗（HTTP '+r.status+'，已自動重試；GAS 偶爾會暫時無法回應，請稍後再按一次）');
       if(!j.ok){const m=j.error||'GAS 發生錯誤';if(/^NEED_LOGIN/.test(m)){cloudSave({tok:'',tokExp:0});this.emit()}throw new Error(m.replace(/^NEED_LOGIN：/,''))}
+      if(j.revs&&!body.idToken){revsPut(j.revs);   // v0.1-102：各類資料的異動時間
+        if((body.action==='custsave'||body.action==='custdel')&&j.list)pcSet(JSON.stringify({action:'custlist'}),{rev:pcRev('cust',j.revs),at:Date.now(),j:{list:j.list}})}
       return j;
     }finally{t&&clearTimeout(t)}
   },
@@ -5395,7 +5430,7 @@ const cloud={
     const s=syncGet();s.err='';syncSet(s);this.emit();
     return j;
   },
-  logout(){cloudSave({tok:'',tokExp:0,who:null});this.emit()},
+  logout(){cloudSave({tok:'',tokExp:0,who:null});pcClear();this.emit()},
   // 開啟時：還沒有有效通行證、但 LINE 已登入 → 自動取得；通行證剩不到 7 天也自動換新
   async autoLogin(){
     const c=cloudCfg();if(!c.url||c.key)return;
