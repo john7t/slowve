@@ -7,6 +7,7 @@
     {"uid":"U86122b1dde18d801e39dd3b2ebddc31e","name":"許維仁","roles":["teacher"],"shift":"14:00-02:00","tc":"69"},
     {"uid":"Ud864ac1fb447fcc839cee7e9940fb6de","roles":["applicant"],"apply":"teacher","stage":"hired"},
     {"uid":"U8c3e5a0572035618c54ee3dc3989964e","name":"16","roles":["teacher"],"shift":"14:00-02:00","tc":"16","support":true},
-    {"uid":"Ueca2cdbd11ed1887629143471d4eb644","name":"88","roles":["teacher"],"shift":"11:00-23:00","tc":"88"}
+    {"uid":"Ueca2cdbd11ed1887629143471d4eb644","name":"88","roles":["teacher"],"shift":"11:00-23:00","tc":"88"},
+    {"uid":"Ufc92e41f1f51906f9388a2cf3105c5cf1","roles":["applicant"],"apply":"teacher","stage":"applied","test":true}
   ]
 }
