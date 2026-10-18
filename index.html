@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-107</title>
+<title>緩緩門店 v0.1-109</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-107';
+const VER='v0.1-109';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -683,6 +683,7 @@ function CloseSheet({S,st,ex,onSave,onClose}){
         <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={note} onChange={e=>setNote(e.target.value)} placeholder="例：找錯錢、借零錢"/>
       </label>
       <div className="text-xs text-mute mt-3">日結後當日訂單與支出會鎖定，需要修改時可解除日結。</div>
+      {cloudOn()&&<div className="mt-4 pt-3 border-t border-line"><HandNotes mode="owner" by="" uid={(cloudCfg().who||{}).uid||''} compact title="交接事項"/></div>}
     </Sheet>
   );
 }
@@ -3963,6 +3964,85 @@ function McOrderSheet({o,S,isOwner,onClose,onAct,onEdit,ask}){
   </div>;
 }
 
+/* v0.1-108 交接事項：主櫃（櫃台、主管、老闆）、老闆頁都能寫，不限交班時；交班點清、日結時列在下方。
+   存在 GAS「交接事項」（gas-4.43），不分日期：沒完成的一直留著，已完成的 3 天後不再列出。每一項可以改狀態：待處理／處理中／已完成。
+   mode 'mc'：主櫃（這台的 LINE＋登入的人 ks）；'owner'：老闆頁（雲端通行證）。測試上線時存在主櫃這台（mc-test-hn），不上傳。 */
+const HN_ST={open:{l:'待處理',c:'bg-warnL text-warn border-warn/40'},doing:{l:'處理中',c:'bg-brownL text-brown border-brown/40'},done:{l:'已完成',c:'bg-sageL text-sageD border-sage/40'}};
+/* v0.1-109：不是寫的人改狀態、又不是「已完成」時，一定要寫處理說明（GAS gas-4.44 也會擋）；每次改狀態都記在處理紀錄（hist）。
+   主櫃有人登入時，別人寫的、還沒完成、這個人這次登入後還沒確認過的交接事項，要先逐項點狀態（HnGate）才能操作。 */
+let __hn=null;const HN_SUBS=new Set();
+const hnPut=L=>{__hn=L;HN_SUBS.forEach(f=>f(L))};
+async function hnCall(mode,b){
+  if(mode==='mc'&&MC.test){   // 測試上線：只存在這台
+    let L=jget('mc-test-hn',[]);const now=Date.now(),t=hm(new Date()),who=b.by||'',me=b.uid||'';
+    if(b.op==='add')L=[{id:'t'+now,t:ymd(new Date())+' '+t,by:who,uid:me,text:b.text,st:'open',at:now,hist:[]}].concat(L);
+    if(b.op==='set'){const x=L.find(y=>y.id===b.id);if(!x)throw new Error('找不到這則交接事項');
+      if(b.st!=='done'&&!String(b.note||'').trim()&&x.uid!==me)throw new Error('不是你寫的交接事項：狀態不是「已完成」時，請寫處理說明');
+      L=L.map(y=>y.id===b.id?Object.assign({},y,{st:b.st,stBy:who,stAt:t,note:b.note||'',hist:(y.hist||[]).concat([{st:b.st,by:who,uid:me,note:b.note||'',t,at:now}])}):y)}
+    L=L.slice().sort((a,b)=>(a.st==='done')-(b.st==='done')||b.at-a.at);jset('mc-test-hn',L);return {list:L};
+  }
+  const x=Object.assign({},b);delete x.by;delete x.uid;delete x.ks;
+  if(mode==='mc'){const tk=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!tk)throw new Error('取不到主櫃的 LINE 身分，請重新開啟');
+    const ks=b.ks!=null?b.ks:(MC.auth&&MC.auth.ks);   // 登入的人的主櫃工作階段（剛登入時 MC.auth 可能還沒更新，所以由畫面直接帶）
+    return cloud.call(Object.assign({action:'hn',idToken:tk},ks?{ks}:{},x),30000)}
+  return cloud.call(Object.assign({action:'hn'},x),30000);
+}
+// 一項交接事項：內容、處理紀錄、狀態按鈕；選「待處理／處理中」時要寫處理說明（不是寫的人一定要寫）
+function HnItem({x,mode,by,uid,ks,busy,setBusy,setErr,gate}){
+  const [pick,setPick]=useState(gate?'':null);const [note,setNote]=useState('');
+  const S0=HN_ST[x.st]||HN_ST.open,mine=!!uid&&x.uid===uid;
+  const send=async(st,nt)=>{if(st!=='done'&&!mine&&!String(nt||'').trim()){setErr('請寫處理說明（不是你寫的交接事項，狀態不是「已完成」時一定要寫）');return}
+    setBusy(x.id);setErr('');try{const j=await hnCall(mode,{op:'set',id:x.id,st,note:String(nt||'').trim(),by,uid,ks});hnPut(j.list||[]);setPick(gate?'':null);setNote('')}catch(e){setErr(e.message)}setBusy('')};
+  const choose=k=>{if(k==='done'){send('done','');return}setPick(k);setErr('')};
+  const H=(x.hist||[]).slice(-3);
+  return (<div className="py-1.5 border-b border-line last:border-0">
+    <div className="flex items-start gap-2">
+      <span className="flex-1 min-w-0"><span className={x.st==='done'?'text-mute line-through':''}>{x.text}</span>
+        <span className="block text-[11px] text-mute num">{String(x.t).slice(5)}・{x.by}寫</span>
+        {H.map((h,i)=><span key={i} className="block text-[11px] num"><span className="text-mute">{h.t} {h.by} → </span><span className={(HN_ST[h.st]||HN_ST.open).c.split(' ')[1]}>{(HN_ST[h.st]||HN_ST.open).l}</span>{h.note?<span className="text-ink">：{h.note}</span>:''}</span>)}
+        {!H.length&&x.stBy&&<span className="block text-[11px] text-mute num">{x.stBy} {S0.l} {x.stAt}</span>}</span>
+      {!gate&&<button type="button" className={'shrink-0 h-8 px-2.5 rounded-full border text-xs '+S0.c} onClick={()=>{setPick(pick==null?'':null);setNote('');setErr('')}}>{busy===x.id?'…':S0.l} ▾</button>}
+    </div>
+    {pick!=null&&<div className="mt-1.5">
+      <div className="flex justify-end gap-1.5">{Object.keys(HN_ST).map(k=><button key={k} type="button" disabled={!!busy} className={'h-8 px-3 rounded-full border text-xs disabled:opacity-40 '+HN_ST[k].c+(pick===k?' ring-2 ring-offset-1 ring-sage':'')} onClick={()=>choose(k)}>{HN_ST[k].l}</button>)}</div>
+      {pick&&<div className="mt-1.5 flex gap-2"><input autoFocus className="flex-1 min-w-0 h-9 px-3 rounded-lg border border-line bg-card text-sm" maxLength={300} placeholder={'處理說明'+(mine?'（選填）':'（必填）')+'，例：已聯絡水電，明天下午來'} value={note} onChange={e=>{setNote(e.target.value);setErr('')}}/>
+        <button type="button" className="h-9 px-3 rounded-lg bg-sage text-white text-sm whitespace-nowrap disabled:opacity-50" disabled={!!busy} onClick={()=>send(pick,note)}>{busy===x.id?'送出中…':'送出'}</button></div>}
+    </div>}
+  </div>);
+}
+function HandNotes({mode,by,uid,ks,compact,title}){
+  const [list,setList]=useState(__hn);const [txt,setTxt]=useState('');const [busy,setBusy]=useState('');const [err,setErr]=useState('');
+  useEffect(()=>{const f=L=>setList(L);HN_SUBS.add(f);return ()=>{HN_SUBS.delete(f)}},[]);
+  const run=async(b,k)=>{setBusy(k);setErr('');try{const j=await hnCall(mode,Object.assign({by,uid,ks},b));hnPut(j.list||[])}catch(e){setErr(e.message)}setBusy('')};
+  useEffect(()=>{run({op:'list'},'load')},[mode,MC.test,ks]);
+  const add=async()=>{const t=txt.trim();if(!t)return setErr('請輸入交接事項');await run({op:'add',text:t},'add');setTxt('')};
+  const L=list||[],pend=L.filter(x=>x.st!=='done');
+  return (<div className={compact?'text-sm':''}>
+    {title&&<div className="text-sm font-semibold text-brown mb-1">{title}{pend.length>0&&<span className="ml-1 text-xs text-warn">未完成 {pend.length}</span>}</div>}
+    <div className="flex gap-2 mb-2"><input className="flex-1 min-w-0 h-10 px-3 rounded-xl border border-line bg-card text-sm" maxLength={500} placeholder="新增交接事項（例：3 號床燈泡要換、陳先生明天會來拿東西）" value={txt} onChange={e=>{setTxt(e.target.value);setErr('')}} onKeyDown={e=>{if(e.key==='Enter')add()}}/>
+      <button type="button" className="h-10 px-3 rounded-xl bg-sage text-white text-sm whitespace-nowrap disabled:opacity-50" disabled={!!busy} onClick={add}>{busy==='add'?'新增中…':'新增'}</button></div>
+    {err&&<div className="text-xs text-warn mb-1">✗ {err}</div>}
+    {!list&&<div className="text-xs text-mute"><Ld/></div>}
+    {list&&!L.length&&<div className="text-xs text-mute">目前沒有交接事項</div>}
+    {L.map(x=><HnItem key={x.id} x={x} mode={mode} by={by} uid={uid} ks={ks} busy={busy} setBusy={setBusy} setErr={setErr}/>)}
+    <div className="text-[11px] text-mute mt-1">別人寫的交接事項，狀態不是「已完成」時要寫處理說明。</div>
+  </div>);
+}
+// 主櫃登入後：別人寫的、還沒完成、這次登入後還沒確認的交接事項，逐項點狀態才能開始操作
+function HnGate({by,uid,since,ks}){
+  const [list,setList]=useState(__hn);const [busy,setBusy]=useState('');const [err,setErr]=useState('');
+  useEffect(()=>{const f=L=>setList(L);HN_SUBS.add(f);if(uid)hnCall('mc',{op:'list',by,uid,ks}).then(j=>{setErr('');hnPut(j.list||[])}).catch(e=>setErr(e.message));return ()=>{HN_SUBS.delete(f)}},[uid,MC.test,ks]);
+  const need=(list||[]).filter(x=>x.st!=='done'&&x.uid!==uid&&!(x.hist||[]).some(h=>h.uid===uid&&(h.at||0)>=(since||0)));
+  if(!uid||!need.length)return null;
+  return (<div className="fixed inset-0 z-[55] bg-black/50 flex items-center justify-center px-4" >
+    <div className="w-full max-w-lg bg-card rounded-2xl p-5 max-h-[92vh] overflow-y-auto">
+      <div className="text-lg text-brown">接手前請確認交接事項（{need.length}）</div>
+      <div className="text-xs text-mute mb-3">下面是其他人寫、還沒完成的交接事項。請逐項點狀態：已完成就直接點；還在待處理或處理中，要寫處理說明。全部確認後才能開始操作。</div>
+      {err&&<div className="text-xs text-warn mb-2">✗ {err}</div>}
+      {need.map(x=><HnItem key={x.id} x={x} mode="mc" by={by} uid={uid} ks={ks} busy={busy} setBusy={setBusy} setErr={setErr} gate/>)}
+    </div>
+  </div>);
+}
 /* 主櫃上線的櫃台畫面（取代示範的 CounterHome；跟櫃台人員自己的頁面 CounterLive 不同） */
 function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date}){
   mode=mode||'phone';
@@ -4040,14 +4120,15 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date}){
       </Sec>),
     (desk||null),
     (<Sec title="會員資料"><CustBook mode={(cust&&cust.mode)||'demo'} ks={cust&&cust.ks} admin={cust&&cust.admin} onOrder={c=>setEd({order:null,k:Date.now(),cu:c})}/></Sec>),
+    (<Sec title="交接事項"><Card className="p-3"><HandNotes mode="mc" by={op.name} uid={op.uid||''} ks={cust&&cust.ks}/></Card></Sec>),
   ];
   const sync=(()=>{const s=mcSt();return MC.err?<span className="text-warn">✗ {MC.err}</span>:MC.busy?<span>同步中…</span>:s.dirty?<span className="text-warn">有修改尚未上傳</span>:MC.at?<span>✓ 已同步 {hm(new Date(MC.at))}</span>:<span>讀取中…</span>})();
-  const clearTest=async()=>{if(!await ask({title:'清除測試資料？',msg:'這台主櫃今天的測試訂單、上下牌都會清掉（會員資料不受影響）。',okText:'清除',danger:true}))return;jset(MCT(date),null);MC.emit();toast&&toast('已清除測試資料')};
+  const clearTest=async()=>{if(!await ask({title:'清除測試資料？',msg:'這台主櫃今天的測試訂單、上下牌、測試的交接事項都會清掉（會員資料不受影響）。',okText:'清除',danger:true}))return;jset(MCT(date),null);jset('mc-test-hn',[]);__hn=[];HN_SUBS.forEach(f=>f([]));MC.emit();toast&&toast('已清除測試資料')};
   const head=<>{MC.test&&<div className="mt-2 px-3 py-2 rounded-xl bg-warnL text-warn text-xs flex items-start gap-2"><span className="flex-1">🧪 主櫃測試上線：上牌、開單、到時、買單等只存在這台，<b>不會上傳、不算營業額</b>；會員資料是真的（新增、修改會存到雲端）。櫃台上下班的確認碼也是真的。</span><button className="shrink-0 h-7 px-2 rounded-lg border border-warn bg-card" onClick={clearTest}>清除測試資料</button></div>}
     <div className="mt-2 mb-1 text-xs text-mute px-1 flex items-center gap-2"><span>{MC.test?'主櫃測試上線':'主櫃上線'}・營業日 <span className="num">{date}</span></span><span className="ml-auto">{MC.test?'測試資料不上傳':sync}</span>{!MC.busy&&!MC.test&&<button className="underline" onClick={()=>mcPull()}>重新整理</button>}</div></>;
   const selO=sel&&orders.find(o=>o.id===sel);
   return <>
-    <RolePage mode={mode} head={head} B={B} phone={[0,2,1,3,4,5]} wide={{top:[0],cols:[[2,3],[1,4,5]]}} xwide={{top:[0],cols:[[2,3],[1],[4,5]]}}/>
+    <RolePage mode={mode} head={head} B={B} phone={[0,6,2,1,3,4,5]} wide={{top:[0],cols:[[2,3,6],[1,4,5]]}} xwide={{top:[0],cols:[[2,3],[1,6],[4,5]]}}/>
     {selO&&<McOrderSheet o={selO} S={S} isOwner={isOwner} ask={ask} onClose={()=>setSel(null)} onAct={(k,x)=>act(selO,k,x)} onEdit={()=>{setSel(null);setEd({order:selO,k:Date.now()})}}/>}
     {ed&&<OrderEditor key={'mc'+ed.k} S={S} order={ed.order} cu={ed.cu} dayOrders={d.orders||[]} locked={!!d.close} mc={mcInfo} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
   </>;
@@ -4181,7 +4262,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
     jset('handover-pending',hp);jset(shiftKey,null);setLogin(null);setLocked(true);
   };
   const [enterWarn,setEnterWarn]=useState(null);   // {n,cur,after}
-  const goIn=(n,after)=>{setOpS(n);jset('mainc-op',n);jset(shiftKey,{name:n.name,uid:n.uid||'',at:n.at});setEnterWarn(null);setLocked0(false);after&&after()};
+  const goIn=(n,after)=>{n=Object.assign({},n,{ms:Date.now()});setOpS(n);jset('mainc-op',n);jset(shiftKey,{name:n.name,uid:n.uid||'',at:n.at});setEnterWarn(null);setLocked0(false);after&&after()};
   const addHand=rec=>{const h=jget('handover-'+day,[]).concat([rec]);setHandS(h);jset('handover-'+day,h)};
   const sameP=(a,b)=>a&&b&&(a.uid&&b.uid?a.uid===b.uid:a.name===b.name);
   const enter=(n,after)=>{
@@ -4291,6 +4372,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
       {live?<MaincLive mode={mode} desk={desk} cust={{mode:GAS_URL?'line':'demo',ks,admin:isOwner}} op={op} isOwner={isOwner} ask={ask} toast={toast} board={board} date={mcDate}/>
         :<>{real&&<div className="max-w-md mx-auto mt-2 px-4"><div className="px-3 py-2 rounded-xl bg-warnL text-warn text-xs">主櫃還沒上線：下方是示範資料。老闆在老闆頁「設定 → 主櫃系統」打開「主櫃系統已上線」後，這裡就改用真的訂單；打開「主櫃系統測試上線」可以先用真的畫面測試（不存檔）。{MC.err?'（'+MC.err+'）':''}</div></div>}
         <CounterHome me={me} mode={mode} desk={desk} sup={{paid:supPaid,onPay}} cust={{mode:real&&GAS_URL?'line':'demo',ks,admin:isOwner}}/></>}
+      {real&&<HnGate by={op.name} uid={op.uid||''} since={op.ms||0} ks={ks}/>}
       <Dialog dlg={dlg} onDone={v=>{const r=dlg.res;setDlg(null);r(v)}}/>
       {toastMsg&&<div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-[60] px-4 py-2 rounded-full bg-ink/90 text-white text-sm shadow-lg">{toastMsg}</div>}
 
@@ -4313,6 +4395,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
             <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-40" disabled={c==null} onClick={()=>doCount(false)}>確認交班，回到首頁</button>
             <div className="text-xs text-mute mt-2">交班後回到首頁，由接手的人登入；登入時會自動記下交班給誰。</div>
             {isOwner&&<button className="w-full h-10 mt-2 text-sm text-mute underline" onClick={()=>doCount(true)}>略過點清（老闆模式）</button>}
+            {real&&<div className="mt-4 pt-3 border-t border-line"><HandNotes mode="mc" by={op.name} uid={op.uid||''} ks={ks} compact title="交接事項"/></div>}
           </>}
           <button className="w-full h-10 mt-2 text-sm text-mute" onClick={()=>setLogin(null)}>取消</button>
         </div>
@@ -5135,6 +5218,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-109','10-19','交接事項：不是寫的人改狀態、又不是「已完成」時，一定要寫處理說明；每次改狀態都留處理紀錄。主櫃有人登入時，別人寫、還沒完成的交接事項會先跳出來，逐項點狀態（非已完成要寫說明）後才能操作（GAS gas-4.44）'],
+  ['v0.1-108','10-19','主櫃新增「交接事項」：櫃台、主管、老闆隨時都能寫，不限交班時；交班點清、老闆頁日結時列在下方；每一項旁邊可以改狀態（待處理／處理中／已完成），沒完成的一直留著，已完成的 3 天後不再列出（GAS gas-4.43）'],
   ['v0.1-107','10-18','主櫃的會員資料也存在本機，向雲端確認異動時間，一樣就不重新下載（GAS gas-4.40）；設定新增「主櫃系統測試上線」：主櫃用真的畫面，上牌、開單、到時、買單都能操作但只存在主櫃那台、不上傳，可清除；會員資料是真的'],
   ['v0.1-106','10-18','主櫃規則更新：輪班順序、遲到扣時間、老師上下牌由主櫃點、臨時晚到早退要主櫃確認、開單選座位、刮痧拔罐加 30 分、營業與預約（C）、班表與請休假（D）、買單（E）。規則內容改放在 GAS，要 LINE 登入且是店內老闆、主管、老師（主櫃另含櫃台）才看得到；老闆頁設定的主櫃規則區塊要用 LINE 登入才顯示（GAS gas-4.39）'],
   ['v0.1-105','10-18','主櫃上線第一階段：老闆打開「主櫃系統已上線」後，主櫃改用真的資料。老師上牌／下牌直接點；開單選項目、老師（自動帶輪班下一位）、床位／腳位、客人；訂單服務中 → 到時 → 買單（現金，可勾 IG 打卡折價券）；老師牌況（可接客依輪班、服務中、下牌）與座位（服務中、清潔中）即時顯示；當天資料自動上傳雲端，老闆頁看得到，老闆修正時自動合併（GAS gas-4.38）'],
