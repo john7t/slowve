@@ -5,7 +5,7 @@
     {"uid":"U6dc94958428943f3499d82a5972bc946","name":"穎","roles":["teacher","counter","guest"],"tc":"258","admin":"manager","shift":"10:00-21:00"},
     {"uid":"U客人…","name":"王小姐","roles":["guest"]},
     {"uid":"U86122b1dde18d801e39dd3b2ebddc31e","name":"許維仁","roles":["teacher"],"shift":"14:00-02:00","tc":"69"},
-    {"uid":"Ud864ac1fb447fcc839cee7e9940fb6de","roles":["applicant"],"apply":"teacher","stage":"hired"},
+    {"uid":"Ud864ac1fb447fcc839cee7e9940fb6de","name":"甘苦人富","roles":["teacher"],"shift":"10:00-22:00","tc":"10"},
     {"uid":"U8c3e5a0572035618c54ee3dc3989964e","name":"16","roles":["teacher"],"shift":"14:00-02:00","tc":"16","support":true},
     {"uid":"Ueca2cdbd11ed1887629143471d4eb644","name":"88","roles":["teacher"],"shift":"11:00-23:00","tc":"88"},
     {"uid":"Ud016ca50dc7373633e0f794bbe9f939e","name":"Randy","roles":["teacher"],"shift":"14:00-02:00","tc":"03","support":true},
