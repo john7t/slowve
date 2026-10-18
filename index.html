@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-102</title>
+<title>緩緩門店 v0.1-104</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-102';
+const VER='v0.1-104';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -150,6 +150,7 @@ function mergeSettings(s){
   r.seatBed=Math.max(1,Math.min(20,Number(s.seatBed)||6));
   r.bedOpen=(Array.isArray(s.bedOpen)?s.bedOpen:[]).map(Number).filter(n=>n>=1&&n<=r.seatBed);   // v0.1-071：6 張都是封閉
   r.bedMerge=(Array.isArray(s.bedMerge)?s.bedMerge:[1,2,3,4,5]).map(Number).filter(n=>n>=1&&n<=r.seatBed);   // 拉門打開可以合成一大間的床（6 號在 L 形轉角，不能打通）
+  r.kioskCodeH=[4,6,24].includes(Number(s.kioskCodeH))?Number(s.kioskCodeH):4;   // v0.1-104：主櫃登入碼有效時間（小時）
   r.cleanMin=s.cleanMin==null||s.cleanMin===''?30:Math.max(0,Math.min(120,Number(s.cleanMin)||0));                                      // v0.1-065：主櫃系統已上線（日報改由主櫃登打）
   r.attChecks=Object.assign({},s.attChecks||{});                 // v0.1-061：差勤檢查開關（沒寫的＝開）
   r.attLog=(Array.isArray(s.attLog)?s.attLog:[]).slice(-200);   // 誰在什麼時候開關了哪一條
@@ -1903,14 +1904,15 @@ const tLabel=role=>role==='teacher'?['上牌','下牌']:['上班','下班'];
 const T_SHIFT_H=12,T_IN_OPTS=['10:00','11:00','12:00','13:00','14:00'];
 const plusH=(t,h)=>{const m=toMin(t);if(m==null)return '';const x=(m+h*60)%1440;return pad(Math.floor(x/60))+':'+pad(x%60)};
 const CITIES=['臺北市','新北市','基隆市','桃園市','新竹市','新竹縣','苗栗縣','臺中市','彰化縣','南投縣','雲林縣','嘉義市','嘉義縣','臺南市','高雄市','屏東縣','宜蘭縣','花蓮縣','臺東縣','澎湖縣','金門縣','連江縣'];
-const SKILLS=['指壓','油壓','腳底','刮痧','拔罐','修腳皮'];
+const SKILLS=['指壓','油壓','腳底','刮痧','拔罐','修腳皮','整復','運動按摩'];
 const SLOTS=['白班','晚班'];   // v0.1-063：可上班時段只留白班、晚班
 const TIMES=['上午','中午','下午','晚上','均可'];   // 方便聯絡／面試時間（「均可」與其他互斥）
 const pickTimes=(old,v)=>{const add=v.find(x=>!(old||[]).includes(x));if(add==='均可')return ['均可'];return v.filter(x=>x!=='均可')};
 const WKN='日一二三四五六';
 // 面試時間 'YYYY-MM-DD HH:mm' → '10/12（一）14:00'
 const ivText=iv=>{const m=/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(String(iv||''));if(!m)return '';const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12);return Number(m[2])+'/'+Number(m[3])+'（'+WKN[d.getDay()]+'）'+m[4]};
-const YEARS=['無經驗','未滿 1 年','1～3 年','3～5 年','5 年以上'];
+const YEARS=['無經驗','未滿 1 年','1～3 年','3～5 年','5～9 年','10～19 年','20～29 年','30 年以上'];   // v0.1-103：5 年以上再細分
+const EMG_REL=['父','母','兄','姐','弟','妹','老婆','老公','男女朋友','其他'];   // v0.1-103：緊急聯絡人關係
 const SOURCES=['朋友介紹','店內人員推薦','網路／社群','路過看到','其他'];
 const JOIN_ST={applied:'已投遞',interview:'已約面試',hired:'已錄取',approved:'已開通',rejected:'不錄取'};
 const ageOf=b=>{if(!b)return null;const d=new Date(b+'T12:00:00'),n=new Date();let a=n.getFullYear()-d.getFullYear();if(n.getMonth()<d.getMonth()||(n.getMonth()===d.getMonth()&&n.getDate()<d.getDate()))a--;return a};
@@ -2005,8 +2007,8 @@ function JoinOnline({pre:pre0,prof0}){
   const recheck=async()=>{setBusy(true);setFe('');try{await load()}catch(e){setFe(e.message)}setBusy(false)};
   const startGuest=()=>{setF({role:'guest',phone:'',last:'',gender:'',birth:'',consent:false});setFe('');setSt('guest')};
   const startStaff=role=>{const a=info&&info.app;
-    setF(Object.assign({role,phone:'',last:'',first:'',nick:'',gender:'',birth:'',city:'',addr:'',emgName:'',emgPhone:'',years:'',skills:[],certs:'',expNote:'',want:'full',slots:[],start:'',contact:[],ivPref:[],source:'',referrer:'',consent:false},
-      a&&a.role!=='guest'?Object.assign({},a,{role,consent:false}):{}));setFe('');setSt('staff')};
+    setF(Object.assign({role,phone:'',last:'',first:'',nick:'',gender:'',birth:'',city:'',addr:'',emgName:'',emgRel:'',emgRelOther:'',emgPhone:'',years:'',skills:[],certs:'',expArea:'',expShop:'',expWhy:'',expNote:'',want:'full',slots:[],start:'',contact:[],ivPref:[],source:'',referrer:'',consent:false},
+      a&&a.role!=='guest'?Object.assign({},a,{role,consent:false},a.emgRel&&!EMG_REL.includes(a.emgRel)?{emgRel:'其他',emgRelOther:a.emgRel}:{}):{}));setFe('');setSt('staff')};
   const send=async()=>{
     const ph=String(f.phone||'').replace(/[\s-]/g,'');
     if(!/^09\d{8}$/.test(ph))return setFe('請輸入正確的手機號碼（09 開頭 10 碼）');
@@ -2017,13 +2019,15 @@ function JoinOnline({pre:pre0,prof0}){
       if(ageOf(f.birth)<ADULT)return setFe('未滿 '+ADULT+' 歲無法加入會員，請由成年人代為預約並陪同到店');
     }
     else{
-      const need=[['last','姓'],['first','名'],['gender','性別'],['birth','出生年月日'],['city','縣市'],['addr','地址'],['emgName','緊急聯絡人'],['emgPhone','緊急聯絡電話'],['years','年資']];
+      const need=[['last','姓'],['first','名'],['gender','性別'],['birth','出生年月日'],['city','縣市'],['addr','地址'],['emgName','緊急聯絡人'],['emgRel','緊急聯絡人關係'],['emgPhone','緊急聯絡電話'],['years','年資']];
       const miss=need.filter(([k])=>!String(f[k]||'').trim()).map(x=>x[1]);
+      if(f.emgRel==='其他'&&!String(f.emgRelOther||'').trim())miss.push('緊急聯絡人關係（其他）');
       if(miss.length)return setFe('請填寫：'+miss.join('、'));
     }
     if(!f.consent)return setFe('請先閱讀並勾選個人資料告知事項');
     setBusy(true);
     try{const form=Object.assign({},f,{phone:ph});delete form.consent;delete form.role;
+      if(f.role!=='guest')form.emgRel=f.emgRel==='其他'?String(f.emgRelOther||'').trim():f.emgRel;delete form.emgRelOther;
       route(await cloud.call({action:'apply',idToken:idt(),lineName:prof.displayName,role:f.role,consent:true,form},40000));
       window.scrollTo(0,0);
     }catch(e){setFe(e.message)}
@@ -2097,14 +2101,20 @@ function JoinOnline({pre:pre0,prof0}){
           <select className={fin+' mb-2'} value={f.city} onChange={e=>set('city',e.target.value)}><option value="">選擇縣市</option>{CITIES.map(c=><option key={c}>{c}</option>)}</select>
           <input className={fin} placeholder="區、路、號、樓" value={f.addr} onChange={e=>set('addr',e.target.value)}/></div>
         <div className="grid grid-cols-2 gap-2">
-          <FL label="緊急聯絡人"><input className={fin} maxLength={20} placeholder="姓名／關係" value={f.emgName} onChange={e=>set('emgName',e.target.value)}/></FL>
-          <FL label="緊急聯絡電話"><input className={fin+' num'} inputMode="tel" value={f.emgPhone} onChange={e=>set('emgPhone',e.target.value)}/></FL>
+          <FL label="緊急聯絡人"><input className={fin} maxLength={20} placeholder="姓名" value={f.emgName} onChange={e=>set('emgName',e.target.value)}/></FL>
+          <FL label="關係"><select className={fin} value={f.emgRel||''} onChange={e=>set('emgRel',e.target.value)}><option value="">請選擇</option>{EMG_REL.map(x=><option key={x}>{x}</option>)}</select></FL>
         </div>
+        {f.emgRel==='其他'&&<FL label="關係（其他）"><input className={fin} maxLength={10} placeholder="例：阿姨、室友" value={f.emgRelOther||''} onChange={e=>set('emgRelOther',e.target.value)}/></FL>}
+        <FL label="緊急聯絡電話"><input className={fin+' num'} inputMode="tel" value={f.emgPhone} onChange={e=>set('emgPhone',e.target.value)}/></FL>
         <div className="text-sm font-semibold text-sageD mb-2 mt-2">工作經歷</div>
         <div className="mb-4"><div className="text-xs text-mute mb-1">相關年資</div><Chips opts={YEARS} val={f.years} onChange={v=>set('years',v)}/></div>
         {f.role==='teacher'&&<div className="mb-4"><div className="text-xs text-mute mb-1">擅長項目（可複選，選填）</div><Chips multi opts={SKILLS} val={f.skills} onChange={v=>set('skills',v)}/></div>}
         <FL label="證照" opt><input className={fin} maxLength={100} placeholder="例：按摩技術士、美容丙級" value={f.certs} onChange={e=>set('certs',e.target.value)}/></FL>
-        <FL label="經歷說明" opt><textarea className="w-full min-w-0 px-3 py-2 rounded-xl border border-line bg-card" rows={3} maxLength={500} placeholder="曾任職的店家、年份、工作內容" value={f.expNote} onChange={e=>set('expNote',e.target.value)}/></FL>
+        <div className="text-xs text-mute mb-1">經歷</div>
+        <FL label="前一份同業的工作地點" opt><input className={fin} maxLength={30} placeholder="例：臺北市大安區" value={f.expArea||''} onChange={e=>set('expArea',e.target.value)}/></FL>
+        <FL label="前一份同業的工作店家" opt><input className={fin} maxLength={30} placeholder="店名" value={f.expShop||''} onChange={e=>set('expShop',e.target.value)}/></FL>
+        <FL label="前一份同業的離職原因" opt><input className={fin} maxLength={100} value={f.expWhy||''} onChange={e=>set('expWhy',e.target.value)}/></FL>
+        <FL label="其他（自填）" opt><textarea className="w-full min-w-0 px-3 py-2 rounded-xl border border-line bg-card" rows={3} maxLength={500} placeholder="其他經歷、年份、工作內容" value={f.expNote} onChange={e=>set('expNote',e.target.value)}/></FL>
         <div className="text-sm font-semibold text-sageD mb-2 mt-2">希望工作條件</div>
         <div className="mb-4"><div className="text-xs text-mute mb-1">希望工作型態</div><Chips opts={[['full','正職'],['part','兼職（支援）']]} val={f.want} onChange={v=>set('want',v)}/></div>
         <div className="mb-4"><div className="text-xs text-mute mb-1">可上班時段（可複選，選填）</div><Chips multi opts={SLOTS} val={f.slots} onChange={v=>set('slots',v)}/></div>
@@ -2216,6 +2226,9 @@ function JoinReview({S,saveS,toast,ask}){
   const interview=a=>{const m=/^(\S+) (\S+)$/.exec(a.iv||'');setIvD(m?m[1]:ymd(new Date(Date.now()+864e5)));setIvT(m?m[2]:'14:00');setIvFor(a.uid)};
   const ivSend=async a=>{if(!ivD||!ivT){setMsg('✗ 請選擇面試日期和時間');return}setIvFor(null);setBusy(a.uid);try{const r=await cloud.call({action:'stage',uid:a.uid,to:'interview',iv:ivD+' '+ivT});await load();toast('已約面試 '+ivText(ivD+' '+ivT)+msgTxt(r.msg))}catch(e){setMsg('✗ '+e.message)}setBusy('')};
   const hire=async a=>{if(await ask({title:'錄取 '+((a.last||'')+(a.first||''))+'？',msg:'錄取後，申請人打開申請頁就會看到「恭喜錄取」，自己選'+(a.role==='teacher'?'編號、上下牌時間、正職／兼職':'上下班時間')+'，送出後帳號立即開通。\n請記得用手機通知對方。',okText:'錄取'}))stage(a,'hired')};
+  // v0.1-103：已錄取、還沒開通的人，再發一次 LINE 錄取通知（附「進入門店系統」按鈕），提醒上線選編號、時間完成開通
+  const renotify=async a=>{if(!await ask({title:'發通知給 '+((a.last||'')+(a.first||''))+'？',msg:'用 LINE 再發一次錄取通知，請對方上線完成應徵流程（選'+(a.role==='teacher'?'編號、上下牌時間':'上下班時間')+'）。會用掉 1 則 LINE 訊息額度。',okText:'發送'}))return;
+    setBusy(a.uid);try{const r=await cloud.call({action:'renotify',uid:a.uid},30000);toast(r.msg&&r.msg.sent?'已發送通知'+msgTxt(r.msg):'沒有發送'+msgTxt(r.msg))}catch(e){setMsg('✗ '+e.message)}setBusy('')};
   const reject=async a=>{if(await ask({title:'不錄取？',msg:'申請人頁面會顯示「這次未能錄取」。資料會在 6 個月後自動清除。',okText:'不錄取',danger:true}))stage(a,'rejected')};
   const all=list||[];
   const groups={todo:all.filter(a=>a.status==='applied'||a.status==='interview'),hired:all.filter(a=>a.status==='hired'),done:all.filter(a=>a.status==='approved'||a.status==='rejected')};
@@ -2249,10 +2262,12 @@ function JoinReview({S,saveS,toast,ask}){
           {op&&<div className="mt-2 pt-2 border-t border-line text-xs">
             <K k="出生日期" v={a.birth?a.birth+(age!=null?'（'+age+' 歲'+(age<18?'，未成年':'')+'）':''):''}/>
             <K k="地址" v={(a.city||'')+(a.addr||'')}/>
-            <K k="緊急聯絡" v={a.emgName?a.emgName+' '+(a.emgPhone||''):''}/>
+            <K k="緊急聯絡" v={a.emgName?a.emgName+(a.emgRel?'（'+a.emgRel+'）':'')+' '+(a.emgPhone||''):''}/>
             <K k="擅長" v={(a.skills||[]).join('、')}/>
             <K k="證照" v={a.certs}/>
-            <K k="經歷" v={a.expNote}/>
+            <K k="前份工作" v={[a.expArea,a.expShop].filter(Boolean).join('・')}/>
+            <K k="離職原因" v={a.expWhy}/>
+            <K k={a.expArea||a.expShop||a.expWhy?'其他經歷':'經歷'} v={a.expNote}/>
             <K k="可上班" v={(a.slots||[]).join('、')}/>
             <K k="最快上班" v={a.start}/>
             <K k="方便聯絡" v={(a.contact||[]).join('、')}/>
@@ -2274,7 +2289,8 @@ function JoinReview({S,saveS,toast,ask}){
             <button className="h-10 rounded-lg bg-sage text-white disabled:opacity-40" disabled={!!busy} onClick={()=>hire(a)}>{busy===a.uid?'處理中…':'錄取'}</button>
           </div>}
           {a.status==='hired'&&<div className="mt-2 text-xs text-brown">等待對方在申請頁選{a.role==='teacher'?'編號、上下牌時間':'上下班時間'}後開通。
-            <button className="ml-2 underline text-mute" onClick={()=>reject(a)}>取消錄取</button></div>}
+            <button className="ml-2 underline text-mute" onClick={()=>reject(a)}>取消錄取</button>
+            <button className="mt-2 w-full h-10 rounded-lg border border-sage text-sageD text-sm bg-card disabled:opacity-40" disabled={!!busy} onClick={()=>renotify(a)}>{busy===a.uid?'發送中…':'📣 發通知：請上線完成應徵流程'}</button></div>}
         </div>);})}
       <div className="text-xs text-mute mt-1">履歷只存在 Google 試算表「加入申請」，不會放到公開的開通名單。不錄取的資料 6 個月後自動清除。</div>
     </div>
@@ -3808,25 +3824,34 @@ let __maincDeny='';
 let __kiosk=false;       // 這台是主櫃公務機
 const KIOSK_UIDS=['Ua5fed1244016ca09ada7a62679c796dc'];   // v0.1-092：店內公務機     // 主櫃公務機的 LINE userId（由「成為會員」頁最下方複製）；GAS 的 KIOSK_UIDS 也要加同一個。也可以在 members.json 標 kiosk:true
 const KIOSK_DEMO={'111111':{name:'老闆',kind:'owner'},'222222':{uid:'Udemo000000000000000000000000mei1',name:'小美',kind:'manager'},'333333':{uid:'Udemo000000000000000000000000lili',name:'麗麗',kind:'counter'},'444444':{uid:'Udemo0000000000000000000000000077',name:'77 卡班',kind:'counter'}};
-/* 要登入公務機的人：用自己手機產生 6 位數登入碼（5 分鐘內有效、只能用一次） */
+/* v0.1-104 主櫃登入碼：用自己手機取得 6 位數登入碼，在主櫃（公務機，或老闆／主管鎖定的主櫃裝置）輸入。
+   一段時間內（老闆設定 4／6／24 小時）可以重複使用；第一次取得時連下一組一起存在這支手機，時間到自動換成下一組，不用每次問雲端。 */
+const KC_KEY='kcode';
 function KioskCodePanel({demo}){
-  const [c,setC]=useState(null);const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const [now,setNow]=useState(Date.now());
-  useEffect(()=>{if(!c)return;const t=setInterval(()=>setNow(Date.now()),1000);return ()=>clearInterval(t)},[c]);
-  const gen=async()=>{setErr('');
-    if(demo){setC({code:'333333',exp:Date.now()+300000});return}
-    setBusy(true);try{const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請重新開啟');
-      const j=await cloud.call({action:'kiosk',op:'code',idToken:t},30000);setC({code:j.code,exp:j.exp});setNow(Date.now())}catch(e){setErr(e.message)}setBusy(false)};
-  const left=c?Math.max(0,Math.round((c.exp-now)/1000)):0;
+  const [c,setC]=useState(()=>demo?null:jget(KC_KEY,null));const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const [now,setNow]=useState(Date.now());
+  useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),15000);return ()=>clearInterval(t)},[]);
+  const cur=c&&(now<c.exp?{code:c.code,exp:c.exp}:c.next&&now<c.next.exp?c.next:null);
+  const gen=async quiet=>{if(!quiet)setErr('');
+    if(demo){const e=Date.now()+4*3600e3;setC({code:'333333',exp:e,h:4,next:{code:'334455',exp:e+4*3600e3}});return}
+    if(!quiet)setBusy(true);
+    try{const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請重新開啟');
+      const j=await cloud.call({action:'kiosk',op:'code',idToken:t},30000);if(!j.next)throw new Error('GAS 版本太舊（需要 gas-4.37），請老闆更新');
+      const v={code:j.code,exp:j.exp,h:j.h,next:j.next};setC(v);jset(KC_KEY,v);setNow(Date.now())}catch(e){if(!quiet)setErr(e.message)}
+    if(!quiet)setBusy(false)};
+  // 第一次打開（本機沒有可用的碼）就自動取得；已經換到「下一組」時，背景補拿再下一組
+  useEffect(()=>{if(demo)return;if(!cur)gen(false);else if(c&&now>=c.exp)gen(true)},[!!cur,c&&now>=c.exp]);
+  const t2=x=>{const d=new Date(x);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+  const nextOf=cur&&c&&(cur.code===c.code?c.next:null);
   return (<Card className="p-4 text-center">
-    {!c||left<=0?<>
-      <button className="w-full h-12 rounded-xl bg-brown text-white text-lg disabled:opacity-50" disabled={busy} onClick={gen}>{busy?'產生中…':'登入公務機主櫃系統'}</button>
-      <div className="text-xs text-mute mt-2">{c?'登入碼已過期，請重新產生。':'按下後產生 6 位數登入碼，在店內主櫃（公務機）輸入即可用你的身分登入。'}</div></>
+    {!cur?<>
+      <button className="w-full h-12 rounded-xl bg-brown text-white text-lg disabled:opacity-50" disabled={busy} onClick={()=>gen(false)}>{busy?'取得中…':'取得主櫃登入碼'}</button>
+      <div className="text-xs text-mute mt-2">取得 6 位數登入碼，在店內主櫃輸入即可用你的身分登入。</div></>
     :<>
-      <div className="text-xs text-mute">公務機登入碼{demo?'（示範）':''}</div>
-      <div className="serif text-6xl tracking-[0.2em] text-brown num my-2 pl-[0.2em]">{c.code}</div>
-      <div className="text-sm">請在主櫃公務機輸入・<span className="num">{Math.floor(left/60)}:{String(left%60).padStart(2,'0')}</span> 內有效</div>
-      <div className="text-xs text-mute mt-1">只能用一次；不要提供給別人。</div>
-      <button className="w-full h-10 mt-3 rounded-xl border border-line bg-card text-sm" onClick={()=>setC(null)}>關閉</button></>}
+      <div className="text-xs text-mute">主櫃登入碼{demo?'（示範）':''}</div>
+      <div className="serif text-6xl tracking-[0.2em] text-brown num my-2 pl-[0.2em]">{cur.code}</div>
+      <div className="text-sm">有效到 <b className="num">{t2(cur.exp)}</b>・這段時間內可以重複使用</div>
+      {nextOf&&<div className="text-xs text-mute mt-1"><span className="num">{t2(cur.exp)}</span> 後自動換成下一組</div>}
+      <div className="text-xs text-warn mt-1">只給自己用，不要提供給別人。</div></>}
     {err&&<div className="text-xs text-warn mt-2">{err}</div>}
   </Card>);
 }      // 鎖定的主櫃，登入的人沒有主櫃權限（只是老師或客人）
@@ -3847,11 +3872,11 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
   const DEV_KEY=real?'slowve.mainc':'slowve.mainc-demo';   // 這台裝置鎖定為主櫃
   const [dev0,setDevS]=useState(()=>{try{return localStorage.getItem(DEV_KEY)==='1'}catch(_e){return false}});
   const dev=dev0||!!kiosk;   // 公務機一律鎖定
-  const [ks,setKs]=useState(()=>kiosk&&real?jget('mainc-ks',''):'');   // 公務機：登入的人的主櫃工作階段
+  const [ks,setKs]=useState(()=>real?jget('mainc-ks',''):'');   // 登入碼登入的人的主櫃工作階段（v0.1-104 起所有主櫃裝置都用）
   const [kc,setKc]=useState(null);   // 公務機輸入登入碼 {code,busy,err}
   const setDev=v=>{try{v?localStorage.setItem(DEV_KEY,'1'):localStorage.removeItem(DEV_KEY)}catch(_e){}setDevS(v)};
   const [locked,setLocked0]=useState(()=>!(real&&__maincAuto&&!__maincDeny));   // true＝在首頁（尚未登入）
-  const setLocked=v=>{setLocked0(v);if(v&&kiosk){setKs('');jset('mainc-ks','')}};   // 公務機回首頁＝登出
+  const setLocked=v=>{setLocked0(v);if(v&&real){setKs('');jset('mainc-ks','')}};   // 回首頁＝登出
   const [demoPick,setDemoPick]=useState(false);
   const [people,setPeople]=useState(real?[]:DEMO_STAFF);   // 正式版：members.json 中有 teacher／counter 的人
   useEffect(()=>{if(!real)return;fetchMembers().then(list=>setPeople(list.map(x=>{const i=memberInfo(x);return {uid:x.uid,name:x.name||'',tc:i.roles.includes('teacher')?x.tc:'',roles:i.roles,admin:i.admin||'',test:!!x.test}}).filter(x=>x.tc||x.roles.includes('counter')))).catch(()=>{})},[]);
@@ -3962,11 +3987,10 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
           <div className="serif text-3xl tracking-widest text-sageD">緩緩</div>
           <div className="text-xs tracking-[0.3em] text-brown mb-10">SLOWVE BODY SPA</div>
           <HomeClock/>
-          {real&&__maincDeny&&<div className="mt-6 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">{__maincDeny} 沒有主櫃權限，請改用櫃台、主管或老闆的 LINE 掃碼登入。</div>}
-          {kiosk?<button className="w-full h-14 mt-10 rounded-2xl bg-sage text-white text-lg" onClick={()=>setKc({code:''})}>輸入登入碼登入</button>
-            :<button className="w-full h-14 mt-10 rounded-2xl bg-sage text-white text-lg" onClick={()=>real?qrLogin():setDemoPick(true)}>掃 QR Code 登入</button>}
+          {real&&__maincDeny&&<div className="mt-6 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">這台裝置的 LINE 是 {__maincDeny}，沒有主櫃權限，不能輸入登入碼。請老闆或主管用自己的 LINE 登入這台、鎖定為主櫃。</div>}
+          <button className="w-full h-14 mt-10 rounded-2xl bg-sage text-white text-lg" onClick={()=>setKc({code:''})}>輸入登入碼登入</button>
           {real&&!dev&&!__maincDeny&&member&&<button className="w-full h-11 mt-2 rounded-xl border border-line bg-card text-sm" onClick={()=>enter(Object.assign({},op,{at:hm(new Date())}))}>以目前帳號進入（{op.name}）</button>}
-          <div className="text-xs text-mute mt-4 leading-relaxed">{kiosk?'用自己的手機打開緩緩門店：櫃台人員頁（老闆、主管在選身分的頁面）按「登入公務機主櫃系統」，把畫面上的 6 位數登入碼輸入這裡。':real?'按下後出現 LINE 登入頁，用手機 LINE 掃描 QR Code 登入。':'示範模式：選擇是誰掃碼登入。'}<br/>離開座位時請按「回首頁」，畫面只留時間，不顯示店內資料。</div>
+          <div className="text-xs text-mute mt-4 leading-relaxed">用自己的手機打開緩緩門店：櫃台人員頁（老闆、主管在選身分的頁面）會顯示「主櫃登入碼」，把 6 位數登入碼輸入這裡。{real?'':'（示範：111111 老闆、222222 主管、333333 櫃台、444444 卡班）'}<br/>離開座位時請按「回首頁」，畫面只留時間，不顯示店內資料。</div>
         </div>
       </div>
       {enterWarn&&<div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6">
@@ -3981,7 +4005,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
       {kc&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setKc(null)}>
         <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
           <div className="text-lg mb-1">輸入登入碼</div>
-          <div className="text-xs text-mute mb-3">在自己手機按「登入公務機主櫃系統」產生，5 分鐘內有效。{real?'':'示範：111111 老闆、222222 主管、333333 櫃台、444444 卡班。'}</div>
+          <div className="text-xs text-mute mb-3">看自己手機上的「主櫃登入碼」，有效時間內可以重複使用。{real?'':'示範：111111 老闆、222222 主管、333333 櫃台、444444 卡班。'}</div>
           <input autoFocus className="w-full h-16 px-3 rounded-xl border border-line bg-card text-4xl text-center tracking-[0.3em] num" inputMode="numeric" maxLength={6} placeholder="••••••" value={kc.code} onChange={e=>setKc(Object.assign({},kc,{code:e.target.value.replace(/\D/g,'').slice(0,6),err:''}))} onKeyDown={e=>{if(e.key==='Enter')redeem()}}/>
           {kc.err&&<div className="text-sm text-warn mt-2">{kc.err}</div>}
           <button className="w-full h-12 mt-3 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={kc.busy} onClick={redeem}>{kc.busy?'確認中…':'登入'}</button>
@@ -4355,7 +4379,7 @@ function CounterLive({me,mode,member}){
     </Sec>),
   ];
   const head=(<div className="mt-2 text-xs text-mute px-1">這裡只顯示你個人的資料；訂單、營業額等店內資料請在店內 iPad 的「主櫃系統」操作。</div>);
-  B.push(<Sec title="主櫃公務機"><KioskCodePanel/></Sec>);
+  B.push(<Sec title="主櫃登入碼"><KioskCodePanel/></Sec>);
   return <RolePage mode={mode} head={head} B={B} phone={[0,7,1,2,3,4,5,6]} wide={{cols:[[0,7,1],[2,3,4,5,6]]}} xwide={{cols:[[0,7,4],[1],[2,3,5,6]]}}/>;
 }
 // 老師（主管）兼櫃台：只設定卡班時薪（卡班時不能接客，按時數另給支援費用）
@@ -4716,7 +4740,7 @@ function CounterStaffHome({me,mode,real,member}){
     (<Sec title="其他" soon><div className="grid grid-cols-2 gap-2"><DisBtn>請假申請</DisBtn><DisBtn>加班申請</DisBtn></div></Sec>),
   ];
   const head=(<><DemoNote/><div className="mt-2 text-xs text-mute px-1">這裡只顯示你個人的資料；訂單、營業額等店內資料請在店內 iPad 的「主櫃系統」操作。</div></>);
-  B.push(<Sec title="主櫃公務機" demo><KioskCodePanel demo/></Sec>);
+  B.push(<Sec title="主櫃登入碼" demo><KioskCodePanel demo/></Sec>);
   return <RolePage mode={mode} head={head} B={B} phone={[0,6,1,2,3,4,5]} wide={{cols:[[0,6,2,3],[1,4,5]]}} xwide={{cols:[[0,6,3],[1],[2,4,5]]}}/>;
 }
 
@@ -4823,6 +4847,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-104','10-18','主櫃一律用登入碼登入（公務機，以及老闆、主管 LINE 登入並鎖定的主櫃裝置），不再用 QR Code。登入碼在設定的時間內（4 小時、6 小時或 1 天，老闆在「設定 → 主櫃系統」選）可以重複使用，時間到自動換下一組；手機第一次取得時連下一組一起存在本機。另有「重設所有登入碼」（GAS gas-4.37）'],
+  ['v0.1-103','10-18','老師應徵頁：年資 5 年以上細分為 5～9、10～19、20～29、30 年以上；擅長項目加整復、運動按摩；經歷改成 4 個選填欄位（前一份同業的工作地點、店家、離職原因、其他）；緊急聯絡人的關係改下拉選單。老闆頁「應徵 → 已錄取」可按「發通知」再用 LINE 提醒對方上線完成開通（GAS gas-4.36）'],
   ['v0.1-102','10-15','老闆頁人員資料（應徵、老師／櫃台資料、請假、會員、差勤）下載後存在本機；切換頁面時先顯示本機資料，向雲端確認異動時間，一樣就不重新下載，有異動才下載更新（GAS gas-4.35）。各區塊顯示本機資料的下載時間，可按「重新下載」；登出會清掉本機資料'],
   ['v0.1-101','10-15','會員資料：點搜尋結果會出現「＋ 新的訂單」與「編輯會員資料」（老闆頁按新的訂單會直接開今天的訂單並帶入客人）；表單的「填表日期」改名「建檔日期」並移到最後；手機文字置中；身體狀況只有重大疾病、慢性疾病是長期勾選，其他（懷孕、骨折、手術、發燒、皮膚紅腫）改成點一下就記一行「今天日期＋項目」，可逐筆刪除（GAS gas-4.33）'],
   ['v0.1-100','10-15','修正 10～12 月生日搜尋不到：4 碼數字（例如 1012）也會比對生日月日，打西元年（例如 1990）也能找出生年'],
@@ -5048,6 +5074,12 @@ function RuleBoard({S,live,by,admin,onClose,ks}){
     </div>
   </div>);
 }
+// v0.1-104：登入碼外流時，老闆、主管可以讓所有人的登入碼（含已登入的主櫃）立即失效
+function KcReset(){const st=useCloud();const [m,setM]=useState('');const [busy,setBusy]=useState(false);
+  if(!st.on)return null;
+  const go=async()=>{if(!window.confirm('重設後，所有人手機上的主櫃登入碼都會失效，目前登入中的主櫃也會被登出。確定重設？'))return;
+    setBusy(true);try{await cloud.call({action:'kcreset'},30000);setM('✓ 已重設。請大家重新打開緩緩門店取得新的登入碼。')}catch(e){setM('✗ '+e.message)}setBusy(false)};
+  return <div className="mt-2"><button type="button" className="h-9 px-3 rounded-lg border border-warn text-warn text-sm disabled:opacity-50" disabled={busy} onClick={go}>{busy?'重設中…':'重設所有登入碼'}</button>{m&&<div className="text-xs mt-1 text-mute">{m}</div>}</div>}
 function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOrder}){
   page=page||'set';const P_=page==='people',T_=P_&&sub==='teacher',C_=P_&&sub==='counter',G_=P_&&sub==='guest',J_=P_&&sub==='join',ST_=page==='set';
   const [dr,setDr]=useState(()=>clone(S));
@@ -5118,6 +5150,10 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
           <label><div className="text-xs text-mute mb-1">清潔時間</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.cleanMin)} onChange={v=>up(n=>{n.cleanMin=v===''?'':num(v)})}/><span>分</span></div></label>
         </div>
         <div className="text-xs text-mute mt-1">清潔時間：每位客人結束後，那個位子要空出來的分鐘數（想讓預約都從整點／半點開始，可以設 30 分）。</div>
+        <div className="text-xs text-mute mt-3 mb-1">主櫃登入碼有效時間（這段時間內同一組碼可以重複使用，時間到自動換下一組）</div>
+        <div className="flex rounded-xl border border-line overflow-hidden bg-card">{[[4,'4 小時'],[6,'6 小時'],[24,'1 天']].map(([h,l])=><button key={h} type="button" className={'flex-1 h-10 '+(Number(dr.kioskCodeH||4)===h?'bg-sage text-white':'')} onClick={()=>up(n=>{n.kioskCodeH=h})}>{l}</button>)}</div>
+        <div className="text-[11px] text-mute mt-1">{({4:'06、10、14、18、22、02 點換碼',6:'06、12、18、00 點換碼',24:'每天早上 06:00 換碼'})[Number(dr.kioskCodeH||4)]}。改完按下方「儲存」，約 5 分鐘內生效；已經存在手機上的碼用到原本的時間。</div>
+        <KcReset/>
         <div className="text-xs text-mute mt-3 mb-1">床位類型（點一下切換；封閉＝有拉門，女性客人刮痧、拔罐只能排封閉床位）</div>
         <div className="flex flex-wrap gap-2">{Array.from({length:Math.max(1,Math.min(20,num(dr.seatBed)||6))},(_,i)=>i+1).map(b=>{const op=(dr.bedOpen||[]).map(Number).includes(b);return (
           <button key={b} type="button" className={'h-10 px-3 rounded-xl border num '+(op?'bg-card border-line':'bg-sageL border-sage text-sageD')} onClick={()=>up(n=>{const a=(n.bedOpen||[]).map(Number);n.bedOpen=op?a.filter(x=>x!==b):a.concat([b])})}>床{b}<span className="text-[11px] ml-1">{op?'開放':'封閉'}</span></button>)})}</div>
