@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-109</title>
+<title>緩緩門店 v0.1-112</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-109';
+const VER='v0.1-112';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -151,6 +151,8 @@ function mergeSettings(s){
   r.seatBed=Math.max(1,Math.min(20,Number(s.seatBed)||6));
   r.bedOpen=(Array.isArray(s.bedOpen)?s.bedOpen:[]).map(Number).filter(n=>n>=1&&n<=r.seatBed);   // v0.1-071：6 張都是封閉
   r.bedMerge=(Array.isArray(s.bedMerge)?s.bedMerge:[1,2,3,4,5]).map(Number).filter(n=>n>=1&&n<=r.seatBed);   // 拉門打開可以合成一大間的床（6 號在 L 形轉角，不能打通）
+  r.bkKeepT=s.bkKeepT==null||s.bkKeepT===''?1:Math.max(0,Math.min(10,Number(s.bkKeepT)||0));   // v0.1-110：每個時段保留給現場客的老師數、床數（C4）
+  r.bkKeepB=s.bkKeepB==null||s.bkKeepB===''?1:Math.max(0,Math.min(10,Number(s.bkKeepB)||0));
   r.kioskCodeH=[4,6,24].includes(Number(s.kioskCodeH))?Number(s.kioskCodeH):4;   // v0.1-104：主櫃登入碼有效時間（小時）
   r.cleanMin=s.cleanMin==null||s.cleanMin===''?30:Math.max(0,Math.min(120,Number(s.cleanMin)||0));                                      // v0.1-065：主櫃系統已上線（日報改由主櫃登打）
   r.attChecks=Object.assign({},s.attChecks||{});                 // v0.1-061：差勤檢查開關（沒寫的＝開）
@@ -421,12 +423,12 @@ const sameItem=(a,b)=>!!a&&!!b&&a.svc===b.svc&&a.min===b.min&&!!a.promo===!!b.pr
   &&String(a.tc||'')===String(b.tc||'');   // 換老師也重算（指定老師的品項歸屬可能改變）
 // v0.1-105 mc（主櫃上線）：{tcs:[{tc,next,serv,since}]（上牌中的老師，可接的依輪班順序）, busy:{座位:{k,until}}, line:{ks}}
 //   主櫃開單：要選床位／腳位、老師從上牌中的老師選、不顯示老師抽成、沒有跳單
-function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onClose,ask,prev,count,inline,cu,mc}){
+function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onClose,ask,prev,count,inline,cu,mc,init}){   // v0.1-110 init：{items:[…]} 預約報到、候位入座帶入
   const isNew=!order;
   const origItems=order?orderItems(order):[];
   const nextSn=()=>{let mx=0;dayOrders.forEach(o=>{const n=parseInt(o.sn,10);if(!isNaN(n)&&n>mx)mx=n});return String(mx+1)};
   const [f,setF]=useState(()=>order?Object.assign({},order,{items:origItems.map(x=>Object.assign({},x,{ad:[...(x.ad||[])],rj:[...(x.rj||[])]}))}):
-    {id:newId(S.device),sn:nextSn(),t:mc?hm(new Date()):'',items:[Object.assign(blankItem(),cu?{cu}:{},mc&&mc.tcs.find(t=>t.next)?{tc:mc.tcs.find(t=>t.next).tc}:{})],skip:false,skipRev:false,skipBy:'store',skipNote:'',note:'',void:false});
+    {id:newId(S.device),sn:nextSn(),t:mc?hm(new Date()):'',items:init&&init.items&&init.items.length?init.items.map(x=>Object.assign(blankItem(),x,{ad:[...(x.ad||[])]})):[Object.assign(blankItem(),cu?{cu}:{},mc&&mc.tcs.find(t=>t.next)?{tc:mc.tcs.find(t=>t.next).tc}:{})],skip:false,skipRev:false,skipBy:'store',skipNote:'',note:'',void:false});
   const [cur,setCur]=useState(0);
   const [rjIn,setRjIn]=useState('');
   const set=(k,v)=>setF(p=>Object.assign({},p,{[k]:v}));
@@ -467,6 +469,11 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
       if(mc&&!x.seat){setCur(i);await ask({title:who+'請選擇'+(x.svc==='foot'?'腳位':'床位'),okOnly:true});return}
       if(mc&&x.seat&&(x.seat[0]==='F')!==(x.svc==='foot')){setCur(i);await ask({title:who+(x.svc==='foot'?'腳底要選腳位':'這個項目要選床位'),okOnly:true});return}
       if(mc&&f.items.some((y,j)=>j!==i&&y.seat&&y.seat===x.seat)){setCur(i);await ask({title:'座位重複',msg:SEAT_NAME(x.seat)+' 有兩位客人，請換一個位子。',okOnly:true});return}
+      if(mc){const ti=mc.tcs.find(t=>t.tc===tc)||(mc.all||[]).find(t=>t.tc===tc),st0=tm(f.t||hm(new Date())),du=gDur(x);   // v0.1-110：短單、準下、壓牌
+        if(ti&&ti.rest&&!await ask({title:who+tc+' 正在休息',msg:'確定要排給 '+tc+' 嗎？',okText:'仍要排'})){setCur(i);return}
+        if(ti&&ti.short&&du>=90){setCur(i);await ask({title:who+tc+' 喊了短單',msg:'短單不能排 90 分鐘以上的項目（A11）。',okOnly:true});return}
+        if(ti&&ti.zx&&ti.out&&st0+du>tm(ti.out)){setCur(i);await ask({title:who+tc+' 喊了準下',msg:'服務結束 '+tf(st0+du)+' 會超過預定下牌 '+ti.out+'（A10）。',okOnly:true});return}
+        if(ti&&ti.hold&&ti.hold.bid!==mc.bkId&&st0+du+10>tm(ti.hold.t)&&!await ask({title:who+tc+' 被 '+ti.hold.t+' 的預約壓牌',msg:'這位客人做到 '+tf(st0+du)+'，加上 10 分鐘緩衝會超過預約時間（A5）。確定要排嗎？',okText:'仍要排',danger:true})){setCur(i);return}}
       if((x.rj||[]).includes(tc)){setCur(i);await ask({title:who+'老師編號重複',msg:tc+' 老師同時被登記為「打槍老師」，請確認。',okOnly:true});return}
     }
     const sn=String(f.sn||'').trim();
@@ -3861,7 +3868,7 @@ function mcMerge(L,C){
   const t=x=>Number(x&&(x.ua||x.ca||x.at))||0;
   const un=(a,b)=>{const m={};(b||[]).forEach(x=>{if(x&&x.id)m[x.id]=x});(a||[]).forEach(x=>{if(!x||!x.id)return;const o=m[x.id];if(!o||t(x)>t(o))m[x.id]=x});return Object.values(m).sort((x,y)=>(x.ca||x.at||0)-(y.ca||y.at||0))};
   const lg=(a,b)=>{const seen={};return (b||[]).concat(a||[]).filter(x=>{const k=JSON.stringify(x);if(seen[k])return false;seen[k]=1;return true}).sort((x,y)=>(x.at||0)-(y.at||0))};
-  return Object.assign({},C,L,{orders:un(L.orders,C.orders),expenses:un(L.expenses,C.expenses),tb:un(L.tb,C.tb),shifts:un(L.shifts,C.shifts),log:lg(L.log,C.log),close:C.close||L.close||null,ua:Date.now()});
+  return Object.assign({},C,L,{orders:un(L.orders,C.orders),expenses:un(L.expenses,C.expenses),tb:un(L.tb,C.tb),wait:un(L.wait,C.wait),shifts:un(L.shifts,C.shifts),log:lg(L.log,C.log),close:C.close||L.close||null,ua:Date.now()});
 }
 async function mcCall(b){
   const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到主櫃的 LINE 身分，請重新開啟');
@@ -3908,21 +3915,32 @@ async function mcPull(){
 const SEAT_NAME=id=>!id?'':(id[0]==='F'?'腳位 ':'床 ')+id.slice(1);
 const oSt=o=>o.st||'paid';   // 老闆頁登打的舊訂單沒有狀態＝已完成
 const mcLiveO=o=>!o.void&&!o.del;
-function mcEnd(o){if(o.end)return o.end;let mx=0;orderItems(o).forEach(x=>{mx=Math.max(mx,(Number(x.min)||0)+(Number(x.ex)||0)*30)});return tf(tm(o.t||hm(new Date()))+(mx||60))}
-// 老師：最後一次上下牌決定在不在；服務中＝有服務中的訂單；可接的人依「可以接客的時間」排輪班（上牌時間或上一位客人到時的時間，早的先）
-function mcBoard(d){
+// v0.1-110：刮痧、拔罐另外加 30 分（B11）
+const ADD_MIN={guasha:30,bagua:30};
+const gDur=x=>(Number(x.min)||0)+(Number(x.ex)||0)*30+(x.ad||[]).reduce((a,id)=>a+(ADD_MIN[id]||0),0);
+function mcEnd(o){if(o.end)return o.end;let mx=0;orderItems(o).forEach(x=>{mx=Math.max(mx,gDur(x))});return tf(tm(o.t||hm(new Date()))+(mx||60))}
+const shiftOf=sh=>{const m=/^(\d\d:\d\d)-(\d\d:\d\d)$/.exec(sh||'');return m?{in:m[1],out:m[2]}:null};
+/* 老師：最後一次上下牌決定在不在；服務中＝有服務中的訂單；可接的人依「可以接客的時間」排輪班（上牌時間或上一位客人到時的時間，早的先）。
+   v0.1-110：tb 也記休息（rest／back，休息中保留順位、來客時略過，A2）、準下（zx／zxoff，A10）、短單（short／shortoff，A11）；下牌時全部清掉。
+   shifts：{tc:'HH:mm-HH:mm'} 班表，準下用下牌時間 out。 */
+function mcBoard(d,shifts){
   const T={};
   (d.tb||[]).slice().sort((a,b)=>(a.at||0)-(b.at||0)).forEach(e=>{const r=T[e.tc]||(T[e.tc]={tc:e.tc,zh:0,n:0});
-    if(e.k==='on'){r.on=true;r.onT=e.t;r.since=e.t;r.sinceAt=e.at||0;r.offT=null}else{r.on=false;r.offT=e.t}});
+    if(e.k==='on'){r.on=true;r.onT=e.t;r.since=e.t;r.sinceAt=e.at||0;r.offT=null;r.rest=null;r.zx=false;r.short=false}
+    else if(e.k==='off'){r.on=false;r.offT=e.t;r.rest=null;r.zx=false;r.short=false}
+    else if(e.k==='rest')r.rest={t:e.t,back:e.back||''};else if(e.k==='back')r.rest=null;
+    else if(e.k==='zx')r.zx=true;else if(e.k==='zxoff')r.zx=false;else if(e.k==='short')r.short=true;else if(e.k==='shortoff')r.short=false});
   (d.orders||[]).filter(mcLiveO).forEach(o=>orderItems(o).forEach(x=>{const tc=String(x.tc||'');if(!tc)return;
     const r=T[tc]||(T[tc]={tc,zh:0,n:0,on:false});r.zh+=Number(x.zh)||0;r.n++;
     if(oSt(o)==='serving')r.serv={id:o.id,sn:o.sn,end:mcEnd(o),start:o.t,label:(SVC_SHORT[x.svc]||'')+(x.min||'')};
     else if(o.endAt&&r.on&&tm(o.endAt)>=tm(r.since||'06:00')){r.since=o.endAt;r.sinceAt=o.ua||0}}));
   const list=Object.values(T);
-  const avail=list.filter(r=>r.on&&!r.serv).sort((a,b)=>tm(a.since||'06:00')-tm(b.since||'06:00')||(a.sinceAt||0)-(b.sinceAt||0));   // 同一分鐘：先上牌（先到時）的先
-  avail.forEach((r,i)=>{r.rot=i+1});
-  return {list,avail,serving:list.filter(r=>r.on&&r.serv).sort((a,b)=>tm(a.serv.end)-tm(b.serv.end)),off:list.filter(r=>!r.on).sort((a,b)=>(Number(a.tc)||0)-(Number(b.tc)||0)),
-    lastOf:tc=>{const a=(d.tb||[]).filter(e=>e.tc===tc).sort((x,y)=>(x.at||0)-(y.at||0));return a[a.length-1]||null}};
+  list.forEach(r=>{const sh=shiftOf((shifts||{})[r.tc]);r.out=sh?sh.out:''});
+  const q=list.filter(r=>r.on&&!r.serv).sort((a,b)=>tm(a.since||'06:00')-tm(b.since||'06:00')||(a.sinceAt||0)-(b.sinceAt||0));   // 同一分鐘：先上牌（先到時）的先
+  q.forEach((r,i)=>{r.rot=i+1});   // 休息中的也排順位（保留位置）
+  const lastOn=tc=>{const a=(d.tb||[]).filter(e=>e.tc===tc&&(e.k==='on'||e.k==='off')).sort((x,y)=>(x.at||0)-(y.at||0));return a[a.length-1]||null};
+  return {list,avail:q.filter(r=>!r.rest),rest:q.filter(r=>r.rest),serving:list.filter(r=>r.on&&r.serv).sort((a,b)=>tm(a.serv.end)-tm(b.serv.end)),off:list.filter(r=>!r.on).sort((a,b)=>(Number(a.tc)||0)-(Number(b.tc)||0)),
+    lastOf:lastOn};
 }
 // 座位：服務中的佔用到下鐘；到時後空出清潔時間
 function mcSeats(d,S,now){
@@ -3931,6 +3949,246 @@ function mcSeats(d,S,now){
     if(oSt(o)==='serving')m[x.seat]={k:'serv',until:mcEnd(o),tc:x.tc,sn:o.sn};
     else if(o.endAt&&!m[x.seat]){const fr=tm(o.endAt)+(Number(S.cleanMin)||0);if(nm<fr)m[x.seat]={k:'clean',until:tf(fr)}}}));
   return m;
+}
+
+/* ========== v0.1-110 預約、壓牌、現場候位 ==========
+   預約存在 GAS「預約」工作表（action bk，gas-4.45），可預約 14 天內（C3）；時間從整點或半點開始（B7），09:00～01:30（C1）。
+   名額：那個時段班表上有、沒請假的老師（兼職支援老師沒填可上班時間前不算，D1），扣掉同時段其他預約與今天服務中的，
+   再保留 1 位老師、1 張床給現場客（C4）；座位到時後加清潔時間（B6）；身體＋腳底的組合床位、腳位同時保留（B12）。
+   壓牌（A2）：今天還沒報到的預約，依時間先後，從輪班（可接客依順位 → 服務中先下鐘的）壓牌；有指定老師的壓指定老師；休息中的跳過。
+   被壓牌的老師，預約前的空檔夠（服務時間＋10 分鐘緩衝，A5）才可以先接現場客。
+   報到：開單帶入客人、項目、老師（指定的或壓牌的）；遲到的時間從服務時間扣除（A6，下鐘時間＝預約時間＋服務時間）。
+   測試上線：預約存在這台（mc-test-bk），老師名冊、請假照樣向雲端讀。 */
+const BK_ST={ok:{l:'已確認',c:'bg-sageL text-sageD'},pend:{l:'待確認',c:'bg-warnL text-warn'},in:{l:'已報到',c:'bg-bg text-mute border border-line'},cancel:{l:'已取消',c:'bg-neutral-200 text-neutral-500'},noshow:{l:'未到',c:'bg-neutral-200 text-neutral-500'}};
+const BK_SRC=['電話','LINE','現場','其他'];
+const bkLive=b=>b.st==='ok'||b.st==='pend';
+const bkDur=b=>Math.max(60,...(b.g||[]).map(gDur));
+const bkWho=(b,peers)=>b.cu?cuLabel(b.cu,peers):(b.name||'');
+let __bk=null;const BK_SUBS=new Set();const bkPut=j=>{__bk=j;BK_SUBS.forEach(f=>f(j))};
+function useBk(){const [j,setJ]=useState(__bk);useEffect(()=>{const f=x=>setJ(x);BK_SUBS.add(f);return ()=>{BK_SUBS.delete(f)}},[]);return j}
+async function bkCall(b,ks){
+  const tk=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!tk)throw new Error('取不到主櫃的 LINE 身分，請重新開啟');
+  const real=x=>cloud.call(Object.assign({action:'bk',idToken:tk},ks?{ks}:{},x),30000);
+  if(!MC.test)return real(b);
+  // 測試上線：預約只存在這台；老師名冊、請假向雲端讀
+  let L=jget('mc-test-bk',[]);const now=Date.now();
+  if(b.op==='save'){const f=b.b;if(!f.date||!/:(00|30)$/.test(f.t||''))throw new Error('預約時間要從整點或半點開始');
+    if(!(f.g||[]).length||(f.g||[]).some(x=>!x.svc||!x.min))throw new Error('每位客人都要選項目');if(!f.cu&&!String(f.name||'').trim())throw new Error('請選會員或輸入客人稱呼');
+    const cur=f.id&&L.find(x=>x.id===f.id);const n=Object.assign({},cur||{id:'t'+now,by:b.by||'',at:now},f,{st:f.st||(cur&&cur.st)||'ok',ua:now});L=cur?L.map(x=>x.id===f.id?n:x):L.concat([n])}
+  if(b.op==='st')L=L.map(x=>x.id===b.id?Object.assign({},x,{st:b.st,oid:b.st==='in'?(b.oid||''):'',ua:now,stAt:hm(new Date())}):x);
+  jset('mc-test-bk',L);
+  const j=await real({op:'list',from:b.from,to:b.to});
+  return Object.assign({},j,{list:L.filter(x=>x.date>=(b.from||j.today)&&x.date<=(b.to||j.last)).sort((x,y)=>x.date<y.date?-1:x.date>y.date?1:tm(x.t)-tm(y.t))});
+}
+// 某位老師在 date 的 [s,e)（分鐘，tm 刻度）有沒有在班、沒請假
+function teaOk(t,date,s,e,lv){const sh=shiftOf(t.shift);if(!sh)return false;const a=tm(sh.in);let b=tm(sh.out);if(b<=a)b+=1440;if(s<a||e>b)return false;
+  return !(lv||[]).some(L=>L.tc===t.tc&&L.from<=date&&L.to>=date&&(L.all||!(e<=tm(L.t1)||s>=tm(L.t2))))}
+// 名額：bk＝要檢查的預約（g、date、t、id），J＝bk list 回應，today＝{date, orders}（今天才算服務中的訂單）
+// v0.1-112 晚到通知（A13）：當天 tb 的 late 事件 {tc, eta, note}，latecancel 取消；回傳 {tc:{eta,note,t,by}}
+function mcLate(d){const m={};(d&&d.tb||[]).slice().sort((a,b)=>(a.at||0)-(b.at||0)).forEach(e=>{if(e.k==='late')m[e.tc]={eta:e.eta,note:e.note||'',t:e.t,by:e.by||''};else if(e.k==='latecancel'||e.k==='on')delete m[e.tc]});return m}
+function bkCap(bk,J,S,today){
+  const s=tm(bk.t),e=s+bkDur(bk),cl=Number(S.cleanMin)||0,keepT=S.bkKeepT==null?1:Number(S.bkKeepT),keepB=S.bkKeepB==null?1:Number(S.bkKeepB);
+  const ov=(a,b,c,d)=>a<d&&c<b;
+  const lt=today&&today.date===bk.date?mcLate(today):{};   // 今天通知晚到的老師：預計到的時間之前不算
+  const cand=(J.tea||[]).filter(t=>!t.support&&teaOk(t,bk.date,s,e,J.lv)&&!(lt[t.tc]&&s<tm(lt[t.tc].eta)));
+  const others=(J.list||[]).filter(b=>b.id!==bk.id&&b.date===bk.date&&bkLive(b));
+  let busyT=0,busyB=0,busyF=0;const busyTc=new Set();
+  const seatUse=x=>x.svc==='foot'?['F']:x.svc==='mix'?['B','F']:['B'];
+  others.forEach(b=>{const bs=tm(b.t),be=bs+bkDur(b);
+    if(ov(s,e,bs,be))(b.g||[]).forEach(x=>{busyT++;if(x.tc)busyTc.add(String(x.tc))});
+    if(ov(s,e+cl,bs,be+cl))(b.g||[]).forEach(x=>seatUse(x).forEach(k=>{if(k==='B')busyB++;else busyF++}))});
+  if(today&&today.date===bk.date)(today.orders||[]).filter(o=>mcLiveO(o)&&oSt(o)==='serving').forEach(o=>{const oe=tm(mcEnd(o));if(oe>s)orderItems(o).forEach(x=>{busyT++;busyTc.add(String(x.tc));
+    if(oe+cl>s)(x.seat?[x.seat[0]]:seatUse(x)).forEach(k=>{if(k==='B')busyB++;else busyF++})})});
+  const needB=(bk.g||[]).reduce((a,x)=>a+(seatUse(x).includes('B')?1:0),0),needF=(bk.g||[]).reduce((a,x)=>a+(seatUse(x).includes('F')?1:0),0);
+  const tFree=cand.length-busyT,bFree=(Number(S.seatBed)||0)-busyB,fFree=(Number(S.seatFoot)||0)-busyF;
+  const msgs=[];
+  if(tFree-keepT<(bk.g||[]).length)msgs.push('老師不夠：這個時段可接 '+Math.max(0,tFree)+' 位（要保留 '+keepT+' 位給現場，C4）');
+  if(needB&&bFree-keepB<needB)msgs.push('床位不夠：剩 '+Math.max(0,bFree)+' 張（要保留 '+keepB+' 張給現場）');
+  if(needF&&fFree<needF)msgs.push('腳位不夠：剩 '+Math.max(0,fFree)+' 個');
+  (bk.g||[]).forEach(x=>{if(!x.tc)return;const t=(J.tea||[]).find(y=>y.tc===String(x.tc));
+    if(!t)msgs.push(x.tc+' 號不是老師');else if(!teaOk(t,bk.date,s,e,J.lv))msgs.push(x.tc+' 號這個時段不在班或請假');else if(busyTc.has(String(x.tc)))msgs.push(x.tc+' 號這個時段已經有客人')});
+  return {tFree,bFree,fFree,cand:cand.length,ok:!msgs.length,msgs};
+}
+// 壓牌：今天還沒報到的預約依時間，從輪班壓牌（A2）；回傳 {byTc:{tc:{t,bid}}, byBk:{bid:[tc…]}}
+function mcHolds(J,board,date,nowM){
+  const byTc={},byBk={};if(!J||!board)return {byTc,byBk};
+  const bks=(J.list||[]).filter(b=>b.date===date&&bkLive(b)&&tm(b.t)+30>=nowM).sort((a,b)=>tm(a.t)-tm(b.t));
+  const queue=board.avail.map(r=>r.tc).concat(board.serving.map(r=>r.tc));
+  const on=new Set(board.list.filter(r=>r.on&&!r.rest).map(r=>r.tc));
+  bks.forEach(b=>{byBk[b.id]=[];(b.g||[]).forEach(x=>{let tc=x.tc&&on.has(String(x.tc))&&!byTc[String(x.tc)]?String(x.tc):null;
+    if(!x.tc)tc=queue.find(t=>!byTc[t]&&!bks.some(o=>(o.g||[]).some(y=>String(y.tc)===t)))||null;
+    if(tc){byTc[tc]={t:b.t,bid:b.id};byBk[b.id].push(tc)}else byBk[b.id].push(x.tc?String(x.tc)+'（未上牌）':'')})});
+  return {byTc,byBk};
+}
+const HALF=(()=>{const a=[];for(let m=540;m<=1530;m+=30)a.push(tf(m));return a})();
+/* 新增／修改預約 */
+function BookForm({b0,J,S,ks,by,line,todayDay,onClose,onSaved,ask}){
+  const today=J.today,days=[];for(let i=0;i<=14;i++)days.push(addDays(today,i));
+  const [f,setF]=useState(()=>b0?JSON.parse(JSON.stringify(b0)):{date:today,t:'',cu:null,name:'',phone:'',g:[{svc:'',min:0,ex:0,ad:[],tc:''}],src:'電話',note:'',st:'ok'});
+  const [err,setErr]=useState('');const [busy,setBusy]=useState(false);
+  const set=(k,v)=>{setF(p=>Object.assign({},p,{[k]:v}));setErr('')};
+  const setG=(i,o)=>set('g',f.g.map((x,j)=>j===i?Object.assign({},x,o):x));
+  const cap=f.t&&f.g.every(x=>x.svc&&x.min)?bkCap(f,J,S,todayDay):null;
+  const save=async()=>{if(!f.t)return setErr('請選時間');if(f.g.some(x=>!x.svc||!x.min))return setErr('每位客人都要選項目');if(!f.cu&&!String(f.name||'').trim())return setErr('請選會員或輸入客人稱呼');
+    if(cap&&!cap.ok&&!await ask({title:'名額不夠，仍要預約？',msg:cap.msgs.join('\n'),okText:'仍要預約',danger:true}))return;
+    setBusy(true);setErr('');try{const j=await bkCall({op:'save',b:f,by},ks);bkPut(j);onSaved&&onSaved(f)}catch(e){setErr(e.message)}setBusy(false)};
+  const lt=todayDay&&todayDay.date===f.date?mcLate(todayDay):{};   // 今天通知晚到的，預計到之前不能指定
+  const free=f.t&&f.g.length?(J.tea||[]).filter(t=>!t.support&&teaOk(t,f.date,tm(f.t),tm(f.t)+bkDur(f),J.lv)&&!(lt[t.tc]&&tm(f.t)<tm(lt[t.tc].eta))).map(t=>t.tc).sort((a,b)=>Number(a)-Number(b)):[];
+  const SV=[['dry','指壓'],['oil','油壓'],['foot','腳底']];
+  return (<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
+    <div className="w-full max-w-lg bg-card rounded-2xl p-5 max-h-[92vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+      <div className="text-lg mb-2">{b0?'修改預約':'新增預約'}</div>
+      <div className="text-xs text-mute mb-1">日期（14 天內）</div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">{days.map((d,i)=><button key={d} type="button" className={'shrink-0 h-12 px-2.5 rounded-xl border text-xs leading-tight '+(f.date===d?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('date',d)}>
+        <span className="block">{i===0?'今天':i===1?'明天':WK[parseYmd(d).getDay()]}</span><span className="block num">{Number(d.slice(5,7))}/{Number(d.slice(8))}</span></button>)}</div>
+      <div className="text-xs text-mute mb-1">時間（整點或半點，B7）</div>
+      <select className="w-full h-11 px-3 rounded-xl border border-line bg-card num mb-2" value={f.t} onChange={e=>set('t',e.target.value)}><option value="">選擇時間</option>{HALF.map(t=><option key={t}>{t}</option>)}</select>
+      <div className="text-xs text-mute mb-1">客人（會員可搜尋；不是會員就輸入稱呼）</div>
+      <div className="mb-2"><CustPick value={f.cu} onChange={c=>set('cu',c)} line={line}/></div>
+      {!f.cu&&<div className="grid grid-cols-2 gap-2 mb-2"><input className="h-10 px-3 rounded-xl border border-line bg-card text-sm" maxLength={20} placeholder="稱呼（例：王小姐）" value={f.name||''} onChange={e=>set('name',e.target.value)}/>
+        <input className="h-10 px-3 rounded-xl border border-line bg-card text-sm num" inputMode="tel" maxLength={12} placeholder="電話（選填）" value={f.phone||''} onChange={e=>set('phone',e.target.value.replace(/[^\d-]/g,''))}/></div>}
+      {f.g.map((x,i)=><div key={i} className="rounded-xl border border-line p-2 mb-2">
+        <div className="flex items-center mb-1"><span className="text-xs text-mute">客人 {i+1}</span>{f.g.length>1&&<button type="button" className="ml-auto text-xs text-warn" onClick={()=>set('g',f.g.filter((_,j)=>j!==i))}>移除</button>}</div>
+        <div className="grid grid-cols-[3rem_1fr_1fr_1fr] gap-1.5 items-center">{SV.map(([sv,l])=><React.Fragment key={sv}><span className="text-sm">{l}</span>
+          {MINS.map(m=><button key={m} type="button" className={'h-9 rounded-lg border text-sm num '+(x.svc===sv&&x.min===m?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setG(i,{svc:sv,min:m})}>{m}</button>)}</React.Fragment>)}</div>
+        <div className="flex flex-wrap gap-1.5 mt-1.5 items-center">
+          <span className="text-xs text-mute">加鐘</span>{[0,1,2].map(n=><button key={n} type="button" className={'h-8 px-2.5 rounded-full border text-xs '+((Number(x.ex)||0)===n?'bg-brown border-brown text-white':'bg-card border-line')} onClick={()=>setG(i,{ex:n})}>{n?'+'+n*30+' 分':'無'}</button>)}
+          {['guasha','bagua'].map(id=>{const on=(x.ad||[]).includes(id);return <button key={id} type="button" className={'h-8 px-2.5 rounded-full border text-xs '+(on?'bg-brownL border-brown text-brown':'bg-card border-line')} onClick={()=>setG(i,{ad:on?x.ad.filter(y=>y!==id):(x.ad||[]).concat([id])})}>{on?'☑':'☐'} {id==='guasha'?'刮痧':'拔罐'} +30 分</button>})}
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-1.5 items-center"><span className="text-xs text-mute">指定老師</span>
+          <button type="button" className={'h-8 px-2.5 rounded-full border text-xs '+(!x.tc?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setG(i,{tc:''})}>不指定</button>
+          {free.map(tc=><button key={tc} type="button" className={'h-8 min-w-[2.5rem] px-2 rounded-full border text-xs num '+(String(x.tc)===tc?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setG(i,{tc})}>{tc}</button>)}
+          {f.t&&!free.length&&<span className="text-xs text-mute">（這個時段沒有在班的老師）</span>}</div>
+      </div>)}
+      <button type="button" className="w-full h-9 rounded-xl border border-dashed border-sage text-sageD text-sm mb-2" onClick={()=>set('g',f.g.concat([{svc:'',min:0,ex:0,ad:[],tc:''}]))}>＋ 同行客人</button>
+      <div className="flex flex-wrap gap-1.5 mb-2 items-center"><span className="text-xs text-mute">來源</span>{BK_SRC.map(x=><button key={x} type="button" className={'h-8 px-3 rounded-full border text-xs '+(f.src===x?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('src',x)}>{x}</button>)}
+        <span className="text-xs text-mute ml-2">狀態</span>{['ok','pend'].map(k=><button key={k} type="button" className={'h-8 px-3 rounded-full border text-xs '+(f.st===k?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('st',k)}>{BK_ST[k].l}</button>)}</div>
+      <input className="w-full h-10 px-3 rounded-xl border border-line bg-card text-sm mb-2" maxLength={200} placeholder="備註（例：想要力道重、指定女老師請寫這裡 A7）" value={f.note||''} onChange={e=>set('note',e.target.value)}/>
+      {cap&&<div className={'rounded-xl px-3 py-2 text-xs mb-2 '+(cap.ok?'bg-sageL text-sageD':'bg-warnL text-warn')}>
+        <div className="num">這個時段（{f.t}～{tf(tm(f.t)+bkDur(f))}）在班老師 {cap.cand} 位・可接 {Math.max(0,cap.tFree)} 位・床位剩 {Math.max(0,cap.bFree)}・腳位剩 {Math.max(0,cap.fFree)}</div>
+        {cap.msgs.map((m,i)=><div key={i}>⚠ {m}</div>)}{cap.ok&&<div>✓ 名額足夠（已保留現場名額）</div>}</div>}
+      {err&&<div className="text-sm text-warn mb-2">✗ {err}</div>}
+      <div className="grid grid-cols-[1fr_2fr] gap-2"><button className="h-11 rounded-xl border border-line bg-card" onClick={onClose}>取消</button>
+        <button className="h-11 rounded-xl bg-sage text-white disabled:opacity-50" disabled={busy} onClick={save}>{busy?'儲存中…':'儲存預約'}</button></div>
+    </div></div>);
+}
+/* 主櫃的預約區塊：選日期看預約；今天的顯示壓牌老師、遲到；點一筆可報到、確認、修改、取消、未到 */
+function BookSec({S,ks,by,line,date,todayDay,holds,nowM,ask,toast,onCheckin}){
+  const J=useBk();const [day,setDay]=useState(date);const [form,setForm]=useState(null);const [sel,setSel]=useState(null);const [err,setErr]=useState('');
+  const load=()=>bkCall({op:'list'},ks).then(j=>{setErr('');bkPut(j)}).catch(e=>setErr(e.message));
+  useEffect(()=>{load();const t=setInterval(()=>{if(document.visibilityState!=='hidden')load()},60000);return ()=>clearInterval(t)},[ks,MC.test]);
+  if(!J)return <div className="text-sm text-mute">{err?'✗ '+err:<Ld/>}</div>;
+  const days=[];for(let i=0;i<=14;i++)days.push(addDays(J.today,i));
+  const list=(J.list||[]).filter(b=>b.date===day);
+  const isToday=day===date;
+  const setSt=async(b,st)=>{try{const j=await bkCall({op:'st',id:b.id,st},ks);bkPut(j);setSel(null);toast&&toast(BK_ST[st].l)}catch(e){setErr(e.message)}};
+  const selB=sel&&(J.list||[]).find(b=>b.id===sel);
+  return (<div>
+    <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">{days.map((d,i)=>{const n=(J.list||[]).filter(b=>b.date===d&&bkLive(b)).length;return <button key={d} type="button" className={'shrink-0 h-11 px-2 rounded-xl border text-xs leading-tight '+(day===d?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setDay(d)}>
+      <span className="block">{i===0?'今天':i===1?'明天':Number(d.slice(5,7))+'/'+Number(d.slice(8))}</span><span className="block num opacity-80">{n?n+' 組':'—'}</span></button>})}</div>
+    {list.map(b=>{const late=isToday&&bkLive(b)?nowM-tm(b.t):-1,hs=(holds.byBk||{})[b.id]||[];return (
+      <button key={b.id} className={'w-full text-left flex items-start gap-2 py-2 border-b border-line last:border-0 text-sm '+(bkLive(b)?'':'opacity-60')} onClick={()=>setSel(b.id)}>
+        <span className="num w-12 shrink-0 font-semibold">{b.t}</span>
+        <span className="flex-1 min-w-0">{bkWho(b)}{b.g.length>1?<span className="text-xs text-mute">・{b.g.length} 位</span>:''}
+          <span className="block text-xs text-mute">{b.g.map(x=>(SVC_SHORT[x.svc]||'')+x.min+(Number(x.ex)?'+'+x.ex*30:'')+((x.ad||[]).length?'＋'+x.ad.map(a=>a==='guasha'?'刮痧':a==='bagua'?'拔罐':a).join(''):'')+(x.tc?'・指定 '+x.tc:'')).join('／')}{b.src?'・'+b.src:''}{b.note?'・'+b.note:''}</span>
+          {isToday&&bkLive(b)&&hs.some(Boolean)&&<span className="block text-xs text-brown">壓牌：{hs.filter(Boolean).join('、')}</span>}
+          {late>10&&<span className="block text-xs text-warn font-semibold">已遲到 {late} 分（超過 10 分鐘可取消，A6）</span>}
+          {late>0&&late<=10&&<span className="block text-xs text-warn">遲到 {late} 分・時間從服務時間扣除</span>}</span>
+        <span className={'shrink-0 text-[11px] px-1.5 py-0.5 rounded '+BK_ST[b.st].c}>{BK_ST[b.st].l}</span>
+      </button>)})}
+    {!list.length&&<div className="text-xs text-mute py-2">這天還沒有預約</div>}
+    {err&&<div className="text-xs text-warn mt-1">✗ {err}</div>}
+    <button className="w-full h-11 mt-2 rounded-xl bg-sage text-white" onClick={()=>setForm({b0:null})}>＋ 新增預約</button>
+    <div className="text-[11px] text-mute mt-1">可預約 14 天內；每個時段保留 {S.bkKeepT==null?1:S.bkKeepT} 位老師、{S.bkKeepB==null?1:S.bkKeepB} 張床給現場（C4）。</div>
+    {form&&<BookForm b0={form.b0} J={J} S={S} ks={ks} by={by} line={line} todayDay={todayDay} ask={ask} onClose={()=>setForm(null)} onSaved={f=>{setForm(null);setDay(f.date);toast&&toast('已儲存預約 '+f.t)}}/>}
+    {selB&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setSel(null)}>
+      <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center gap-2"><span className="text-lg num">{selB.date.slice(5)} {selB.t}</span><span className={'ml-auto text-xs px-1.5 rounded '+BK_ST[selB.st].c}>{BK_ST[selB.st].l}</span></div>
+        <div className="text-sm mt-1">{bkWho(selB)}{selB.phone?<span className="text-mute num">・{selB.phone}</span>:''}</div>
+        <div className="text-xs text-mute mt-1">{selB.g.map((x,i)=><span key={i} className="block">客{i+1}：{orderLabel(Object.assign({promo:false},x),S)}{x.tc?'・指定 '+x.tc:''}・約 {gDur(x)} 分</span>)}</div>
+        {selB.note&&<div className="text-xs mt-1">備註：{selB.note}</div>}
+        <div className="text-[11px] text-mute mt-1">{selB.by} 登記{selB.src?'・'+selB.src:''}{selB.upBy&&selB.upBy!==selB.by?'・'+selB.upBy+' 更新':''}</div>
+        {bkLive(selB)&&selB.date===date&&<button className="w-full h-12 mt-3 rounded-xl bg-sage text-white text-lg" onClick={()=>{setSel(null);onCheckin(selB,(holds.byBk||{})[selB.id]||[])}}>報到・開單</button>}
+        {selB.st==='pend'&&<button className="w-full h-10 mt-2 rounded-xl border border-sage text-sageD" onClick={()=>setSt(selB,'ok')}>改成已確認</button>}
+        {bkLive(selB)&&<div className="grid grid-cols-3 gap-2 mt-2">
+          <button className="h-10 rounded-xl border border-line bg-card text-sm" onClick={()=>{setSel(null);setForm({b0:selB})}}>修改</button>
+          <button className="h-10 rounded-xl border border-warn text-warn text-sm" onClick={async()=>{if(await ask({title:'取消這筆預約？',okText:'取消預約',danger:true}))setSt(selB,'cancel')}}>取消預約</button>
+          <button className="h-10 rounded-xl border border-warn text-warn text-sm" onClick={async()=>{if(await ask({title:'記為未到？',msg:'預約客人超過 10 分鐘沒到，由櫃台取消（A6）。',okText:'記為未到',danger:true}))setSt(selB,'noshow')}}>未到</button></div>}
+        {!bkLive(selB)&&selB.st!=='in'&&<button className="w-full h-10 mt-2 rounded-xl border border-line bg-card text-sm" onClick={()=>setSt(selB,'ok')}>恢復預約</button>}
+        <button className="w-full h-10 mt-2 text-sm text-mute" onClick={()=>setSel(null)}>關閉</button>
+      </div></div>}
+  </div>);
+}
+/* 現場候位（今天，存在當天資料 day.wait，跟訂單一起同步） */
+function WaitSec({S,d,date,board,op,line,onSeat}){
+  const [add,setAdd]=useState(null);
+  const W=(d.wait||[]).filter(w=>w.st==='wait');
+  const eta=(()=>{if(board.avail.length)return '現在';const e=board.serving.map(r=>r.serv.end).sort((a,b)=>tm(a)-tm(b))[0];return e?e+' 起':'—'})();
+  const save=()=>{if(!add.cu&&!String(add.name||'').trim())return;const now=Date.now();
+    mcMutate(date,dd=>{dd.wait=(dd.wait||[]).concat([{id:newId(S.device),t:hm(new Date()),at:now,ca:now,ua:now,cu:add.cu||null,name:add.name||'',n:Number(add.n)||1,want:add.want||'',st:'wait',by:op.name}]);return dd});setAdd(null)};
+  const gone=w=>mcMutate(date,dd=>{dd.wait=(dd.wait||[]).map(x=>x.id===w.id?Object.assign({},x,{st:'gone',ua:Date.now()}):x);return dd});
+  return (<div>
+    <div className="text-xs text-mute mb-1">等候中 {W.length} 組・最快 <b className="text-sageD">{eta}</b> 可以開始</div>
+    {W.map(w=><div key={w.id} className="flex items-center gap-2 py-2 border-b border-line last:border-0 text-sm">
+      <span className="num w-11 text-xs text-mute">{w.t} 到</span>
+      <span className="flex-1 min-w-0">{w.cu?cuLabel(w.cu):w.name}・{w.n} 位{w.want?<span className="block text-xs text-mute">{w.want}</span>:''}</span>
+      <button className="h-9 px-3 rounded-lg bg-sage text-white text-sm" onClick={()=>onSeat(w)}>入座</button>
+      <button className="h-9 px-2 rounded-lg border border-line text-xs text-mute" onClick={()=>gone(w)}>離開</button>
+    </div>)}
+    {!W.length&&!add&&<div className="text-xs text-mute py-1">目前沒有人候位</div>}
+    {add?<div className="rounded-xl border border-sage bg-sageL/30 p-2 mt-2 space-y-2">
+      <CustPick value={add.cu} onChange={c=>setAdd(Object.assign({},add,{cu:c}))} line={line}/>
+      {!add.cu&&<input className="w-full h-10 px-3 rounded-lg border border-line bg-card text-sm" maxLength={20} placeholder="稱呼（不是會員時）" value={add.name} onChange={e=>setAdd(Object.assign({},add,{name:e.target.value}))}/>}
+      <div className="flex items-center gap-1.5"><span className="text-xs text-mute">人數</span>{[1,2,3,4].map(n=><button key={n} type="button" className={'h-9 w-9 rounded-full border text-sm '+(Number(add.n)===n?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setAdd(Object.assign({},add,{n}))}>{n}</button>)}</div>
+      <input className="w-full h-10 px-3 rounded-lg border border-line bg-card text-sm" maxLength={40} placeholder="想做的項目（例：油壓 90、腳底 60）" value={add.want} onChange={e=>setAdd(Object.assign({},add,{want:e.target.value}))}/>
+      <div className="grid grid-cols-[1fr_2fr] gap-2"><button className="h-10 rounded-lg border border-line bg-card" onClick={()=>setAdd(null)}>取消</button><button className="h-10 rounded-lg bg-sage text-white" onClick={save}>加入候位</button></div>
+    </div>:<button className="w-full h-10 mt-2 rounded-xl border border-sage text-sageD" onClick={()=>setAdd({cu:null,name:'',n:1,want:''})}>＋ 現場候位</button>}
+  </div>);
+}
+/* v0.1-112 登記晚到（A13）：老師來電說會晚到 → 選老師、預計到的時間、原因 */
+function LateSheet({x,list,late,onSave,onCancel,onClose}){
+  const [tc,setTc]=useState(x?x.tc:'');const it=list.find(y=>y.tc===tc)||x;const cur=tc&&late[tc];
+  const base=it?it.in:'';const [eta,setEta]=useState(cur?cur.eta:'');const [note,setNote]=useState(cur?cur.note:'');
+  const opts=base?[30,60,120,180].map(m=>[m,tf(tm(base)+m)]):[];
+  const times=(()=>{const a=[],n=Math.ceil(tm(hm(new Date()))/15)*15;for(let m=n;m<=n+600&&m<=1560;m+=15)a.push(tf(m));return a})();
+  return (<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={onClose}>
+    <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
+      <div className="text-lg">登記晚到</div>
+      <div className="text-xs text-mute mb-3">老師來電說會晚到（A13）。登記後從「未到未請」移到「已通知晚到」，今天的預約名額在預計到的時間之前不算這位老師。</div>
+      {!x&&<><div className="text-xs text-mute mb-1">老師（今天班表上、還沒上牌）</div>
+        <div className="flex flex-wrap gap-1.5 mb-3">{list.map(y=><button key={y.tc} type="button" className={'h-9 min-w-[3rem] px-2 rounded-full border text-sm num '+(tc===y.tc?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>{setTc(y.tc);const c=late[y.tc];setEta(c?c.eta:'');setNote(c?c.note:'')}}>{y.tc}<span className="text-[10px] ml-1 opacity-70">{y.in}</span></button>)}</div></>}
+      {it&&<>
+        <div className="text-sm mb-1"><b className="num">{it.tc}</b> 號・班表 <span className="num">{base}</span> 上牌</div>
+        <div className="text-xs text-mute mb-1">預計到</div>
+        <div className="grid grid-cols-4 gap-1.5 mb-1.5">{opts.map(([m,t])=><button key={m} type="button" className={'h-11 rounded-lg border text-xs leading-tight '+(eta===t?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setEta(t)}>
+          <span className="block">晚 {m>=60?m/60+' 小時':m+' 分'}</span><span className="block num">{t}</span></button>)}</div>
+        <select className="w-full h-10 px-3 rounded-lg border border-line bg-card num mb-2" value={times.includes(eta)?eta:''} onChange={e=>setEta(e.target.value)}><option value="">或選其他時間</option>{times.map(t=><option key={t}>{t}</option>)}</select>
+        <div className="flex flex-wrap gap-1.5 mb-1.5">{['塞車','身體不適','家裡有事','交通工具故障'].map(r=><button key={r} type="button" className={'h-8 px-2.5 rounded-full border text-xs '+(note===r?'bg-brownL border-brown text-brown':'bg-card border-line')} onClick={()=>setNote(r)}>{r}</button>)}</div>
+        <input className="w-full h-10 px-3 rounded-lg border border-line bg-card text-sm mb-3" maxLength={40} placeholder="原因（選填）" value={note} onChange={e=>setNote(e.target.value)}/>
+        <button className="w-full h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={!eta} onClick={()=>onSave(it.tc,eta,note.trim())}>{cur?'更新':'登記'}{eta?'：預計 '+eta+' 到':''}</button>
+        {cur&&<button className="w-full h-10 mt-2 rounded-xl border border-warn text-warn text-sm" onClick={()=>onCancel(it.tc)}>取消晚到登記</button>}
+      </>}
+      <button className="w-full h-10 mt-2 text-sm text-mute" onClick={onClose}>關閉</button>
+    </div></div>);
+}
+/* 點牌況的老師：休息／回來、準下、短單 */
+function TeacherSheet({r,onAct,onClose}){
+  const [back,setBack]=useState('');
+  const opts=[15,30,60].map(m=>tf(tm(hm(new Date()))+m));
+  return (<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={onClose}>
+    <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
+      <div className="text-lg num">{r.tc} 號{r.rest?'・休息中':r.serv?'・服務中':'・可接客'}</div>
+      <div className="text-xs text-mute mb-3">{r.onT?r.onT+' 上牌':''}{r.out?'・預定 '+r.out+' 下牌':''}{r.rot?'・輪班第 '+r.rot+' 位':''}</div>
+      {r.rest?<button className="w-full h-12 rounded-xl bg-sage text-white" onClick={()=>onAct('back')}>回來（恢復可接客，保留原順位）</button>
+        :<><div className="text-xs text-mute mb-1">休息（保留順位，來客時略過，A2）・預計回來</div>
+          <div className="flex gap-1.5 mb-2">{opts.map(t=><button key={t} type="button" className={'flex-1 h-9 rounded-lg border text-sm num '+(back===t?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setBack(back===t?'':t)}>{t}</button>)}</div>
+          <button className="w-full h-11 rounded-xl border border-sage text-sageD" onClick={()=>onAct('rest',{back})}>休息{back?'到 '+back:''}</button></>}
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <button className={'h-12 rounded-xl border text-sm leading-tight '+(r.zx?'bg-warnL border-warn text-warn':'bg-card border-line')} onClick={()=>onAct(r.zx?'zxoff':'zx')}>{r.zx?'☑':'☐'} 準下<span className="block text-[10px] text-mute">{r.out?'結束不能超過 '+r.out:'沒有班表下牌時間'}（A10）</span></button>
+        <button className={'h-12 rounded-xl border text-sm leading-tight '+(r.short?'bg-warnL border-warn text-warn':'bg-card border-line')} onClick={()=>onAct(r.short?'shortoff':'short')}>{r.short?'☑':'☐'} 短單<span className="block text-[10px] text-mute">不排 90 分以上（A11）</span></button>
+      </div>
+      <button className="w-full h-10 mt-3 text-sm text-mute" onClick={onClose}>關閉</button>
+    </div></div>);
 }
 
 /* 主櫃：點訂單的明細（金額只在這裡顯示）。服務中→到時；到時→買單（可勾 IG 打卡折價券）；老闆、主管可以取消買單 */
@@ -4044,7 +4302,7 @@ function HnGate({by,uid,since,ks}){
   </div>);
 }
 /* 主櫃上線的櫃台畫面（取代示範的 CounterHome；跟櫃台人員自己的頁面 CounterLive 不同） */
-function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date}){
+function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks}){
   mode=mode||'phone';
   useMc();
   const S=loadSettings();
@@ -4056,7 +4314,38 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date}){
   const by={serving:orders.filter(o=>oSt(o)==='serving'),done:orders.filter(o=>oSt(o)==='done'),paid:orders.filter(o=>oSt(o)==='paid')};
   const guests=orders.reduce((a,o)=>a+orderItems(o).length,0);
   const seats=mcSeats(d,S,now);
-  const mcInfo={tcs:board.avail.map((r,i)=>({tc:r.tc,next:i===0,since:r.since})).concat(board.serving.map(r=>({tc:r.tc,serv:r.serv}))),busy:seats,line:cust&&cust.mode==='line'?{ks:cust.ks}:null};
+  // v0.1-110：壓牌（今天的預約）；輪班下一位＝可接客、沒被壓牌或預約前空檔夠（60 分＋10 分緩衝，A5）
+  const J=useBk();const nowM=tm(now);const holds=mcHolds(J,board,date,nowM);
+  const hold=tc=>holds.byTc[tc]||null;
+  const nextTc=(board.avail.find(r=>{const h=hold(r.tc);return !h||tm(h.t)-nowM>=70})||{}).tc;
+  const tinfo=r=>({tc:r.tc,since:r.since,serv:r.serv,rest:r.rest,zx:r.zx,short:r.short,out:r.out,hold:hold(r.tc),next:r.tc===nextTc});
+  const mcInfo={tcs:board.avail.map(tinfo).concat(board.serving.map(tinfo)),all:board.list.filter(r=>r.on).map(tinfo),busy:seats,line:cust&&cust.mode==='line'?{ks:cust.ks}:null,bkId:ed&&ed.bk?ed.bk.id:null};
+  const [tsel,setTsel]=useState(null);
+  /* v0.1-111 未到未請：班表的上牌時間已經過了、今天還沒上牌（也沒下牌過）、也沒有請假（已核准或待審核）的老師。
+     兼職（支援）老師沒填可上班時間前不算（D1）。老師名冊、請假跟預約一起向雲端讀（bk list）。 */
+  const late=mcLate(d);
+  const absent=(()=>{if(!J)return {miss:[],lv:[],noShift:[],note:[],sched:[]};const seen=new Set(board.list.filter(r=>r.on||r.offT).map(r=>r.tc));
+    const lvOf=tc=>(J.lv||[]).filter(L=>L.tc===tc&&L.from<=date&&L.to>=date);
+    const miss=[],lv=[],noShift=[],note=[],sched=[];
+    (J.tea||[]).filter(t=>!t.support&&!t.test).forEach(t=>{const L=lvOf(t.tc);
+      if(L.some(x=>x.all))return lv.push({tc:t.tc,txt:'全天'+(L.some(x=>x.st==='pending')?'・待審核':'')});
+      const sh=shiftOf(t.shift);if(!sh){if(!seen.has(t.tc))noShift.push(t.tc);return}
+      const a=tm(sh.in);let e=tm(sh.out);if(e<=a)e+=1440;
+      const part=L.find(x=>tm(x.t1)<=nowM&&nowM<tm(x.t2));
+      if(part){lv.push({tc:t.tc,txt:part.t1+'～'+part.t2+(part.st==='pending'?'・待審核':'')});return}
+      if(L.length)lv.push({tc:t.tc,txt:L.map(x=>x.t1+'～'+x.t2).join('、')});
+      if(!seen.has(t.tc)&&nowM<e)sched.push({tc:t.tc,in:sh.in});
+      if(!seen.has(t.tc)&&late[t.tc]){const L=late[t.tc];note.push({tc:t.tc,in:sh.in,eta:L.eta,note:L.note,by:L.by,t:L.t,over:nowM-tm(L.eta)});return}
+      if(!seen.has(t.tc)&&nowM>=a&&nowM<e)miss.push({tc:t.tc,in:sh.in,late:nowM-a})});
+    return {miss:miss.sort((x,y)=>y.late-x.late),lv,noShift,note:note.sort((x,y)=>tm(x.eta)-tm(y.eta)),sched}})();
+  const [lateFor,setLateFor]=useState(null);   // 登記晚到：{tc,in}|'pick'
+  const saveLate=(tc,eta,note)=>{mcMutate(date,dd=>{dd.tb=(dd.tb||[]).concat([{id:newId(S.device),tc,k:'late',eta,note,t:hm(new Date()),at:Date.now(),by:op.name}]);return dd});setLateFor(null);toast&&toast(tc+' 預計 '+eta+' 到（已登記晚到）')};
+  const cancelLate=tc=>{mcMutate(date,dd=>{dd.tb=(dd.tb||[]).concat([{id:newId(S.device),tc,k:'latecancel',t:hm(new Date()),at:Date.now(),by:op.name}]);return dd});toast&&toast(tc+' 已取消晚到登記')};
+  const tAct=(tc,k,x)=>{const t=hm(new Date());mcMutate(date,dd=>{dd.tb=(dd.tb||[]).concat([Object.assign({id:newId(S.device),tc,k,t,at:Date.now(),by:op.name},x&&x.back?{back:x.back}:{})]);return dd});
+    setTsel(null);toast&&toast(tc+' '+({rest:'休息'+(x&&x.back?'到 '+x.back:''),back:'回來',zx:'準下',zxoff:'取消準下',short:'短單',shortoff:'取消短單'}[k]))};
+  const line=cust&&cust.mode==='line'?{ks:cust.ks}:null;
+  const checkin=(b,hs)=>setEd({order:null,k:Date.now(),bk:b,init:{items:b.g.map((x,i)=>({svc:x.svc,min:x.min,ex:Number(x.ex)||0,exs:Number(x.ex)?x.svc:null,ad:x.ad||[],tc:x.tc||(hs[i]&&!/未上牌/.test(hs[i])?hs[i]:'')||(i===0?nextTc:'')||'',cu:i===0?b.cu:null}))},note:b.note||''});
+  const seat=w=>setEd({order:null,k:Date.now(),wait:w,init:{items:Array.from({length:w.n||1},(_,i)=>({cu:i===0?w.cu:null,tc:i===0?(nextTc||''):''}))}});
   const OST={serving:{label:'服務中',cls:'text-brown'},done:{label:'到時・待買單',cls:'text-warn'},paid:{label:'已買單',cls:'text-sageD'}};
   const act=(o,k,x)=>{const t=hm(new Date()),at=Date.now();
     mcMutate(date,dd=>{const y=dd.orders.find(z=>z.id===o.id);if(!y)return dd;
@@ -4073,13 +4362,18 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date}){
       const keep=prev?{st:prev.st||'serving',endAt:prev.endAt,pay:prev.pay,by:prev.by}:{st:'serving',by:op.name};
       const n=Object.assign({},o,keep,{t:o.t||hm(new Date())});n.end=mcEnd(Object.assign({},n,{end:null}));if(!n.endAt)delete n.endAt;if(!n.pay)delete n.pay;n.ua=at;
       if(i>=0)dd.orders[i]=n;else dd.orders.push(n);
+      if(!prev&&ed&&ed.bk){n.bk=ed.bk.id;if(tm(hm(new Date()))>tm(ed.bk.t)){let mx=0;orderItems(n).forEach(x=>{mx=Math.max(mx,gDur(x))});n.end=tf(tm(ed.bk.t)+mx);n.late=tm(hm(new Date()))-tm(ed.bk.t)}}   // 遲到：時間從服務時間扣除（A6）
+      if(!prev&&ed&&ed.wait){n.wait=ed.wait.id;dd.wait=(dd.wait||[]).map(w=>w.id===ed.wait.id?Object.assign({},w,{st:'seat',oid:n.id,ua:at}):w)}
       dd.log=(dd.log||[]).concat([{act:i>=0?'mc-edit':'mc-new',at,sn:n.sn,by:op.name}]);
       return syncCpExp(dd,n.id)});
-    setEd(null);toast&&toast((ed&&ed.order?'已修改 #':'已開單 #')+o.sn);
+    if(ed&&ed.bk&&!ed.order)bkCall({op:'st',id:ed.bk.id,st:'in',oid:o.id},ks).then(bkPut).catch(e=>toast&&toast('預約狀態更新失敗：'+e.message));
+    setEd(null);toast&&toast((ed&&ed.order?'已修改 #':ed&&ed.bk?'已報到・開單 #':'已開單 #')+o.sn);
   };
   const Seg=({opts,val,set})=><div className="flex rounded-lg border border-line overflow-hidden text-xs">{opts.map(o=><button key={o.id} className={'px-2.5 h-7 '+(val===o.id?'bg-sage text-white':'bg-card')} onClick={()=>set(o.id)}>{o.label}</button>)}</div>;
-  const Chip=({r,k})=><span className={'inline-flex flex-col items-center justify-center min-w-[3.25rem] px-2 py-1 rounded-lg border text-center '+(k==='serv'?'bg-brownL border-brown/40':k==='off'?'bg-neutral-200 border-neutral-300 text-neutral-500':'bg-white border-line')}>
-    <b className="num text-base leading-tight">{r.tc}</b><span className="text-[10px] num leading-tight">{k==='serv'?r.serv.end+' 下':k==='off'?(r.offT?r.offT+' 下牌':'未上牌'):(r.rot===1?'下一位':'第 '+r.rot+' 位')}</span></span>;
+  const Chip=({r,k})=>{const h=hold(r.tc);return <button type="button" disabled={k==='off'} onClick={()=>setTsel(r.tc)} className={'inline-flex flex-col items-center justify-center min-w-[3.6rem] px-2 py-1 rounded-lg border text-center '+(k==='serv'?'bg-brownL border-brown/40':k==='off'?'bg-neutral-200 border-neutral-300 text-neutral-500':k==='rest'?'bg-bg border-dashed border-line text-mute':'bg-white border-line')}>
+    <b className="num text-base leading-tight">{r.tc}</b><span className="text-[10px] num leading-tight">{k==='serv'?r.serv.end+' 下':k==='off'?(r.offT?r.offT+' 下牌':'未上牌'):k==='rest'?(r.rest.back?r.rest.back+' 回':'休息'):(r.tc===nextTc?'下一位':'第 '+r.rot+' 位')}</span>
+    {h&&k!=='off'&&<span className="text-[10px] num leading-tight text-warn font-semibold">壓 {h.t}</span>}
+    {(r.zx||r.short)&&k!=='off'&&<span className="text-[10px] leading-tight text-brown">{r.zx?'準下':''}{r.zx&&r.short?'・':''}{r.short?'短單':''}</span>}</button>};
   const B=[
     (<Sec title={'今日 '+fmtDate(date)}>
         <div className="grid grid-cols-5 gap-2 mb-3"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="服務中" v={by.serving.length} cls="text-brown"/><KV k="待買單" v={by.done.length} cls="text-warn"/><KV k="已買單" v={by.paid.length} cls="text-sageD"/></div>
@@ -4104,11 +4398,24 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date}){
     (<Sec title="老師牌況" right={<span className="text-xs text-mute num">{now}</span>}>
         <div className="text-[11px] text-mute mb-1">可接客（{board.avail.length}）・依輪班順序</div>
         <div className="flex flex-wrap gap-1.5 mb-2">{board.avail.map(r=><Chip key={r.tc} r={r} k="on"/>)}{!board.avail.length&&<span className="text-xs text-mute">—</span>}</div>
+        {board.rest.length>0&&<><div className="text-[11px] text-mute mb-1">休息中（{board.rest.length}）・保留順位，來客時略過</div>
+        <div className="flex flex-wrap gap-1.5 mb-2">{board.rest.map(r=><Chip key={r.tc} r={r} k="rest"/>)}</div></>}
         <div className="text-[11px] text-mute mb-1">服務中（{board.serving.length}）・先下鐘的在前</div>
         <div className="flex flex-wrap gap-1.5 mb-2">{board.serving.map(r=><Chip key={r.tc} r={r} k="serv"/>)}{!board.serving.length&&<span className="text-xs text-mute">—</span>}</div>
+        {absent.miss.length>0&&<><div className="text-[11px] text-warn mb-1 font-semibold">未到未請（{absent.miss.length}）・上牌時間已過、還沒上牌、也沒請假</div>
+        <div className="flex flex-wrap gap-1.5 mb-2">{absent.miss.map(x=><button key={x.tc} type="button" onClick={()=>setLateFor(x)} className="inline-flex flex-col items-center min-w-[3.6rem] px-2 py-1 rounded-lg border border-warn bg-warnL text-warn text-center">
+          <b className="num text-base leading-tight">{x.tc}</b><span className="text-[10px] num leading-tight">{x.in} 上</span><span className="text-[10px] num leading-tight font-semibold">晚 {x.late>=60?Math.floor(x.late/60)+' 時 '+(x.late%60)+' 分':x.late+' 分'}</span></button>)}</div>
+        <div className="text-[10px] text-mute -mt-1 mb-2">老師來電說會晚到：點編號登記預計到的時間（A13）</div></>}
+        {absent.note.length>0&&<><div className="text-[11px] text-brown mb-1">已通知晚到（{absent.note.length}）</div>
+        <div className="flex flex-wrap gap-1.5 mb-2">{absent.note.map(x=><button key={x.tc} type="button" onClick={()=>setLateFor(x)} className={'inline-flex flex-col items-center min-w-[4.2rem] px-2 py-1 rounded-lg border text-center '+(x.over>0?'border-warn bg-warnL text-warn':'border-brown/40 bg-brownL/50 text-brown')}>
+          <b className="num text-base leading-tight">{x.tc}</b><span className="text-[10px] num leading-tight">預計 {x.eta} 到</span>
+          {x.over>0?<span className="text-[10px] num leading-tight font-semibold">已超過 {x.over} 分</span>:x.note?<span className="text-[10px] leading-tight">{x.note}</span>:null}</button>)}</div></>}
+        {absent.lv.length>0&&<div className="text-[11px] text-mute mb-2">今天請假：{absent.lv.map(x=><span key={x.tc} className="mr-2 num">{x.tc}（{x.txt}）</span>)}</div>}
+        {absent.sched.some(x=>!late[x.tc])&&<button type="button" className="mb-2 h-8 px-3 rounded-full border border-brown text-brown text-xs" onClick={()=>setLateFor('pick')}>＋ 登記晚到</button>}
+        {absent.noShift.length>0&&<div className="text-[11px] text-mute mb-2">還沒設定上牌時間：<span className="num">{absent.noShift.join('、')}</span>（在「我的資料」設定後才能判斷未到未請）</div>}
         <div className="text-[11px] text-mute mb-1">下牌（{board.off.length}）</div>
         <div className="flex flex-wrap gap-1.5">{board.off.map(r=><Chip key={r.tc} r={r} k="off"/>)}{!board.off.length&&<span className="text-xs text-mute">—</span>}</div>
-        <div className="text-[11px] text-mute mt-2">輪班：上牌、或上一位客人到時的時間，早的先接。休息、壓牌、準下、短單在第三階段加上。</div>
+        <div className="text-[11px] text-mute mt-2">輪班：上牌、或上一位客人到時的時間，早的先接（A4）。點老師可以設休息、準下、短單。「壓 15:00」＝被今天的預約壓牌，預約前空檔夠（服務時間＋10 分鐘）才接現場客（A5）。</div>
       </Sec>),
     (<Sec title="座位">
         {[['B','床位',S.seatBed],['F','腳位',S.seatFoot]].map(([p,l,n])=><div key={p} className="mb-2 last:mb-0">
@@ -4121,6 +4428,8 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date}){
     (desk||null),
     (<Sec title="會員資料"><CustBook mode={(cust&&cust.mode)||'demo'} ks={cust&&cust.ks} admin={cust&&cust.admin} onOrder={c=>setEd({order:null,k:Date.now(),cu:c})}/></Sec>),
     (<Sec title="交接事項"><Card className="p-3"><HandNotes mode="mc" by={op.name} uid={op.uid||''} ks={cust&&cust.ks}/></Card></Sec>),
+    (<Sec title="預約"><Card className="p-3"><BookSec S={S} ks={ks} by={op.name} line={line} date={date} todayDay={Object.assign({date},d)} holds={holds} nowM={nowM} ask={ask} toast={toast} onCheckin={checkin}/></Card></Sec>),
+    (<Sec title="現場候位"><Card className="p-3"><WaitSec S={S} d={d} date={date} board={board} op={op} line={line} onSeat={seat}/></Card></Sec>),
   ];
   const sync=(()=>{const s=mcSt();return MC.err?<span className="text-warn">✗ {MC.err}</span>:MC.busy?<span>同步中…</span>:s.dirty?<span className="text-warn">有修改尚未上傳</span>:MC.at?<span>✓ 已同步 {hm(new Date(MC.at))}</span>:<span>讀取中…</span>})();
   const clearTest=async()=>{if(!await ask({title:'清除測試資料？',msg:'這台主櫃今天的測試訂單、上下牌、測試的交接事項都會清掉（會員資料不受影響）。',okText:'清除',danger:true}))return;jset(MCT(date),null);jset('mc-test-hn',[]);__hn=[];HN_SUBS.forEach(f=>f([]));MC.emit();toast&&toast('已清除測試資料')};
@@ -4128,9 +4437,11 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date}){
     <div className="mt-2 mb-1 text-xs text-mute px-1 flex items-center gap-2"><span>{MC.test?'主櫃測試上線':'主櫃上線'}・營業日 <span className="num">{date}</span></span><span className="ml-auto">{MC.test?'測試資料不上傳':sync}</span>{!MC.busy&&!MC.test&&<button className="underline" onClick={()=>mcPull()}>重新整理</button>}</div></>;
   const selO=sel&&orders.find(o=>o.id===sel);
   return <>
-    <RolePage mode={mode} head={head} B={B} phone={[0,6,2,1,3,4,5]} wide={{top:[0],cols:[[2,3,6],[1,4,5]]}} xwide={{top:[0],cols:[[2,3],[1,6],[4,5]]}}/>
+    <RolePage mode={mode} head={head} B={B} phone={[0,6,8,7,2,1,3,4,5]} wide={{top:[0],cols:[[2,8,7,3],[1,6,4,5]]}} xwide={{top:[0],cols:[[2,3,6],[8,7,1],[4,5]]}}/>
     {selO&&<McOrderSheet o={selO} S={S} isOwner={isOwner} ask={ask} onClose={()=>setSel(null)} onAct={(k,x)=>act(selO,k,x)} onEdit={()=>{setSel(null);setEd({order:selO,k:Date.now()})}}/>}
-    {ed&&<OrderEditor key={'mc'+ed.k} S={S} order={ed.order} cu={ed.cu} dayOrders={d.orders||[]} locked={!!d.close} mc={mcInfo} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
+    {ed&&<OrderEditor key={'mc'+ed.k} S={S} order={ed.order} cu={ed.cu} init={ed.init} dayOrders={d.orders||[]} locked={!!d.close} mc={mcInfo} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
+    {lateFor&&<LateSheet x={lateFor==='pick'?null:lateFor} list={absent.sched} late={late} onSave={saveLate} onCancel={tc=>{cancelLate(tc);setLateFor(null)}} onClose={()=>setLateFor(null)}/>}
+    {tsel&&(r=>r&&<TeacherSheet r={r} onClose={()=>setTsel(null)} onAct={(k,x)=>tAct(r.tc,k,x)}/>)(board.list.find(x=>x.tc===tsel))}
   </>;
 }
 
@@ -4198,7 +4509,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
   const setLocked=v=>{setLocked0(v);if(v&&real){setKs('');jset('mainc-ks','')}};   // 回首頁＝登出
   const [demoPick,setDemoPick]=useState(false);
   const [people,setPeople]=useState(real?[]:DEMO_STAFF);   // 正式版：members.json 中有 teacher／counter 的人
-  useEffect(()=>{if(!real)return;fetchMembers().then(list=>setPeople(list.map(x=>{const i=memberInfo(x);return {uid:x.uid,name:x.name||'',tc:i.roles.includes('teacher')?x.tc:'',roles:i.roles,admin:i.admin||'',test:!!x.test}}).filter(x=>x.tc||x.roles.includes('counter')))).catch(()=>{})},[]);
+  useEffect(()=>{if(!real)return;fetchMembers().then(list=>setPeople(list.map(x=>{const i=memberInfo(x);return {uid:x.uid,name:x.name||'',tc:i.roles.includes('teacher')?x.tc:'',roles:i.roles,admin:i.admin||'',test:!!x.test,shift:x.shift||'',support:!!x.support}}).filter(x=>x.tc||x.roles.includes('counter')))).catch(()=>{})},[]);
   const day=ymd(new Date());
   const [recs,setRecsS]=useState(()=>jget('punch-'+day,[]));
   const setRecs=n=>{setRecsS(n);jset('punch-'+day,n)};
@@ -4230,7 +4541,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
   MC.test=!!(real&&!S0.maincLive&&S0.maincTest);
   const mcDate=mcSt().date||bizToday(loadSettings().cutoff);
   const mcDayD=live?mcGetDay(mcDate):null;
-  const board=live?mcBoard(mcDayD):null;
+  const board=live?mcBoard(mcDayD,Object.fromEntries(people.filter(p=>p.tc).map(p=>[String(p.tc),p.shift||'']))):null;
   const onTb=async(p,k)=>{const tc=String(p.tc),cur=board.lastOf(tc);
     if(k==='on'&&cur&&cur.k==='on'){toast(tc+' 已經上牌（'+cur.t+'）');return}
     if(k==='off'&&(!cur||cur.k!=='on')){toast(tc+' 目前沒有上牌');return}
@@ -4369,7 +4680,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
     <>
       {opBar}
       {notIn&&<div className="bg-warnL text-warn text-sm px-4 py-2 text-center">{op.name} 今天還沒有上班打卡，請先由老闆或上一班產生確認碼完成打卡。</div>}
-      {live?<MaincLive mode={mode} desk={desk} cust={{mode:GAS_URL?'line':'demo',ks,admin:isOwner}} op={op} isOwner={isOwner} ask={ask} toast={toast} board={board} date={mcDate}/>
+      {live?<MaincLive mode={mode} desk={desk} cust={{mode:GAS_URL?'line':'demo',ks,admin:isOwner}} op={op} isOwner={isOwner} ask={ask} toast={toast} board={board} date={mcDate} ks={ks}/>
         :<>{real&&<div className="max-w-md mx-auto mt-2 px-4"><div className="px-3 py-2 rounded-xl bg-warnL text-warn text-xs">主櫃還沒上線：下方是示範資料。老闆在老闆頁「設定 → 主櫃系統」打開「主櫃系統已上線」後，這裡就改用真的訂單；打開「主櫃系統測試上線」可以先用真的畫面測試（不存檔）。{MC.err?'（'+MC.err+'）':''}</div></div>}
         <CounterHome me={me} mode={mode} desk={desk} sup={{paid:supPaid,onPay}} cust={{mode:real&&GAS_URL?'line':'demo',ks,admin:isOwner}}/></>}
       {real&&<HnGate by={op.name} uid={op.uid||''} since={op.ms||0} ks={ks}/>}
@@ -5218,6 +5529,9 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-112','10-19','主櫃新增「登記晚到」：老師來電說會晚到（例如塞車晚 2 小時），在主櫃登記預計到的時間與原因，從「未到未請」移到「已通知晚到」；超過預計時間還沒上牌會變紅；今天的預約名額在預計到之前不算這位老師（A13）'],
+  ['v0.1-111','10-19','主櫃老師牌況新增「未到未請」：班表的上牌時間已過、還沒上牌、也沒請假的老師，顯示晚了多久；另外列出今天請假的老師（全天或時段）與還沒設定上牌時間的老師'],
+  ['v0.1-110','10-19','主櫃新增預約（14 天內，依班表、請假、床椅、清潔時間算名額並保留現場名額）、壓牌（今天的預約依輪班壓牌，被壓的老師預約前空檔夠才接現場）、報到開單（遲到時間從服務時間扣除）、現場候位（入座開單）；老師牌況可以設休息（保留順位）、準下（不超過下牌時間）、短單（不排 90 分以上），開單時檢查；刮痧、拔罐另加 30 分（GAS gas-4.45）'],
   ['v0.1-109','10-19','交接事項：不是寫的人改狀態、又不是「已完成」時，一定要寫處理說明；每次改狀態都留處理紀錄。主櫃有人登入時，別人寫、還沒完成的交接事項會先跳出來，逐項點狀態（非已完成要寫說明）後才能操作（GAS gas-4.44）'],
   ['v0.1-108','10-19','主櫃新增「交接事項」：櫃台、主管、老闆隨時都能寫，不限交班時；交班點清、老闆頁日結時列在下方；每一項旁邊可以改狀態（待處理／處理中／已完成），沒完成的一直留著，已完成的 3 天後不再列出（GAS gas-4.43）'],
   ['v0.1-107','10-18','主櫃的會員資料也存在本機，向雲端確認異動時間，一樣就不重新下載（GAS gas-4.40）；設定新增「主櫃系統測試上線」：主櫃用真的畫面，上牌、開單、到時、買單都能操作但只存在主櫃那台、不上傳，可清除；會員資料是真的'],
@@ -5514,6 +5828,11 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
           <label><div className="text-xs text-mute mb-1">清潔時間</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.cleanMin)} onChange={v=>up(n=>{n.cleanMin=v===''?'':num(v)})}/><span>分</span></div></label>
         </div>
         <div className="text-xs text-mute mt-1">清潔時間：每位客人結束後，那個位子要空出來的分鐘數（想讓預約都從整點／半點開始，可以設 30 分）。</div>
+        <div className="text-xs text-mute mt-3 mb-1">預約時每個時段保留給現場客（C4）</div>
+        <div className="grid grid-cols-2 gap-2">
+          <label><div className="text-[11px] text-mute mb-1">老師</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.bkKeepT==null?1:dr.bkKeepT)} onChange={v=>up(n=>{n.bkKeepT=v===''?'':num(v)})}/><span className="text-sm">位</span></div></label>
+          <label><div className="text-[11px] text-mute mb-1">床位</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.bkKeepB==null?1:dr.bkKeepB)} onChange={v=>up(n=>{n.bkKeepB=v===''?'':num(v)})}/><span className="text-sm">張</span></div></label>
+        </div>
         <div className="text-xs text-mute mt-3 mb-1">主櫃登入碼有效時間（這段時間內同一組碼可以重複使用，時間到自動換下一組）</div>
         <div className="flex rounded-xl border border-line overflow-hidden bg-card">{[[4,'4 小時'],[6,'6 小時'],[24,'1 天']].map(([h,l])=><button key={h} type="button" className={'flex-1 h-10 '+(Number(dr.kioskCodeH||4)===h?'bg-sage text-white':'')} onClick={()=>up(n=>{n.kioskCodeH=h})}>{l}</button>)}</div>
         <div className="text-[11px] text-mute mt-1">{({4:'06、10、14、18、22、02 點換碼',6:'06、12、18、00 點換碼',24:'每天早上 06:00 換碼'})[Number(dr.kioskCodeH||4)]}。改完按下方「儲存」，約 5 分鐘內生效；已經存在手機上的碼用到原本的時間。</div>
