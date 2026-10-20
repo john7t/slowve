@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-120</title>
+<title>緩緩門店 v0.1-122</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-120';
+const VER='v0.1-122';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -5240,13 +5240,13 @@ function peoplePrefetch(){   // 老闆頁開啟時一併準備人員頁的資料
 function RichMenuCard({toast,ask}){
   const [st,setSt]=useState(null);const [busy,setBusy]=useState('');const [err,setErr]=useState('');
   const run=async op=>{setBusy(op);setErr('');try{const j=await cloud.call({action:'richmenu',op},120000);setSt(j);
-    if(op==='apply')toast&&toast('圖文選單已套用');if(op==='sync')toast&&toast('已重新綁定：會員 +'+((j.changed||{}).member||0)+'、工作夥伴 +'+((j.changed||{}).staff||0)+'、解除 '+((j.changed||{}).drop||0));if(op==='off')toast&&toast('已停用，恢復官方帳號後台的圖文選單')}
+    const bad=(j.changed||{}).bad||0;if(op==='apply')toast&&toast('圖文選單已套用'+(bad?'（'+bad+' 位綁不上，可能封鎖了官方帳號，先略過）':''));if(op==='sync')toast&&toast('已重新綁定：會員 +'+((j.changed||{}).member||0)+'、工作夥伴 +'+((j.changed||{}).staff||0)+'、解除 '+((j.changed||{}).drop||0)+(bad?'、略過 '+bad:''));if(op==='off')toast&&toast('已停用，恢復官方帳號後台的圖文選單')}
     catch(e){setErr(e.message)}setBusy('')};
   useEffect(()=>{if(cloudOn())run('status')},[]);
   if(!cloudOn())return <div className="text-sm text-mute">要先開啟雲端同步才能設定。</div>;
   const base=(st&&st.base)||'https://john7t.github.io/slowve/brand/';
   return <div className="text-sm">
-    <div className="grid grid-cols-3 gap-2 mb-2">{[['join','入口（預設）','還沒加入的人'],['member','會員','加入會員的客人'],['staff','工作夥伴','老師・櫃台・主管・老闆']].map(([k,t,d])=><div key={k}>
+    <div className="grid grid-cols-2 gap-2 mb-2">{[['join','入口（預設）','還沒加入的人'],['member','會員','加入會員的客人'],['staff','工作夥伴','老師・櫃台・主管・老闆'],['staffm','工作夥伴 → 會員中心分頁','工作夥伴點上方分頁切換']].map(([k,t,d])=><div key={k}>
       <img alt={t} className="w-full rounded-lg border border-line bg-bg" src={base+((st&&st.imgs&&st.imgs[k])||'')} onError={e=>{e.target.style.visibility='hidden'}}/>
       <div className="text-xs mt-1 font-semibold">{t}</div><div className="text-[11px] text-mute">{d}</div></div>)}</div>
     {st&&<div className="text-xs mb-2">{st.on?<span className="text-sageD">✓ 使用中・{clockText(st.at)} 套用・綁定會員 <b className="num">{st.n.member}</b> 位、工作夥伴 <b className="num">{st.n.staff}</b> 位</span>:<span className="text-mute">目前沒有使用（顯示官方帳號後台設定的圖文選單）</span>}
@@ -5654,6 +5654,9 @@ function LineGate(){
       const mi=memberInfo(m);
       // v0.1-076：鎖定的主櫃（或從主櫃首頁掃碼登入）：一律回主櫃；櫃台、主管、老闆直接進入，其他人留在首頁並提示沒有權限
       if(mc){const ok=mi.roles.includes('counter')||mi.admin==='owner'||mi.admin==='manager';__maincAuto=ok;__maincDeny=ok?'':(mi.roles.includes('teacher')&&m.tc?String(m.tc):(m.name||'這個帳號'));setMem(m);setMe(mine||{uid:p.userId,name:m.name||p.displayName,code:m.tc||''});setView('mainc');setSt('view');return}
+      // v0.1-121：圖文選單「會員中心」分頁帶 view=guest，工作夥伴直接用客人身分進入
+      const wv=new URLSearchParams(location.search).get('view')||(/view=(\w+)/.exec(decodeURIComponent(__ls))||[])[1]||'';
+      if(mine&&wv&&viewsOf(m).includes(wv)){setMem(m);setView(wv);setSt('view');return}
       setSt(mine?'welcome':'profile');
     }catch(e){setErr(String(e&&e.message||e));setSt('error')}
   };
@@ -5685,6 +5688,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-122','10-20','圖文選單套用修正（GAS gas-4.52）：測試分身、格式不對的帳號不綁定（之前會讓 LINE 整批拒絕）；個別綁不上的人（例如封鎖官方帳號）略過並顯示人數；自動清掉之前套用失敗留下的選單。'],
+  ['v0.1-121','10-20','工作夥伴的圖文選單上方加分頁「工作夥伴／會員中心」（LINE 分頁切換，不開網頁、不用訊息額度）；會員中心分頁點下方直接用客人身分進入（GAS gas-4.51）。'],
   ['v0.1-120','10-20','LINE 圖文選單依身分自動切換（GAS gas-4.50）：還沒加入的人看到「加入會員」（右下角「加入工作夥伴」），會員看到「進入會員中心」，工作夥伴看到「門店系統」。老闆頁設定 → LINE 圖文選單按「套用」；開通名單有變動會自動換選單。從圖文選單點加入會員／加入工作夥伴，直接進對應的表單。'],
   ['v0.1-119','10-20','老師費用領取確認：領取日起（上期 20 號、下期次月 5 號），老師頁可以點「我已領取」；主櫃在領取期間顯示「老師費用領取」，看得到誰點了、幾點點的（不含金額）；老闆月報的老師統計也會標「老師已點」。'],
   ['v0.1-118','10-20','老師牌況照預覽圖第 5 版：上牌、服務中接成一排（中間空一格），未上牌、請假、下牌一排；每種牌第一張上面寫分類名稱，沒人的放透明虛框。壓牌改成只算名額（2 小時內不指定老師的預約，白底紅框），老點橘牌，現場客照樣頭班先出。服務中紅卡依開始時間排，點了可到時回牌。新增臨時請假（櫃台登記事假／病假，自動寫交接事項，老師補假單後自動完成）。'],
