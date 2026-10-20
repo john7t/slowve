@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-122</title>
+<title>緩緩門店 v0.1-124</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-122';
+const VER='v0.1-124';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -145,7 +145,10 @@ function mergeSettings(s){
   if(!r.expCats.includes('媒體宣傳'))r.expCats=r.expCats.filter(c=>c!=='其他'&&c!=='雜支').concat(['媒體宣傳'],r.expCats.filter(c=>c==='雜支'||c==='其他'));
   r.expNames=Array.isArray(s.expNames)?s.expNames:[];
   r.maincLive=!!s.maincLive;
-  r.maincTest=!!s.maincTest;   // v0.1-107：主櫃系統測試上線（真的畫面，資料只存在主櫃那台、不上傳；會員資料是真的）
+  r.maincTest=!!s.maincTest;
+  // v0.1-123 線上預約（客人頁）：開放、當天也可以、可指定老師、取消時限（小時）、一次最多幾位、LINE 確認
+  r.gbOn=s.gbOn!==false;r.gbToday=!!s.gbToday;r.gbTc=s.gbTc!==false;r.gbNotify=s.gbNotify!==false;
+  r.gbCancelH=s.gbCancelH==null||s.gbCancelH===''?3:Math.max(0,Math.min(48,Number(s.gbCancelH)||0));r.gbMax=Math.max(1,Math.min(6,Number(s.gbMax)||4));   // v0.1-107：主櫃系統測試上線（真的畫面，資料只存在主櫃那台、不上傳；會員資料是真的）
   // v0.1-070：主櫃座位與規則（腳位、床位、開放床位、清潔時間）
   r.seatFoot=Math.max(1,Math.min(20,Number(s.seatFoot)||4));
   r.seatBed=Math.max(1,Math.min(20,Number(s.seatBed)||6));
@@ -2352,7 +2355,7 @@ const VIEWS={
   mainc:{label:'主櫃系統',desc:'店內 iPad：人員上牌打卡、訂單、老師狀態、交班',icon:'▣'},
   kiosk:{label:'主櫃（公務機）',desc:'店內公務機：用手機產生的登入碼換人（目前開放老闆、主管預覽）',icon:'▣'},
   counter:{label:'櫃台人員',desc:'我的打卡、差勤、班表',icon:'☰'},
-  guest:{label:'客人',desc:'價目表、預約、消費紀錄',icon:'☺'},
+  guest:{label:'會員中心',desc:'預約、消費紀錄、價目表',icon:'☺'},
   visitor:{label:'未審核訪客',desc:'預覽加入會員、應徵老師的每個步驟，協助對方加入',icon:'?'},
 };
 function viewsOf(m){
@@ -2440,7 +2443,7 @@ function RoleBar({view,me,canSwitch,onSwitch,wide}){
   return (
     <div className="bg-sageD text-white text-sm">
       <div className={(wide?'px-6':'max-w-md mx-auto px-4')+' h-10 flex items-center justify-between'}>
-        <span>{VIEWS[view].label}檢視・{me.name}{me.code?<span className="num opacity-80">（{me.code}）</span>:''}</span>
+        <span>{VIEWS[view].label}{view==='guest'?'':'檢視'}・{me.name}{me.code?<span className="num opacity-80">（{me.code}）</span>:''}</span>
         {canSwitch&&<button className="h-7 px-3 rounded-full bg-white/15" onClick={onSwitch}>切換身分</button>}
       </div>
     </div>
@@ -3502,8 +3505,9 @@ function CounterHome({me,mode,desk,sup,cust}){   // v0.1-073：主櫃日報不�
   </>;
 }
 
-function GuestHome({me,mode}){
+function GuestHome({me,mode,real}){
   mode=mode||'phone';
+  if(real&&GAS_URL)return <GuestLive me={me} mode={mode}/>;
   const S=loadSettings();
   const hist=[{off:3,svc:'oil',min:90,tc:'77',ad:['eoil']},{off:17,svc:'dry',min:90,promo:1,tc:'122'},{off:33,svc:'foot',min:60,tc:'77'}].map(x=>demoCalc(S,x));
   const nd=demoDay(-2);
@@ -3553,6 +3557,118 @@ function GuestHome({me,mode}){
   ];
   const head=(<><DemoNote/></>);
   return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4,5]} wide={{cols:[[0,2,4],[1,3,5]]}} xwide={{cols:[[0,4,5],[1,3],[2]]}}/>;
+}
+
+/* ========== v0.1-123 會員中心（原客人頁，GAS guest，gas-4.53；v0.1-124 指定老師改成選編號） ==========
+   我的預約（可在 N 小時前取消）、線上預約（跟主櫃事先預約一樣的名額規則，直接成立）、消費紀錄、價目表、店家資訊。 */
+const SHOP={addr:'新北市板橋區雙十路三段 10 巷 1 號 1 樓',tel:'02-8257-1199',hours:'每天 09:00～02:00'};
+const GB_ST={ok:['已確認','sage'],pend:['待確認','brown'],in:['已報到','sage'],cancel:['已取消','mute'],noshow:['未到','warn'],decl:['未成立','mute']};
+const gbItemTxt=x=>SVC_SHORT[x.svc]+' '+x.min+' 分'+(Number(x.ex)?'＋加鐘 '+Number(x.ex)*30+' 分':'')+((x.ad||[]).length?'＋'+x.ad.join('、'):'')+(x.tc?'・指定 '+x.tc+' 號':'');
+function guestCall(b){const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)return Promise.reject(new Error('取不到 LINE 身分，請關閉後重新開啟'));
+  return cloud.call(Object.assign({action:'guest',idToken:t},b),40000)}
+function GuestLive({me,mode}){
+  mode=mode||'phone';
+  const [D,setD]=useState(()=>jget('slowve.guest',null));const [err,setErr]=useState('');const [busy,setBusy]=useState(false);
+  const load=async()=>{setBusy(true);setErr('');try{const j=await guestCall({op:'home'});setD(j);jset('slowve.guest',j)}catch(e){setErr(e.message)}setBusy(false)};
+  useEffect(()=>{load()},[]);
+  const S=mergeSettings(Object.assign({},loadSettings(),(D&&D.S)||{}));
+  const [ask,setAsk]=useState(null);
+  const today=D&&D.range?D.range.today:bizToday(S.cutoff);
+  const up=(D&&D.mine||[]).filter(b=>b.date>=today&&(b.st==='ok'||b.st==='pend'));
+  const past=(D&&D.mine||[]).filter(b=>!up.includes(b)).slice(-5).reverse();
+  const cancel=async b=>{setAsk(null);setBusy(true);setErr('');try{await guestCall({op:'cancel',id:b.id});await load()}catch(e){setErr(e.message);setBusy(false)}};
+  const B=[
+    (<Sec title="我的預約" right={<button className="text-xs text-sageD underline" onClick={load}>{busy?'讀取中…':'重新整理'}</button>}>
+        {!D&&!err&&<div className="text-sm text-mute"><Spin/>讀取中…</div>}
+        {D&&!up.length&&<div className="text-sm text-mute">目前沒有預約</div>}
+        {up.map(b=>{const d=parseYmd(b.date);const st=GB_ST[b.st]||[b.st,'mute'];return <div key={b.id} className="flex items-start gap-3 py-2 border-b border-line last:border-0">
+          <div className="w-14 h-14 shrink-0 rounded-xl bg-sageL text-sageD flex flex-col items-center justify-center"><span className="text-xs">{d.getMonth()+1}月</span><span className="serif text-xl leading-none">{d.getDate()}</span></div>
+          <div className="flex-1 text-sm"><div>（{WK[d.getDay()]}）<span className="num font-semibold">{b.t}</span>・{b.g.length} 位</div>
+            {b.g.map((x,i)=><div key={i} className="text-xs text-mute">{b.g.length>1?(i+1)+'. ':''}{gbItemTxt(x)}</div>)}
+            {b.canCancel?<button className="mt-1 text-xs text-warn underline" onClick={()=>setAsk(b)}>取消預約</button>:<div className="mt-1 text-[11px] text-mute">預約前 {(D.cfg||{}).cancelH} 小時內要取消請來電 <a className="underline" href={'tel:'+SHOP.tel.replace(/-/g,'')}>{SHOP.tel}</a></div>}</div>
+          <Pill tone={st[1]==='mute'?undefined:st[1]}>{st[0]}</Pill></div>})}
+        {past.length>0&&<div className="mt-2 text-[11px] text-mute">最近：{past.map(b=>b.date.slice(5).replace('-','/')+' '+b.t+' '+((GB_ST[b.st]||[b.st])[0])).join('・')}</div>}
+        <div className="text-[11px] text-mute mt-2">預約保留 10 分鐘，遲到的時間會從服務時間扣除，不往後延。</div>
+      </Sec>),
+    (<Sec title="線上預約">{D?<GuestBook D={D} S={S} onDone={load}/>:<div className="text-sm text-mute"><Spin/>讀取中…</div>}</Sec>),
+    (<Sec title="我的消費紀錄">
+        {D&&!D.me.member&&<div className="text-sm text-mute">還沒有對到你的會員資料，來店時請告訴櫃台手機號碼。</div>}
+        {D&&D.me.member&&!(D.hist||[]).length&&<div className="text-sm text-mute">還沒有消費紀錄</div>}
+        {(D&&D.hist||[]).slice(0,30).map((h,i)=><div key={i} className="flex justify-between gap-2 py-2 border-b border-line last:border-0 text-sm">
+          <span><span className="num text-xs text-mute mr-2">{h.date.slice(5).replace('-','/')}</span>{SVC_SHORT[h.svc]||''} {h.min||''} 分{h.promo?<span className="text-brown text-xs"> 平日</span>:''}{h.ex?<span className="text-xs text-mute">＋{h.ex*30}分</span>:''}{(h.ad||[]).length?<span className="text-xs text-mute">＋{h.ad.join('、')}</span>:''}{h.tc&&<span className="text-xs text-mute">・{h.tc} 號</span>}</span>
+          <span className="num">{money(h.amt)}</span></div>)}
+      </Sec>),
+    (<Sec title="價目表">
+        <div className="grid grid-cols-[3rem_1fr_1fr_1fr_1fr] gap-2 text-sm num">
+          <div></div>{MINS.map(m=><div key={m} className="text-center text-xs text-mute">{m} 分</div>)}<div className="text-center text-xs text-brown">加鐘30分</div>
+          {SVCS.map(s=>(<React.Fragment key={s.id}><div>{s.short}</div>{MINS.map((m,i)=><div key={m} className="text-center">{(S.prices[s.id]||[])[i]}</div>)}<div className="text-center text-brown">+{S.extra.price[s.id]}</div></React.Fragment>))}
+        </div>
+        <div className="mt-3 pt-3 border-t border-line text-sm">{[S.promo,S.promoFoot].map(P=><div key={P.svc} className="flex justify-between"><span className="text-brown">平日限定 {P.min} 分{SVC_SHORT[P.svc]}</span><span className="num">{money(P.price)}</span></div>)}</div>
+        <div className="text-xs text-mute mt-1">平日 09:00～14:00、21:00～02:00</div>
+        <div className="mt-2 text-sm">{S.addons.filter(a=>a.id!=='xiujiao').map(a=><span key={a.id} className="inline-block mr-3">{a.name} <span className="num">{money(a.price)}</span></span>)}</div>
+        <div className="text-[11px] text-mute mt-1">價格以現場公告為準。</div>
+      </Sec>),
+    (<Sec title="店家資訊">
+        <div className="text-sm space-y-1">
+          <div>營業時間　{SHOP.hours}</div>
+          <div>電話　<a className="underline text-sageD num" href={'tel:'+SHOP.tel.replace(/-/g,'')}>{SHOP.tel}</a></div>
+          <div>地址　<a className="underline text-sageD" target="_blank" rel="noopener" href={'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(SHOP.addr)}>{SHOP.addr}</a></div>
+        </div>
+      </Sec>)
+  ];
+  const head=<>{D&&<div className="mt-2 px-1 text-sm">你好，<b>{D.me.name}</b></div>}{err&&<div className="mt-2 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">✗ {err}</div>}
+    {ask&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setAsk(null)}><div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
+      <div className="text-lg mb-1">取消這筆預約？</div><div className="text-sm text-mute mb-4 num">{fmtDate(ask.date)} {ask.t}・{ask.g.map(gbItemTxt).join('／')}</div>
+      <div className="grid grid-cols-2 gap-2"><button className="h-11 rounded-xl border border-line" onClick={()=>setAsk(null)}>不要取消</button><button className="h-11 rounded-xl bg-warn text-white" onClick={()=>cancel(ask)}>確定取消</button></div></div></div>}</>;
+  return <RolePage mode={mode} head={head} B={B} phone={[0,1,2,3,4]} wide={{cols:[[0,1],[2,3,4]]}} xwide={{cols:[[0,4],[1],[2,3]]}}/>;
+}
+// 線上預約表單：日期 → 人數、每位的項目 → 查空檔（整點、半點）→ 確認
+function GuestBook({D,S,onDone}){
+  const cfg=D.cfg||{};const R=D.range||{};
+  const dates=useMemo(()=>{const a=[];if(!R.from)return a;let d=R.from;for(let i=0;i<16&&d<=R.to;i++){a.push(d);const x=parseYmd(d);x.setDate(x.getDate()+1);d=ymd(x)}return a},[R.from,R.to]);
+  const blank=()=>({svc:'dry',min:90,ex:0,ad:[],tc:''});
+  const [date,setDate]=useState('');const [g,setG]=useState([blank()]);const [slots,setSlots]=useState(null);const [t,setT]=useState('');const [tcs,setTcs]=useState(null);
+  const [note,setNote]=useState('');const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [done,setDone]=useState(null);
+  const setX=(i,k,v)=>{setG(g.map((x,j)=>j===i?Object.assign({},x,{[k]:v}):x));setSlots(null);setT('')};
+  const key=JSON.stringify([date,g.map(x=>[x.svc,x.min,x.ex,x.ad,x.tc])]);
+  useEffect(()=>{if(!date)return;let dead=false;const h=setTimeout(async()=>{setBusy('slots');setErr('');try{const j=await guestCall({op:'slots',date,g});if(!dead){setSlots(j.slots||[]);setTcs(j.tcs||[])}}catch(e){if(!dead){setErr(e.message);setSlots(null)}}if(!dead)setBusy('')},500);return ()=>{dead=true;clearTimeout(h)}},[key]);
+  const est=x=>{const i=MINS.indexOf(Number(x.min));return ((S.prices[x.svc]||[])[i]||0)+(Number(x.ex)||0)*((S.extra.price||{})[x.svc]||0)+(x.ad||[]).reduce((a,id)=>a+((S.addons.find(y=>y.id===id)||{}).price||0),0)};
+  const book=async()=>{setBusy('book');setErr('');try{const j=await guestCall({op:'book',date,t,g,note:note.trim()});setDone(j.booked);onDone&&onDone()}catch(e){setErr(e.message)}setBusy('')};
+  if(!cfg.on)return <div className="text-sm text-mute">目前沒有開放線上預約，請來電 <a className="underline text-sageD" href={'tel:'+SHOP.tel.replace(/-/g,'')}>{SHOP.tel}</a></div>;
+  if(done)return <div className="text-center py-4"><div className="text-3xl text-sageD mb-1">✓</div><div className="text-lg">預約成功</div>
+    <div className="text-sm text-mute num mt-1">{fmtDate(done.date)} {done.t}</div>{cfg.notify&&<div className="text-xs text-mute mt-1">LINE 也會收到一則確認訊息</div>}
+    <button className="mt-4 h-10 px-5 rounded-full border border-sage text-sageD" onClick={()=>{setDone(null);setDate('');setT('');setSlots(null);setNote('');setG([blank()])}}>再預約一筆</button></div>;
+  const Seg=({opts,val,set})=><div className="flex flex-wrap gap-1.5">{opts.map(([v,l])=><button key={String(v)} type="button" className={'h-9 px-3 rounded-full border text-sm '+(val===v?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set(v)}>{l}</button>)}</div>;
+  const okN=(slots||[]).filter(x=>x.ok).length;
+  return <div className="text-sm">
+    <div className="text-xs text-mute mb-1">日期（{(R.from||'').slice(5).replace('-','/')}～{(R.to||'').slice(5).replace('-','/')}{cfg.today?'':'，當天請來電'}）</div>
+    <div className="flex gap-1.5 overflow-x-auto pb-1 mb-3">{dates.map(d=>{const x=parseYmd(d);return <button key={d} type="button" onClick={()=>{setDate(d);setT('');setTcs(null);setG(g.map(y=>Object.assign({},y,{tc:''})))}} className={'shrink-0 w-12 h-14 rounded-xl border flex flex-col items-center justify-center '+(date===d?'bg-sage border-sage text-white':'bg-card border-line')+(x.getDay()===0||x.getDay()===6?' font-semibold':'')}>
+      <span className="text-[10px]">{WK[x.getDay()]}</span><span className="num text-base leading-none">{x.getDate()}</span><span className="text-[10px] num">{x.getMonth()+1}月</span></button>})}</div>
+    <div className="text-xs text-mute mb-1">人數</div>
+    <div className="mb-3"><Seg opts={Array.from({length:cfg.max||4},(_,i)=>[i+1,(i+1)+' 位'])} val={g.length} set={n=>{setG(Array.from({length:n},(_,i)=>g[i]||blank()));setSlots(null);setT('')}}/></div>
+    {g.map((x,i)=><div key={i} className="mb-3 rounded-xl border border-line p-3">
+      {g.length>1&&<div className="text-xs font-semibold mb-1.5">第 {i+1} 位</div>}
+      <div className="mb-2"><Seg opts={SVCS.map(s=>[s.id,s.short])} val={x.svc} set={v=>setX(i,'svc',v)}/></div>
+      <div className="mb-2"><Seg opts={MINS.map(m=>[m,m+' 分'])} val={Number(x.min)} set={v=>setX(i,'min',v)}/></div>
+      <div className="text-[11px] text-mute mb-1">加鐘・加購（可不選）</div>
+      <div className="flex flex-wrap gap-1.5 mb-2">{[1,2].map(n=><button key={n} type="button" className={'h-8 px-2.5 rounded-full border text-xs '+(Number(x.ex)===n?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setX(i,'ex',Number(x.ex)===n?0:n)}>加鐘 {n*30} 分</button>)}
+        {S.addons.filter(a=>['guasha','bagua','eoil'].includes(a.id)).map(a=>{const on=(x.ad||[]).includes(a.id);return <button key={a.id} type="button" className={'h-8 px-2.5 rounded-full border text-xs '+(on?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setX(i,'ad',on?x.ad.filter(y=>y!==a.id):(x.ad||[]).concat([a.id]))}>{a.name}{ADD_MIN[a.id]?'（+'+ADD_MIN[a.id]+' 分）':''}</button>})}</div>
+      {cfg.tc&&<><div className="text-[11px] text-mute mb-1">指定老師{date?'（'+fmtDate(date)+'有上班的老師；選了老師，下面只顯示這位老師有空的時間）':'（先選日期）'}</div>
+        {date&&<div className="flex flex-wrap gap-1.5">{[''].concat(tcs||[]).map(tc=>{const used=tc&&g.some((y,j)=>j!==i&&y.tc===tc);return <button key={tc||'any'} type="button" disabled={used}
+          className={'h-8 min-w-[2.75rem] px-2.5 rounded-full border text-xs num disabled:opacity-30 '+(x.tc===tc?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setX(i,'tc',tc)}>{tc||'不指定'}</button>})}
+          {tcs&&!tcs.length&&<span className="text-xs text-mute">這天沒有可以指定的老師</span>}</div>}</>}
+      <div className="text-[11px] text-mute mt-1.5 num">約 {money(est(x))}・{gDur(x)} 分鐘</div>
+    </div>)}
+    {date&&<><div className="text-xs text-mute mb-1">時間{busy==='slots'?'（查詢中…）':slots?'（可預約 '+okN+' 個時段）':''}</div>
+      {slots&&!okN&&<div className="text-sm text-warn mb-2">這一天沒有可以預約的時段了，請換一天，或來電詢問。</div>}
+      <div className="grid grid-cols-5 gap-1.5 mb-3">{(slots||[]).map(x=><button key={x.t} type="button" disabled={!x.ok} title={x.msg||''} onClick={()=>setT(x.t)}
+        className={'h-9 rounded-lg border text-sm num '+(t===x.t?'bg-sage border-sage text-white':x.ok?'bg-card border-sage/60 text-sageD':'bg-bg border-line text-neutral-300 line-through')}>{x.t}</button>)}</div>
+      {slots&&slots.some(x=>x.why==='tc')&&<div className="text-xs text-warn mb-2">{(slots.find(x=>x.why==='tc')||{}).msg}</div>}</>}
+    {t&&<><input className="w-full h-10 px-3 rounded-lg border border-line bg-card mb-2" maxLength={100} placeholder="備註（選填）哪裡痛？例如頸肩" value={note} onChange={e=>setNote(e.target.value)}/>
+      <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy==='book'} onClick={book}>{busy==='book'?'送出中…':'確認預約 '+fmtDate(date)+' '+t}</button></>}
+    {err&&<div className="text-sm text-warn mt-2">✗ {err}</div>}
+    <div className="text-[11px] text-mute mt-2">送出就成立。預約前 {cfg.cancelH} 小時以前可以在這裡取消，之後請來電。</div>
+  </div>;
 }
 
 /* ---- 未審核訪客：預覽開通流程各階段，員工協助訪客加入 ---- */
@@ -5657,6 +5773,7 @@ function LineGate(){
       // v0.1-121：圖文選單「會員中心」分頁帶 view=guest，工作夥伴直接用客人身分進入
       const wv=new URLSearchParams(location.search).get('view')||(/view=(\w+)/.exec(decodeURIComponent(__ls))||[])[1]||'';
       if(mine&&wv&&viewsOf(m).includes(wv)){setMem(m);setView(wv);setSt('view');return}
+      if(mine&&viewsOf(m).length===1){setMem(m);setView(viewsOf(m)[0]);setSt('view');return}   // v0.1-123：只有一種身分（例如會員）直接進入
       setSt(mine?'welcome':'profile');
     }catch(e){setErr(String(e&&e.message||e));setSt('error')}
   };
@@ -5688,6 +5805,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-124','10-21','客人頁改名「會員中心」；線上預約的指定老師改成選編號（列出那天有上班、沒請整天假的老師），選了老師時間只顯示那位老師有空的時段；備註提示改成「哪裡痛？例如頸肩」（GAS gas-4.54）。'],
+  ['v0.1-123','10-21','客人頁（會員中心）上線（GAS gas-4.53）：我的預約（預約前 3 小時以前可以自己取消）、線上預約（明天起 14 天，跟主櫃事先預約一樣的名額規則，送出就成立，可輸入指定老師編號）、我的消費紀錄、價目表、店家資訊。老闆頁設定新增「線上預約」開關。'],
   ['v0.1-122','10-20','圖文選單套用修正（GAS gas-4.52）：測試分身、格式不對的帳號不綁定（之前會讓 LINE 整批拒絕）；個別綁不上的人（例如封鎖官方帳號）略過並顯示人數；自動清掉之前套用失敗留下的選單。'],
   ['v0.1-121','10-20','工作夥伴的圖文選單上方加分頁「工作夥伴／會員中心」（LINE 分頁切換，不開網頁、不用訊息額度）；會員中心分頁點下方直接用客人身分進入（GAS gas-4.51）。'],
   ['v0.1-120','10-20','LINE 圖文選單依身分自動切換（GAS gas-4.50）：還沒加入的人看到「加入會員」（右下角「加入工作夥伴」），會員看到「進入會員中心」，工作夥伴看到「門店系統」。老闆頁設定 → LINE 圖文選單按「套用」；開通名單有變動會自動換選單。從圖文選單點加入會員／加入工作夥伴，直接進對應的表單。'],
@@ -6050,6 +6169,19 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
         </div>
       </Card>
 
+      </>}
+      {ST_&&<>
+      <div className={sec}>線上預約（會員中心）</div>
+      <Card className="p-3 text-sm">
+        {[['gbOn','開放會員線上預約','關掉後會員中心只顯示「請來電預約」'],['gbToday','當天也可以線上預約','先關著：確認排班規則沒問題再打開（當天的時段要 1 小時後，名額跟事先預約一樣保留現場）'],['gbTc','會員可以指定老師','選了日期後列出那天有上班、沒請整天假的老師編號；選了老師，時間只顯示那位老師有空的時段'],['gbNotify','預約成功用 LINE 發確認給會員','會用掉每月訊息額度（一筆一則）']].map(([k,t,d])=>
+          <button key={k} type="button" className={'w-full mb-2 rounded-xl border px-3 py-2.5 text-left '+(dr[k]?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>up(n=>{n[k]=!n[k]})}>
+            {dr[k]?'☑':'☐'} {t}<span className="block text-xs text-mute mt-0.5">{d}</span></button>)}
+        <div className="grid grid-cols-2 gap-2">
+          <label><div className="text-xs text-mute mb-1">預約前幾小時以前可以取消</div><div className="flex items-center gap-1"><NumIn className="w-16" value={String(dr.gbCancelH)} onChange={v=>up(n=>{n.gbCancelH=v===''?0:Math.min(48,Number(v))})}/><span>小時</span></div></label>
+          <label><div className="text-xs text-mute mb-1">一次最多預約幾位</div><div className="flex items-center gap-1"><NumIn className="w-16" value={String(dr.gbMax)} onChange={v=>up(n=>{n.gbMax=v===''?1:Math.max(1,Math.min(6,Number(v)))})}/><span>位</span></div></label>
+        </div>
+        <div className="text-[11px] text-mute mt-2">可以預約明天起 14 天內，整點或半點，09:00～01:30。名額跟主櫃事先預約一樣：在班、沒請假的老師扣掉同時段的預約，每個時段保留 {dr.bkKeepT} 位老師、{dr.bkKeepB} 張床給現場（C4）。送出就成立，主櫃「預約・排隊」會看到（來源 line）。改完按下方「儲存設定」，上傳雲端後生效。</div>
+      </Card>
       </>}
       {ST_&&<>
       <div className={sec}>額外品項</div>
