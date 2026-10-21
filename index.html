@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-130</title>
+<title>緩緩門店 v0.1-131</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-130';
+const VER='v0.1-131';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -428,6 +428,27 @@ const sameItem=(a,b)=>!!a&&!!b&&a.svc===b.svc&&a.min===b.min&&!!a.promo===!!b.pr
   &&String(a.tc||'')===String(b.tc||'');   // 換老師也重算（指定老師的品項歸屬可能改變）
 // v0.1-105 mc（主櫃上線）：{tcs:[{tc,next,serv,since}]（上牌中的老師，可接的依輪班順序）, busy:{座位:{k,until}}, line:{ks}}
 //   主櫃開單：要選床位／腳位、老師從上牌中的老師選、不顯示老師抽成、沒有跳單
+/* v0.1-131 備註：快速按鈕（指定女生／指定男生）＋之前輸入過的備註（這台記住的＋會員 LINE 預約的備註），點一下加入、再點一下拿掉 */
+const NOTE_Q=['指定女生','指定男生'];
+const noteSplit=v=>String(v||'').split(/[、，,；;\n]+/).map(x=>x.trim()).filter(Boolean);
+function noteRemember(v){const t=noteSplit(v).filter(x=>!NOTE_Q.includes(x)&&x.length<=20);if(!t.length)return;
+  jset('note-hist',t.concat(jget('note-hist',[]).filter(x=>!t.includes(x))).slice(0,30))}
+function NoteBox({value,onChange,placeholder,max,cls}){
+  const J=useBk();const parts=noteSplit(value);
+  const hist=(()=>{const seen=new Set(NOTE_Q),out=[];const add=x=>{if(!seen.has(x)&&x.length<=20){seen.add(x);out.push(x)}};
+    jget('note-hist',[]).forEach(add);
+    ((J&&J.list)||[]).filter(b=>b.note).slice().sort((a,b)=>(b.ua||0)-(a.ua||0)).forEach(b=>noteSplit(b.note).forEach(add));
+    return out.slice(0,14)})();
+  const tog=(q,ex)=>{const has=parts.includes(q);const L=parts.filter(x=>x!==q&&!(ex||[]).includes(x));if(!has)(ex?L.unshift(q):L.push(q));onChange(L.join('、'))};
+  const chip=on=>'h-8 px-3 rounded-full border text-xs '+(on?'bg-sage border-sage text-white':'bg-card border-line');
+  return <div className={cls||'mb-2'}>
+    <div className="flex gap-1.5 items-center">
+      <input className="flex-1 min-w-0 h-10 px-3 rounded-xl border border-line bg-card text-sm" maxLength={max||200} placeholder={placeholder||'備註'} value={value||''} onChange={e=>onChange(e.target.value)}/>
+      {NOTE_Q.map(q=><button key={q} type="button" className={chip(parts.includes(q))+' shrink-0 h-10'} onClick={()=>tog(q,NOTE_Q.filter(x=>x!==q))}>{q}</button>)}
+    </div>
+    {hist.length>0&&<div className="flex flex-wrap gap-1.5 mt-1.5"><span className="text-[11px] text-mute self-center">之前的備註</span>{hist.map(h=><button key={h} type="button" className={chip(parts.includes(h))} onClick={()=>tog(h)}>{h}</button>)}</div>}
+  </div>;
+}
 function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onClose,ask,prev,count,inline,cu,mc,init}){   // v0.1-110 init：{items:[…]} 預約報到、候位入座帶入
   const isNew=!order;
   const origItems=order?orderItems(order):[];
@@ -490,7 +511,8 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
     const now=Date.now();
     const items=f.items.map((x,i)=>Object.assign({svc:x.svc,min:x.min,promo:!!x.promo,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,emp:!!x.emp,cp:Number(x.cp)||0,ad:[...x.ad],tc:String(x.tc).trim(),cu:x.cu||null,ld:!!x.ld,rj:[...(x.rj||[])],seat:x.seat||'',amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh},(priced[i].xs||[]).length?{xs:priced[i].xs}:{}));
     const keepMc={};['st','end','endAt','pay','by'].forEach(k=>{if(f[k]!=null)keepMc[k]=f[k]});   // v0.1-105：主櫃的狀態欄位，老闆修正時保留
-    onSave(Object.assign(keepMc,f.del?{del:true,snDel:f.snDel,delAt:f.delAt}:{},{id:f.id,sn,t:f.t||'',note:f.note||'',void:!!f.void,skip:!!f.skip,skipRev:!!f.skipRev,skipBy:f.skipBy||'store',skipNote:f.skipNote||'',items,ca:f.ca||now,ua:now}),!!next);
+    if(mc)noteRemember(f.note);
+    onSave(Object.assign(keepMc,isNew&&mc&&f.prePay?{prePay:true}:{},f.del?{del:true,snDel:f.snDel,delAt:f.delAt}:{},{id:f.id,sn,t:f.t||'',note:f.note||'',void:!!f.void,skip:!!f.skip,skipRev:!!f.skipRev,skipBy:f.skipBy||'store',skipNote:f.skipNote||'',items,ca:f.ca||now,ua:now}),!!next);
   };
 
   const cellCls=on=>'h-14 rounded-xl border text-base num transition-colors '+(on?'bg-sage border-sage text-white shadow-inner':'bg-card border-line active:bg-sageL');
@@ -510,7 +532,9 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
         <div className="flex gap-2">
           {!isNew&&f.void&&onRelease&&<button className="px-3 h-12 rounded-xl border border-warn text-warn bg-warnL/40" onClick={()=>onRelease(f)}>刪除</button>}
           {!isNew&&onToggleVoid&&<button className={'px-4 h-12 rounded-xl border '+(f.void?'border-sage text-sageD':'border-warn text-warn')} onClick={()=>onToggleVoid(f)}>{f.void?'恢復':'作廢'}</button>}
-          {isNew&&mc?<button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(false)}>開單（開始服務）</button>
+          {isNew&&mc?<div className="flex-1">
+            <div className="flex rounded-xl border border-line overflow-hidden mb-2">{[[false,'未買單','服務結束後再買單'],[true,'先買單','現在收款']].map(([v,l,d])=><button key={l} type="button" className={'flex-1 h-12 leading-tight '+(!!f.prePay===v?(v?'bg-brown text-white':'bg-sage text-white'):'bg-card')} onClick={()=>set('prePay',v)}>{l}<span className="block text-[11px] opacity-80">{d}</span></button>)}</div>
+            <button className="w-full h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(false)}>{f.prePay?'開單・先買單 '+money(tot.amt):'開單（開始服務）'}</button></div>
           :isNew?<>
             {!inline&&<button className="px-4 h-12 rounded-xl border border-sage text-sageD" onClick={()=>save(false)}>存檔關閉</button>}
             <button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(true)}>儲存，下一筆 ›</button>
@@ -647,10 +671,10 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
           <div className="text-xs text-mute">不論是否計入營業額，跳單金額都不算進日結的應有現金。責任歸老師時，每位老師吸收自己服務那位客人的金額。</div>
         </div>}</>}
 
-        <label className="block mb-2">
+        {mc?<div><div className="text-xs text-mute mb-1">備註</div><NoteBox value={f.note||''} onChange={v=>set('note',v)}/></div>:<label className="block mb-2">
           <div className="text-xs text-mute mb-1">備註</div>
           <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" value={f.note||''} onChange={e=>set('note',e.target.value)}/>
-        </label>
+        </label>}
       </fieldset>
     </Sheet>
   );
@@ -4243,6 +4267,7 @@ function ArrangeForm({b0,J,S,ks,by,line,plan,todayDay,nowM,onClose,onSaved,ask})
     if(st!=='decl'){if(isT&&!fitAt(tm(f.t))&&!await ask({title:'這個時間排不下，仍要安排？',msg:'老師或座位不夠（已考慮服務中、其他預約、清潔時間）。',okText:'仍要安排',danger:true}))return;
       if(!isT){const c=capOf(f.t);if(!c.ok&&!await ask({title:'名額不夠，仍要預約？',msg:c.msgs.join('\n'),okText:'仍要預約',danger:true}))return}}
     const b=Object.assign({},f,st==='decl'?{st:'decl',t:f.t||(sug[0]!=null?tf(sug[0]):hm(new Date())).replace(/\d$/,'0'),name:f.name||'（沒留名）'}:{});
+    if(st!=='decl')noteRemember(f.note);
     setBusy(true);setErr('');try{const j=await bkCall({op:'save',b,by},ks);bkPut(j);onSaved&&onSaved(b,st)}catch(e){setErr(e.message)}setBusy(false)};
   const SV=[['dry','指壓'],['oil','油壓'],['foot','腳底']];
   const free=isT?(ctx.T||[]).map(t=>t.tc).sort((a,b)=>Number(a)-Number(b)):(f.t?(J.tea||[]).filter(t=>!t.support&&teaOk(t,f.date,tm(f.t),tm(f.t)+bkDur(f),J.lv)).map(t=>t.tc).sort((a,b)=>Number(a)-Number(b)):[]);
@@ -4283,7 +4308,7 @@ function ArrangeForm({b0,J,S,ks,by,line,plan,todayDay,nowM,onClose,onSaved,ask})
         <input className="h-10 px-3 rounded-xl border border-line bg-card text-sm num" inputMode="tel" maxLength={12} placeholder="電話（選填）" value={f.phone||''} onChange={e=>set('phone',e.target.value.replace(/[^\d-]/g,''))}/></div>}
       <div className="flex flex-wrap gap-1.5 mb-2 items-center"><span className="text-xs text-mute">來源</span>{BK_SRC.map(x=><button key={x} type="button" className={'h-8 px-3 rounded-full border text-xs '+(f.src===x?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setF(p=>Object.assign({},p,{src:x,here:x==='現場'&&p.date===today}))}>{x}</button>)}</div>
       {isT&&<button type="button" className={'w-full h-10 mb-2 rounded-xl border text-left px-3 text-sm '+(f.here?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>set('here',!f.here)}>{f.here?'☑':'☐'} 客人在店裡等（老師或位子提早空出來時提示「可以提前入場」）</button>}
-      <input className="w-full h-10 px-3 rounded-xl border border-line bg-card text-sm mb-2" maxLength={200} placeholder="備註（例：想要力道重、希望女老師 A7）" value={f.note||''} onChange={e=>set('note',e.target.value)}/>
+      <NoteBox value={f.note||''} onChange={v=>set('note',v)} placeholder="備註（例：想要力道重、頸肩）"/>
       {err&&<div className="text-sm text-warn mb-2">✗ {err}</div>}
       <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={()=>save()}>{busy?'儲存中…':f.t?(isT?'安排 '+f.t+' 入場':'預約 '+f.date.slice(5)+' '+f.t):'選好時間後安排'}</button>
       <div className="grid grid-cols-2 gap-2 mt-2"><button className="h-10 rounded-xl border border-line bg-card" onClick={onClose}>取消</button>
@@ -4292,7 +4317,7 @@ function ArrangeForm({b0,J,S,ks,by,line,plan,todayDay,nowM,onClose,onSaved,ask})
 }
 /* 主櫃的「預約・排隊」區塊：選日期看預約；今天的顯示壓牌老師、在店等候、可以提前入場、遲到；點一筆可報到、確認、修改、取消、未到 */
 function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin}){
-  const J=useBk();const [day,setDay]=useState(date);const [form,setForm]=useState(null);const [sel,setSel]=useState(null);const [err,setErr]=useState('');
+  const J=useBk();const [day,setDay]=useState(date);const [form,setForm]=useState(null);const [sel,setSel]=useState(null);const [err,setErr]=useState('');const [showIn,setShowIn]=useState(false);
   const load=()=>bkCall({op:'list'},ks).then(j=>{setErr('');bkPut(j)}).catch(e=>setErr(e.message));
   useEffect(()=>{load();const t=setInterval(()=>{if(document.visibilityState!=='hidden')load()},60000);return ()=>clearInterval(t)},[ks,MC.test]);
   if(!J)return <div className="text-sm text-mute">{err?'✗ '+err:<Ld/>}</div>;
@@ -4304,12 +4329,14 @@ function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin
   const setSt=async(b,st)=>{try{const j=await bkCall({op:'st',id:b.id,st},ks);bkPut(j);setSel(null);toast&&toast(BK_ST[st].l)}catch(e){setErr(e.message)}};
   const selB=sel&&(J.list||[]).find(b=>b.id===sel);
   const waitN=isToday?list.filter(b=>bkLive(b)&&b.here).length:0;
+  const folded=isToday?list.filter(b=>!bkLive(b)):[],shown=isToday?list.filter(b=>bkLive(b)):list;   // v0.1-131 今天：已報到、取消、未到收合，未報到的一眼看得到
+  const inN=folded.filter(b=>b.st==='in').length,offN=folded.length-inN;
   return (<div>
     <button className="w-full h-12 mb-2 rounded-xl bg-sage text-white text-lg" onClick={()=>setForm({b0:null})}>＋ 安排客人</button>
     <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">{days.map((d,i)=>{const n=(J.list||[]).filter(b=>b.date===d&&bkLive(b)).length;return <button key={d} type="button" className={'shrink-0 h-11 px-2 rounded-xl border text-xs leading-tight '+(day===d?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setDay(d)}>
       <span className="block">{i===0?'今天':i===1?'明天':Number(d.slice(5,7))+'/'+Number(d.slice(8))}</span><span className="block num opacity-80">{n?n+' 組':'—'}</span></button>})}</div>
     {isToday&&<div className="text-xs text-mute mb-1">在店等候 {waitN} 組{decl?'・今天客人沒接受 '+decl+' 組':''}</div>}
-    {list.map(b=>{const late=isToday&&bkLive(b)&&!b.here?nowM-tm(b.t):-1,hs=(holds.byBk||{})[b.id]||[],e=early(b);return (
+    {(()=>{const Row=b=>{const late=isToday&&bkLive(b)&&!b.here?nowM-tm(b.t):-1,hs=(holds.byBk||{})[b.id]||[],e=early(b);return (
       <button key={b.id} className={'w-full text-left flex items-start gap-2 py-2 border-b border-line last:border-0 text-sm '+(bkLive(b)?'':'opacity-60')+(e?' bg-sageL/50':'')} onClick={()=>setSel(b.id)}>
         <span className="num w-12 shrink-0 font-semibold">{b.t}</span>
         <span className="flex-1 min-w-0">{bkWho(b)}{b.g.length>1?<span className="text-xs text-mute">・{b.g.length} 位</span>:''}
@@ -4320,7 +4347,11 @@ function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin
           {late>10&&<span className="block text-xs text-warn font-semibold">已遲到 {late} 分（超過 10 分鐘可取消，A6）</span>}
           {late>0&&late<=10&&<span className="block text-xs text-warn">遲到 {late} 分・時間從服務時間扣除</span>}</span>
         <span className={'shrink-0 text-[11px] px-1.5 py-0.5 rounded '+BK_ST[b.st].c}>{BK_ST[b.st].l}</span>
-      </button>)})}
+      </button>)};
+      return <>{shown.map(Row)}
+      {isToday&&!shown.length&&list.length>0&&<div className="text-xs text-mute py-2">今天的預約都處理完了</div>}
+      {folded.length>0&&<button type="button" className="w-full h-10 mt-1 rounded-xl border border-line bg-bg text-sm text-mute" onClick={()=>setShowIn(!showIn)}>{showIn?'▾':'▸'} 已報到 {inN} 組{offN?'・取消／未到 '+offN+' 組':''}{showIn?'（收合）':''}</button>}
+      {showIn&&folded.map(Row)}</>})()}
     {!list.length&&<div className="text-xs text-mute py-2">這天還沒有預約</div>}
     {err&&<div className="text-xs text-warn mt-1">✗ {err}</div>}
     <div className="text-[11px] text-mute mt-1">現場、電話、事先預約都在這裡安排：系統給可以入場的時間，客人接受就留位子。</div>
@@ -4427,7 +4458,9 @@ function McOrderSheet({o,S,isOwner,onClose,onAct,onEdit,ask}){
           {cps[j]?'☑':'☐'} IG 打卡折價券 <span className="num">−{money(C)}</span><span className="text-xs text-mute ml-1">記為媒體宣傳支出</span></button>}
       </div>)}
       <div className="flex justify-between items-baseline pt-3"><span>{its.some((x,j)=>cpOf(x,j)>0)?'實收':'合計'}</span><span className="serif text-2xl text-brown num">{money(tot)}</span></div>
+      {st==='serving'&&o.pay&&<div className="mt-3 px-3 py-2 rounded-lg bg-sageL text-sageD text-sm">✓ 已先買單 <span className="num">{o.pay.t}</span>{o.pay.by?'・'+o.pay.by:''}・到時直接完成</div>}
       {st==='serving'&&<button className="w-full h-12 mt-3 rounded-xl bg-brown text-white text-lg" onClick={end}>到時（服務結束）</button>}
+      {st==='serving'&&o.pay&&isOwner&&<button className="w-full h-10 mt-2 rounded-xl border border-warn text-warn text-sm" onClick={()=>onAct('unpre')}>取消先買單（老闆、主管）</button>}
       {st==='done'&&<button className="w-full h-12 mt-3 rounded-xl bg-sage text-white text-lg" onClick={()=>onAct('pay',{cps,m:'cash'})}>買單・現金 {money(tot)}</button>}
       {st==='done'&&<button className="w-full h-10 mt-1 text-sm text-mute underline" onClick={()=>onAct('unend')}>還沒結束，改回服務中</button>}
       {st==='paid'&&isOwner&&<button className="w-full h-10 mt-2 rounded-xl border border-warn text-warn text-sm" onClick={()=>onAct('unpay')}>取消買單（老闆、主管）</button>}
@@ -4607,25 +4640,26 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const OST={serving:{label:'服務中',cls:'text-brown'},done:{label:'到時・待買單',cls:'text-warn'},paid:{label:'已買單',cls:'text-sageD'}};
   const act=(o,k,x)=>{const t=hm(new Date()),at=Date.now();
     mcMutate(date,dd=>{const y=dd.orders.find(z=>z.id===o.id);if(!y)return dd;
-      if(k==='end'){y.st='done';y.endAt=t}
+      if(k==='end'){y.st=y.pay?'paid':'done';y.endAt=t}   // 先買單的到時直接是已買單
       if(k==='unend'){y.st='serving';delete y.endAt}
+      if(k==='unpre'){delete y.pay}
       if(k==='pay'){const C=Number(S.coupon)||100;y.items=orderItems(y).map((it,j)=>Object.assign({},it,{cp:x.cps[j]?Math.min(C,it.amt||0):0}));y.st='paid';y.pay={m:x.m||'cash',t,by:op.name}}
-      if(k==='unpay'){y.st='done';delete y.pay}
+      if(k==='unpay'){y.st=y.endAt?'done':'serving';delete y.pay}
       y.ua=at;dd.log=(dd.log||[]).concat([{act:'mc-'+k,at,sn:y.sn,by:op.name}]);
-      return k==='pay'||k==='unpay'?syncCpExp(dd,y.id):dd});
-    setSel(null);toast&&toast({end:'#'+o.sn+' 到時',unend:'#'+o.sn+' 改回服務中',pay:'#'+o.sn+' 已買單',unpay:'#'+o.sn+' 已取消買單'}[k]);
+      return k==='pay'||k==='unpay'||k==='unpre'?syncCpExp(dd,y.id):dd});
+    setSel(null);toast&&toast({end:'#'+o.sn+' 到時',unend:'#'+o.sn+' 改回服務中',pay:'#'+o.sn+' 已買單',unpay:'#'+o.sn+' 已取消買單',unpre:'#'+o.sn+' 已取消先買單'}[k]+(k==='end'&&o.pay?'（已先買單）':''));
   };
   const onSave=o=>{const at=Date.now();
     mcMutate(date,dd=>{const i=dd.orders.findIndex(x=>x.id===o.id);const prev=i>=0?dd.orders[i]:null;
-      const keep=prev?{st:prev.st||'serving',endAt:prev.endAt,pay:prev.pay,by:prev.by}:{st:'serving',by:op.name};
-      const n=Object.assign({},o,keep,{t:o.t||hm(new Date())});n.end=mcEnd(Object.assign({},n,{end:null}));if(!n.endAt)delete n.endAt;if(!n.pay)delete n.pay;n.ua=at;
+      const keep=prev?{st:prev.st||'serving',endAt:prev.endAt,pay:prev.pay,by:prev.by}:Object.assign({st:'serving',by:op.name},o.prePay?{pay:{m:'cash',t:hm(new Date()),by:op.name,pre:true}}:{});   // v0.1-131 先買單：仍是服務中，到時直接變已買單
+      const n=Object.assign({},o,keep,{t:o.t||hm(new Date())});delete n.prePay;n.end=mcEnd(Object.assign({},n,{end:null}));if(!n.endAt)delete n.endAt;if(!n.pay)delete n.pay;n.ua=at;
       if(i>=0)dd.orders[i]=n;else dd.orders.push(n);
       if(!prev&&ed&&ed.bk){n.bk=ed.bk.id;if(tm(hm(new Date()))>tm(ed.bk.t)){let mx=0;orderItems(n).forEach(x=>{mx=Math.max(mx,gDur(x))});n.end=tf(tm(ed.bk.t)+mx);n.late=tm(hm(new Date()))-tm(ed.bk.t)}}   // 遲到：時間從服務時間扣除（A6）
       if(!prev&&ed&&ed.wait){n.wait=ed.wait.id;dd.wait=(dd.wait||[]).map(w=>w.id===ed.wait.id?Object.assign({},w,{st:'seat',oid:n.id,ua:at}):w)}
       dd.log=(dd.log||[]).concat([{act:i>=0?'mc-edit':'mc-new',at,sn:n.sn,by:op.name}]);
       return syncCpExp(dd,n.id)});
     if(ed&&ed.bk&&!ed.order)bkCall({op:'st',id:ed.bk.id,st:'in',oid:o.id},ks).then(bkPut).catch(e=>toast&&toast('預約狀態更新失敗：'+e.message));
-    setEd(null);toast&&toast((ed&&ed.order?'已修改 #':ed&&ed.bk?'已報到・開單 #':'已開單 #')+o.sn);
+    setEd(null);toast&&toast((ed&&ed.order?'已修改 #':ed&&ed.bk?'已報到・開單 #':'已開單 #')+o.sn+(o.prePay&&!(ed&&ed.order)?'・已先買單':''));
   };
   const Seg=({opts,val,set})=><div className="flex rounded-lg border border-line overflow-hidden text-xs">{opts.map(o=><button key={o.id} className={'px-2.5 h-7 '+(val===o.id?'bg-sage text-white':'bg-card')} onClick={()=>set(o.id)}>{o.label}</button>)}</div>;
   /* v0.1-118 牌卡：上牌白、壓牌白底紅框、老點橘、休息綠（原地翻）、服務中紅、未上牌灰底實框、未到未電深紫、晚到淺紫、請假灰底虛框、下牌淺底無框；沒人的分類放透明虛框 */
@@ -4661,7 +4695,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
               <span className="num text-xs text-mute w-12 shrink-0 pt-0.5">#{o.sn}<br/><span className="whitespace-nowrap">{o.t} 開</span></span>
               <span className="flex-1">{orderItems(o).map((x,j)=><span key={j} className="block">{SVC_SHORT[x.svc]||''} {x.min||''}{x.promo?<span className="text-brown text-xs"> 平日</span>:''}<span className="text-mute">・</span><span className="num">{x.tc}</span>{x.ld?<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>:''}{x.seat?<span className="ml-1 text-[11px] text-mute">{SEAT_NAME(x.seat)}</span>:''}</span>)}</span>
               <span className="text-right text-[11px] whitespace-nowrap">
-                {k==='paid'?<span className="block text-sageD">✓ {o.pay?o.pay.t:''} 買單</span>:k==='done'?<span className="block text-warn"><span className="num">{o.endAt}</span> 到時</span>:<span className={'block '+(late?'text-warn font-semibold':'text-brown')}>{late?'已到時間 ':''}<span className="num">{mcEnd(o)}</span> 下鐘</span>}
+                {k==='paid'?<span className="block text-sageD">✓ {o.pay?o.pay.t:''} 買單</span>:k==='done'?<span className="block text-warn"><span className="num">{o.endAt}</span> 到時</span>:<span className={'block '+(late?'text-warn font-semibold':'text-brown')}>{late?'已到時間 ':''}<span className="num">{mcEnd(o)}</span> 下鐘{o.pay?<span className="ml-1 text-sageD">・已先買單</span>:''}</span>}
                 <span className="block text-mute">明細 ›</span></span>
             </button>)})}
           {!by[k].length&&<div className="text-xs text-mute py-1">沒有訂單</div>}
@@ -4706,7 +4740,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
     <div className="mt-2 mb-1 text-xs text-mute px-1 flex items-center gap-2"><span>{MC.test?'主櫃測試上線':'主櫃上線'}・營業日 <span className="num">{date}</span></span><span className="ml-auto">{MC.test?'測試資料不上傳':sync}</span>{!MC.busy&&!MC.test&&<button className="underline" onClick={()=>mcPull()}>重新整理</button>}</div></>;
   const selO=sel&&orders.find(o=>o.id===sel);
   return <>
-    <RolePage mode={mode} head={head} B={B} phone={[0,6,8,7,2,1,3,4,5]} wide={{top:[2,0],cols:[[8,7,3],[1,6,4,5]]}} xwide={{top:[2,0],cols:[[3,6],[8,7,1],[4,5]]}}/>
+    <RolePage mode={mode} head={head} B={B} phone={[0,7,2,1,3,5,6,8,4]} wide={{top:[2],cols:[[0,7,3,6],[1,5,8,4]]}} xwide={{top:[2],cols:[[0,3,6],[7,1],[5,8,4]]}}/>
     {selO&&<McOrderSheet o={selO} S={S} isOwner={isOwner} ask={ask} onClose={()=>setSel(null)} onAct={(k,x)=>act(selO,k,x)} onEdit={()=>{setSel(null);setEd({order:selO,k:Date.now()})}}/>}
     {ed&&<OrderEditor key={'mc'+ed.k} S={S} order={ed.order} cu={ed.cu} init={ed.init} dayOrders={d.orders||[]} locked={!!d.close} mc={mcInfo} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
     {lateFor&&<LateSheet x={lateFor==='pick'?null:lateFor} list={absent.sched} late={late} onSave={saveLate} onCancel={tc=>{cancelLate(tc);setLateFor(null)}} onClose={()=>setLateFor(null)}/>}
@@ -4827,7 +4861,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
 
   // 本班金額（範例資料：今天累計已結帳 − 前面各班已交班的；支出 350 算在第一班）
   const S=loadSettings();
-  const cumPaid=live?(mcDayD.orders||[]).filter(o=>mcLiveO(o)&&oSt(o)==='paid'&&!o.skip).reduce((a,o)=>a+orderAmt(o),0)
+  const cumPaid=live?(mcDayD.orders||[]).filter(o=>mcLiveO(o)&&(oSt(o)==='paid'||o.pay)&&!o.skip).reduce((a,o)=>a+orderAmt(o),0)
     :DEMO_ORDERS.filter(o=>o.st==='paid').reduce((s,o)=>s+o.g.reduce((a,x)=>a+demoCalc(S,x).amt,0),0);
   const expTot=live?(mcDayD.expenses||[]).filter(e=>e.cash!==false).reduce((a,e)=>a+(Number(e.amt)||0),0):350;
   const prevRev=hand.reduce((s,h)=>s+(h.rev||0),0),prevExp=hand.reduce((s,h)=>s+(h.exp||0),0);
@@ -5859,6 +5893,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-131','10-21','主櫃主畫面調整：交接事項、老師費用領取、櫃台上下班移到最後；今日區塊不再整排滿寬，跟其他區塊一樣寬；預約・排隊的今天，已報到（和取消、未到）收合起來，未報到的一眼看得到；開單、預約入場、候位入座的畫面最下面可以選「未買單／先買單」，先買單的訂單仍是服務中，到時直接變已買單；開單、安排客人的備註旁有「指定女生／指定男生」快速按鈕，下方列出之前輸入過的備註（這台記住的＋會員 LINE 預約的備註），點一下加入'],
   ['v0.1-130','10-21','修正：主櫃頁面開著超過 1 小時，LINE 登入過期（IdToken expired），輸入登入碼或同步都會失敗。改成過期前自動重新登入；正在使用中的話，重新登入回來直接回到原本的人，不用再輸入登入碼。'],
   ['v0.1-129','10-21','修正：在電腦瀏覽器打開 ?mainc=1，LINE 登入完回來會停在店家介紹頁，進不了主櫃（登入回來的網址把參數包在 liff.state 裡）。'],
   ['v0.1-128','10-21','圖文選單改成大型（2500×1686），下排三格：地圖導航、撥打電話、Instagram，連結在設定頁「店家資訊」修改；LINE 訊息額度改讀官方帳號實際用量（含後台群發）；設定頁新增「LINE 群發」：依身分（會員、老師、櫃台、主管、全部工作夥伴、全部）發送（GAS gas-4.57）。'],
