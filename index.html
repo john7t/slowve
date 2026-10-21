@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-133</title>
+<title>緩緩門店 v0.1-134</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-133';
+const VER='v0.1-134';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -509,7 +509,14 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
       if(!ok)return;
     }
     const now=Date.now();
-    const items=f.items.map((x,i)=>Object.assign({svc:x.svc,min:x.min,promo:!!x.promo,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,emp:!!x.emp,cp:Number(x.cp)||0,ad:[...x.ad],tc:String(x.tc).trim(),cu:x.cu||null,ld:!!x.ld,rj:[...(x.rj||[])],seat:x.seat||'',amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh},(priced[i].xs||[]).length?{xs:priced[i].xs}:{}));
+    const tNow=hm(new Date());
+    const addsOf=(x,i)=>{   // v0.1-134 主櫃修改已開始的單：加鐘、加額外品項記成「後加」（時間＋金額）；有減少就併回原項目
+      if(!mc||isNew)return x.adds||[];const o=origItems[i];if(!o)return [];
+      if(o.svc!==x.svc||o.min!==x.min||!!o.promo!==!!x.promo)return [];
+      const dEx=(Number(x.ex)||0)-(Number(o.ex)||0),dAd=x.ad.filter(a=>!(o.ad||[]).includes(a)),lost=(o.ad||[]).some(a=>!x.ad.includes(a));
+      if(dEx<0||lost)return [];const A=(o.adds||[]).slice();const d=priced[i].amt-(o.amt||0);
+      if((dEx>0||dAd.length)&&d>0)A.push({t:tNow,ex:Math.max(0,dEx),ad:dAd,amt:d});return A};
+    const items=f.items.map((x,i)=>{const A=addsOf(x,i);return Object.assign({svc:x.svc,min:x.min,promo:!!x.promo,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,emp:!!x.emp,cp:Number(x.cp)||0,ad:[...x.ad],tc:String(x.tc).trim(),cu:x.cu||null,ld:!!x.ld,rj:[...(x.rj||[])],seat:x.seat||'',amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh},(priced[i].xs||[]).length?{xs:priced[i].xs}:{},A.length?{adds:A}:{},mc&&!isNew&&!origItems[i]?{lateT:tNow}:x.lateT?{lateT:x.lateT}:{})});
     const keepMc={};['st','end','endAt','pay','by'].forEach(k=>{if(f[k]!=null)keepMc[k]=f[k]});   // v0.1-105：主櫃的狀態欄位，老闆修正時保留
     if(mc)noteRemember(f.note);
     onSave(Object.assign(keepMc,isNew&&mc&&f.prePay?{prePay:true}:{},f.del?{del:true,snDel:f.snDel,delAt:f.delAt}:{},{id:f.id,sn,t:f.t||'',note:f.note||'',void:!!f.void,skip:!!f.skip,skipRev:!!f.skipRev,skipBy:f.skipBy||'store',skipNote:f.skipNote||'',items,ca:f.ca||now,ua:now}),!!next);
@@ -4093,7 +4100,15 @@ async function mcPull(){
 
 /* ---- 由當天資料算出：老師牌況、座位 ---- */
 const SEAT_NAME=id=>!id?'':(id[0]==='F'?'腳位 ':'床 ')+id.slice(1);
-const oSt=o=>o.st||'paid';   // 老闆頁登打的舊訂單沒有狀態＝已完成
+const oSt=o=>o.st||'paid';
+// v0.1-134 先買單後又加點：pay.amt＝已收的金額；oDue＞0 表示還有後加的沒收（到時進待買單收差額）
+const oNet=o=>orderItems(o).reduce((s,x)=>s+(x.amt||0)-Math.min(Number(x.cp)||0,x.amt||0),0);
+const oPaid=o=>!o.pay?0:o.pay.amt!=null?o.pay.amt:oNet(o);
+const oDue=o=>Math.max(0,oNet(o)-oPaid(o));
+// 開始後才加的（item.adds：[{t,ex,ad,amt}]）：原本的項目照原樣顯示，後加的另列一行
+function itemBase(x){const A=x.adds||[];if(!A.length)return x;const ex=A.reduce((s,a)=>s+(a.ex||0),0),ad=A.flatMap(a=>a.ad||[]);
+  return Object.assign({},x,{ex:Math.max(0,(Number(x.ex)||0)-ex),ad:(x.ad||[]).filter(a=>!ad.includes(a)),amt:(x.amt||0)-A.reduce((s,a)=>s+(a.amt||0),0)})}
+const addLabel=(a,x,S)=>[a.ex?'加鐘'+(x.exs&&x.exs!==x.svc?SVC_SHORT[x.exs]:'')+a.ex*30+'分':''].concat((a.ad||[]).map(id=>{const d=S.addons.find(y=>y.id===id);return d?d.name:id})).filter(Boolean).join(' ＋ ');   // 老闆頁登打的舊訂單沒有狀態＝已完成
 const mcLiveO=o=>!o.void&&!o.del;
 // v0.1-110：刮痧、拔罐另外加 30 分（B11）
 const ADD_MIN={guasha:30,bagua:30};
@@ -4445,27 +4460,29 @@ function McOrderSheet({o,S,isOwner,onClose,onAct,onEdit,ask}){
   const [cps,setCps]=useState(()=>its.map(x=>Number(x.cp)>0));
   const cpOf=(x,j)=>st==='done'?(cps[j]?Math.min(C,x.amt||0):0):Math.min(Number(x.cp)||0,x.amt||0);
   const tot=its.reduce((a,x,j)=>a+(x.amt||0)-cpOf(x,j),0);
-  const ST={serving:['服務中','text-brown'],done:['到時・待買單','text-warn'],paid:['已買單','text-sageD']}[st];
+  const pre=oPaid(o),due=o.pay?Math.max(0,tot-pre):tot;   // v0.1-134 先買單後又加點：只收差額
+  const ST={serving:['服務中'+(o.pay?(oDue(o)?'・先付＋後加未付':'・已先付'):''),'text-brown'],done:[o.pay?'到時・待收後加':'到時・待買單','text-warn'],paid:['已完成','text-sageD']}[st];
   const end=async()=>{const now=hm(new Date());
     if(tm(now)<tm(mcEnd(o))&&!await ask({title:'服務時間未到，是否提前結束？',msg:'預計 '+mcEnd(o)+' 下鐘，現在 '+now+'。',okText:'提前結束'}))return;
     onAct('end')};
   return <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={onClose}>
     <div className="w-full max-w-md bg-card rounded-2xl p-5 max-h-[92vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
       <div className="flex items-center gap-2 mb-1"><span className="text-lg">訂單 <span className="num">#{o.sn}</span></span><span className={'ml-auto text-sm '+ST[1]}>{ST[0]}</span></div>
-      <div className="text-xs text-mute mb-3 num">{o.t} 開始・預計 {mcEnd(o)} 下鐘{o.endAt?'・'+o.endAt+' 到時':''}{o.pay?'・'+o.pay.t+' 買單':''}{o.by?'・'+o.by+' 開單':''}</div>
+      <div className="text-xs text-mute mb-3 num">{o.t} 開始・預計 {mcEnd(o)} 下鐘{o.endAt?'・'+o.endAt+' 到時':''}{o.pay?'・'+o.pay.t+(o.pay.pre?' 先買單':' 買單'):''}{o.pay&&o.pay.t2?'・'+o.pay.t2+' 收後加':''}{o.by?'・'+o.by+' 開單':''}</div>
       {its.map((x,j)=><div key={j} className="py-2 border-b border-line text-sm">
-        <div className="flex justify-between gap-2"><span>{its.length>1&&<span className="text-xs text-mute mr-1">客{j+1}</span>}{orderLabel(x,S)}</span><span className="num">{money(x.amt)}</span></div>
+        <div className="flex justify-between gap-2"><span>{its.length>1&&<span className="text-xs text-mute mr-1">客{j+1}</span>}{orderLabel(itemBase(x),S)}{x.lateT&&<span className="ml-1 text-xs text-brown num">{x.lateT} 加入</span>}</span><span className="num">{money(itemBase(x).amt)}</span></div>
+        {(x.adds||[]).map((a,k)=><div key={k} className="flex justify-between gap-2 text-brown"><span>＋ {addLabel(a,x,S)} <span className="num text-xs">{a.t}</span></span><span className="num">{money(a.amt)}</span></div>)}
         <div className="text-xs text-mute mt-0.5">老師 <span className="num text-ink">{x.tc}</span>{x.ld?'・老點':''}{x.seat?'・'+SEAT_NAME(x.seat):''}{x.cu?'・客人 '+cuLabel(x.cu,its.filter((y,k)=>k!==j&&y.cu).map(y=>y.cu)):''}{st!=='done'&&Number(x.cp)>0?<span className="text-brown">・IG 打卡折價券 −{money(Math.min(Number(x.cp),x.amt||0))}</span>:''}</div>
         {st==='done'&&<button type="button" className={'mt-1.5 w-full h-9 rounded-lg border text-left px-2 text-sm '+(cps[j]?'bg-brownL border-brown text-brown':'bg-card border-line')} onClick={()=>setCps(cps.map((v,i)=>i===j?!v:v))}>
           {cps[j]?'☑':'☐'} IG 打卡折價券 <span className="num">−{money(C)}</span><span className="text-xs text-mute ml-1">記為媒體宣傳支出</span></button>}
       </div>)}
       <div className="flex justify-between items-baseline pt-3"><span>{its.some((x,j)=>cpOf(x,j)>0)?'實收':'合計'}</span><span className="serif text-2xl text-brown num">{money(tot)}</span></div>
-      {st==='serving'&&o.pay&&<div className="mt-3 px-3 py-2 rounded-lg bg-sageL text-sageD text-sm">✓ 已先買單 <span className="num">{o.pay.t}</span>{o.pay.by?'・'+o.pay.by:''}・到時直接完成</div>}
+      {st!=='paid'&&o.pay&&<div className={'mt-3 px-3 py-2 rounded-lg text-sm '+(oDue(o)||st==='done'?'bg-warnL text-warn':'bg-sageL text-sageD')}>✓ 已先付 <span className="num">{money(pre)}</span>（<span className="num">{o.pay.t}</span>{o.pay.by?'・'+o.pay.by:''}）{st==='serving'?(oDue(o)?<>・後加 <b className="num">{money(oDue(o))}</b> 還沒收，到時再收</>:'・到時直接完成'):<>・要再收 <b className="num">{money(due)}</b></>}</div>}
       {st==='serving'&&<button className="w-full h-12 mt-3 rounded-xl bg-brown text-white text-lg" onClick={end}>到時（服務結束）</button>}
       {st==='serving'&&o.pay&&isOwner&&<button className="w-full h-10 mt-2 rounded-xl border border-warn text-warn text-sm" onClick={()=>onAct('unpre')}>取消先買單（老闆、主管）</button>}
-      {st==='done'&&<button className="w-full h-12 mt-3 rounded-xl bg-sage text-white text-lg" onClick={()=>onAct('pay',{cps,m:'cash'})}>買單・現金 {money(tot)}</button>}
+      {st==='done'&&<button className="w-full h-12 mt-3 rounded-xl bg-sage text-white text-lg" onClick={()=>onAct('pay',{cps,m:'cash'})}>{o.pay?'收後加・現金 ':'買單・現金 '}{money(due)}</button>}
       {st==='done'&&<button className="w-full h-10 mt-1 text-sm text-mute underline" onClick={()=>onAct('unend')}>還沒結束，改回服務中</button>}
-      {st==='paid'&&isOwner&&<button className="w-full h-10 mt-2 rounded-xl border border-warn text-warn text-sm" onClick={()=>onAct('unpay')}>取消買單（老闆、主管）</button>}
+      {st==='paid'&&isOwner&&<button className="w-full h-10 mt-2 rounded-xl border border-warn text-warn text-sm" onClick={()=>onAct('unpay')}>取消買單（老闆、主管）{o.pay&&o.pay.pre?'・連同先買單':''}</button>}
       {(st!=='paid'||isOwner)&&<button className="w-full h-11 mt-2 rounded-xl border border-sage text-sageD" onClick={onEdit}>修改訂單</button>}
       <button className="w-full h-11 mt-2 rounded-xl border border-line" onClick={onClose}>關閉</button>
     </div>
@@ -4639,13 +4656,13 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const plan=skipId=>mcPlanCtx({J,board,seats,S,d,date,nowM,skipId});   // v0.1-114：今天的排程（給安排客人建議時間）
   const checkin=(b,hs)=>setEd({order:null,k:Date.now(),bk:b,init:{items:b.g.map((x,i)=>({svc:x.svc,min:x.min,ex:Number(x.ex)||0,exs:Number(x.ex)?x.svc:null,ad:x.ad||[],tc:x.tc||(hs[i]&&!/未上牌/.test(hs[i])?hs[i]:'')||(i===0?nextTc:'')||'',cu:i===0?b.cu:null}))},note:b.note||''});
   const seat=w=>setEd({order:null,k:Date.now(),wait:w,init:{items:Array.from({length:w.n||1},(_,i)=>Object.assign({cu:i===0?w.cu:null,tc:i===0?(nextTc||''):''},w.g&&w.g[i]?{svc:w.g[i].svc,min:w.g[i].min}:{}))}});
-  const OST={serving:{label:'服務中',cls:'text-brown'},done:{label:'到時・待買單',cls:'text-warn'},paid:{label:'已買單',cls:'text-sageD'}};
+  const OST={serving:{label:'服務中',cls:'text-brown'},done:{label:'到時・待買單',cls:'text-warn'},paid:{label:'已完成（已買單）',cls:'text-sageD'}};
   const act=(o,k,x)=>{const t=hm(new Date()),at=Date.now();
     mcMutate(date,dd=>{const y=dd.orders.find(z=>z.id===o.id);if(!y)return dd;
-      if(k==='end'){y.st=y.pay?'paid':'done';y.endAt=t}   // 先買單的到時直接是已買單
+      if(k==='end'){y.st=y.pay&&!oDue(y)?'paid':'done';y.endAt=t}   // 先買單的到時直接完成；後加的還沒收→待買單收差額
       if(k==='unend'){y.st='serving';delete y.endAt}
       if(k==='unpre'){delete y.pay}
-      if(k==='pay'){const C=Number(S.coupon)||100;y.items=orderItems(y).map((it,j)=>Object.assign({},it,{cp:x.cps[j]?Math.min(C,it.amt||0):0}));y.st='paid';y.pay={m:x.m||'cash',t,by:op.name}}
+      if(k==='pay'){const C=Number(S.coupon)||100;y.items=orderItems(y).map((it,j)=>Object.assign({},it,{cp:x.cps[j]?Math.min(C,it.amt||0):0}));y.st='paid';y.pay=y.pay?Object.assign({},y.pay,{t2:t,by2:op.name}):{m:x.m||'cash',t,by:op.name};y.pay.amt=oNet(y)}
       if(k==='unpay'){y.st=y.endAt?'done':'serving';delete y.pay}
       y.ua=at;dd.log=(dd.log||[]).concat([{act:'mc-'+k,at,sn:y.sn,by:op.name}]);
       return k==='pay'||k==='unpay'||k==='unpre'?syncCpExp(dd,y.id):dd});
@@ -4654,7 +4671,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const onSave=o=>{const at=Date.now();
     mcMutate(date,dd=>{const i=dd.orders.findIndex(x=>x.id===o.id);const prev=i>=0?dd.orders[i]:null;
       const keep=prev?{st:prev.st||'serving',endAt:prev.endAt,pay:prev.pay,by:prev.by}:Object.assign({st:'serving',by:op.name},o.prePay?{pay:{m:'cash',t:hm(new Date()),by:op.name,pre:true}}:{});   // v0.1-131 先買單：仍是服務中，到時直接變已買單
-      const n=Object.assign({},o,keep,{t:o.t||hm(new Date())});delete n.prePay;n.end=mcEnd(Object.assign({},n,{end:null}));if(!n.endAt)delete n.endAt;if(!n.pay)delete n.pay;n.ua=at;
+      const n=Object.assign({},o,keep,{t:o.t||hm(new Date())});delete n.prePay;if(!prev&&n.pay&&n.pay.pre)n.pay=Object.assign({},n.pay,{amt:oNet(n)});n.end=mcEnd(Object.assign({},n,{end:null}));if(!n.endAt)delete n.endAt;if(!n.pay)delete n.pay;n.ua=at;
       if(i>=0)dd.orders[i]=n;else dd.orders.push(n);
       if(!prev&&ed&&ed.bk){n.bk=ed.bk.id;if(tm(hm(new Date()))>tm(ed.bk.t)){let mx=0;orderItems(n).forEach(x=>{mx=Math.max(mx,gDur(x))});n.end=tf(tm(ed.bk.t)+mx);n.late=tm(hm(new Date()))-tm(ed.bk.t)}}   // 遲到：時間從服務時間扣除（A6）
       if(!prev&&ed&&ed.wait){n.wait=ed.wait.id;dd.wait=(dd.wait||[]).map(w=>w.id===ed.wait.id?Object.assign({},w,{st:'seat',oid:n.id,ua:at}):w)}
@@ -4685,11 +4702,15 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const gapCell=k=><div key={k} className="w-[4.3rem]"/>;
   const B=[
     (<Sec title={'今日 '+fmtDate(date)}>
-        <div className="grid grid-cols-5 gap-2 mb-3"><KV k="單數" v={orders.length}/><KV k="客人" v={guests}/><KV k="服務中" v={by.serving.length} cls="text-brown"/><KV k="待買單" v={by.done.length} cls="text-warn"/><KV k="已買單" v={by.paid.length} cls="text-sageD"/></div>
+        <div className="grid grid-cols-5 gap-2 mb-3">{(()=>{const pf=by.serving.filter(o=>o.pay&&!oDue(o)).length;   // v0.1-134 點數字跳到訂單；服務中分先付／後付
+          const go=k=>{setOf(k);setTimeout(()=>{const e=document.getElementById('mc-orders');e&&e.scrollIntoView({behavior:'smooth',block:'start'})},30)};
+          const T=({k,l,v,cls,sub})=><button type="button" className="text-left rounded-lg active:bg-bg" onClick={()=>go(k)}><div className="text-xs text-mute">{l}</div><div className={'text-lg num '+(cls||'')}>{v}</div>{sub&&<div className="text-[10px] text-mute num leading-tight whitespace-nowrap">{sub}</div>}</button>;
+          return <><T k="all" l="單數" v={orders.length}/><T k="all" l="客人" v={guests}/><T k="serving" l="服務中" v={by.serving.length} cls="text-brown" sub={by.serving.length?'先付 '+pf+'・後付 '+(by.serving.length-pf):''}/><T k="done" l="待買單" v={by.done.length} cls="text-warn"/><T k="paid" l="已完成" v={by.paid.length} cls="text-sageD"/></>})()}</div>
         <button className="w-full h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>setEd({order:null,k:Date.now()})}>＋ 開單</button>
         {!board.avail.length&&<div className="text-xs text-warn mt-1">目前沒有可接客的老師（在「老師牌況」點「未上牌」的編號就能上牌）</div>}
       </Sec>),
-    (<Sec title="訂單" right={<Seg opts={[{id:'all',label:'全部'},{id:'serving',label:'服務中'},{id:'done',label:'待買單'},{id:'paid',label:'已買單'}]} val={of} set={setOf}/>}>
+    (<Sec title="訂單" right={<Seg opts={[{id:'all',label:'全部'},{id:'serving',label:'服務中'},{id:'done',label:'待買單'},{id:'paid',label:'已完成'}]} val={of} set={setOf}/>}>
+        <div id="mc-orders" className="scroll-mt-20 -mt-2"/>
         {['serving','done','paid'].filter(k=>of==='all'||of===k).map(k=><React.Fragment key={k}>
           <div className={'text-xs mt-2 mb-1 font-semibold '+OST[k].cls}>{OST[k].label}（{by[k].length}）</div>
           {by[k].map(o=>{const late=k==='serving'&&tm(now)>=tm(mcEnd(o));return (
@@ -4697,7 +4718,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
               <span className="num text-xs text-mute w-12 shrink-0 pt-0.5">#{o.sn}<br/><span className="whitespace-nowrap">{o.t} 開</span></span>
               <span className="flex-1">{orderItems(o).map((x,j)=><span key={j} className="block">{SVC_SHORT[x.svc]||''} {x.min||''}{x.promo?<span className="text-brown text-xs"> 平日</span>:''}<span className="text-mute">・</span><span className="num">{x.tc}</span>{x.ld?<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>:''}{x.seat?<span className="ml-1 text-[11px] text-mute">{SEAT_NAME(x.seat)}</span>:''}</span>)}</span>
               <span className="text-right text-[11px] whitespace-nowrap">
-                {k==='paid'?<span className="block text-sageD">✓ {o.pay?o.pay.t:''} 買單</span>:k==='done'?<span className="block text-warn"><span className="num">{o.endAt}</span> 到時</span>:<span className={'block '+(late?'text-warn font-semibold':'text-brown')}>{late?'已到時間 ':''}<span className="num">{mcEnd(o)}</span> 下鐘{o.pay?<span className="ml-1 text-sageD">・已先買單</span>:''}</span>}
+                {k==='paid'?<span className="block text-sageD">✓ {o.pay?(o.pay.t2||o.pay.t):''} 買單</span>:k==='done'?<span className="block text-warn"><span className="num">{o.endAt}</span> 到時{o.pay?'・收後加':''}</span>:<span className={'block '+(late?'text-warn font-semibold':'text-brown')}>{late?'已到時間 ':''}<span className="num">{mcEnd(o)}</span> 下鐘{o.pay?(oDue(o)?<span className="ml-1 text-warn">・先付＋後加未付</span>:<span className="ml-1 text-sageD">・先付</span>):<span className="ml-1 text-mute">・後付</span>}</span>}
                 <span className="block text-mute">明細 ›</span></span>
             </button>)})}
           {!by[k].length&&<div className="text-xs text-mute py-1">沒有訂單</div>}
@@ -4863,7 +4884,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
 
   // 本班金額（範例資料：今天累計已結帳 − 前面各班已交班的；支出 350 算在第一班）
   const S=loadSettings();
-  const cumPaid=live?(mcDayD.orders||[]).filter(o=>mcLiveO(o)&&(oSt(o)==='paid'||o.pay)&&!o.skip).reduce((a,o)=>a+orderAmt(o),0)
+  const cumPaid=live?(mcDayD.orders||[]).filter(o=>mcLiveO(o)&&(oSt(o)==='paid'||o.pay)&&!o.skip).reduce((a,o)=>a+(oSt(o)==='paid'?orderAmt(o):oPaid(o)),0)
     :DEMO_ORDERS.filter(o=>o.st==='paid').reduce((s,o)=>s+o.g.reduce((a,x)=>a+demoCalc(S,x).amt,0),0);
   const expTot=live?(mcDayD.expenses||[]).filter(e=>e.cash!==false).reduce((a,e)=>a+(Number(e.amt)||0),0):350;
   const prevRev=hand.reduce((s,h)=>s+(h.rev||0),0),prevExp=hand.reduce((s,h)=>s+(h.exp||0),0);
@@ -5926,6 +5947,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-134','10-21','主櫃：點「今日」的單數、服務中、待買單、已完成數字，跳到下方訂單並切到該分類；服務中下方註明「先付 N・後付 N」；「已買單」改稱「已完成」。開始服務後才加鐘、加額外品項：原本的項目照原樣顯示，另外加一行「＋ 加鐘30分 22:30 $500」（後加的時間＋金額），開始後才加的客人註明幾點加入。先買單的訂單後加的部分不算已付：服務中顯示「先付＋後加未付」，到時進「待買單」只收差額（收後加・現金 $差額），收完才算已完成'],
   ['v0.1-133','10-21','會員資料：「公司備註」改名「客人備註（櫃台）」（只有櫃台、主管、老闆看得到）；新增「客人備註（老師）」，老師在自己的服務明細看得到（只看到自己服務過的客人），櫃台、主管也看得到；在「＋ 新增服務前調查記錄」填寫。主櫃的「老師費用領取」「櫃台上下班」預設收合，點標題展開（GAS gas-4.59）'],
   ['v0.1-132','10-21','會員資料：建檔日期預設為新增當下的日期＋時間，新增「建檔人」（主櫃預設登入的人）；長期身體狀況改成細項點亮（重大疾病：心臟病、癌症、糖尿病、中風、腎臟病；慢性疾病：高血壓、氣喘、關節炎、骨質疏鬆、椎間盤突出），各有「其他」可自行輸入；「這次來店時的身體狀況」、特別注意事項、公司備註移出編輯會員資料，改在「＋ 新增服務前調查記錄」填寫（新增會員存檔後直接接著填），多一個「本次無異狀」；預約・排隊加「↻ 重新整理」按鈕並顯示上次更新時間（GAS gas-4.58）'],
   ['v0.1-131','10-21','主櫃主畫面調整：交接事項、老師費用領取、櫃台上下班移到最後；今日區塊不再整排滿寬，跟其他區塊一樣寬；預約・排隊的今天，已報到（和取消、未到）收合起來，未報到的一眼看得到；開單、預約入場、候位入座的畫面最下面可以選「未買單／先買單」，先買單的訂單仍是服務中，到時直接變已買單；開單、安排客人的備註旁有「指定女生／指定男生」快速按鈕，下方列出之前輸入過的備註（這台記住的＋會員 LINE 預約的備註），點一下加入'],
