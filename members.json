@@ -10,6 +10,6 @@
     {"uid":"Ueca2cdbd11ed1887629143471d4eb644","name":"88","roles":["teacher"],"shift":"11:00-23:00","tc":"88"},
     {"uid":"Ud016ca50dc7373633e0f794bbe9f939e","name":"Randy","roles":["teacher"],"shift":"14:00-02:00","tc":"03","support":true},
     {"uid":"U45297ab0e8bc7a6ed3a71231326add82","name":"酸莓","roles":["teacher"],"shift":"14:00-02:00","tc":"17","support":true},
-    {"uid":"Ua5a177d427f9a57f92f6e4c496751696","roles":["applicant"],"apply":"teacher","stage":"applied"}
+    {"uid":"Ua5a177d427f9a57f92f6e4c496751696","roles":["applicant"],"apply":"teacher","stage":"hired"}
   ]
 }
