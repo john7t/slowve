@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-151</title>
+<title>緩緩門店 v0.1-152</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-151';
+const VER='v0.1-152';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -3856,7 +3856,7 @@ function GuestLive({me,mode}){
         </div>
       </Sec>)
   ];
-  const head=<>{D&&D.S&&String(D.S.gbNotice||'').trim()&&<div className="mt-2 px-4 py-3 rounded-xl bg-brownL text-ink text-sm whitespace-pre-line leading-relaxed"><div className="text-xs text-brown font-semibold mb-1">📢 店家公告</div>{D.S.gbNotice}</div>}{D&&<div className="mt-2 px-1 text-sm">你好，<b>{D.me.name}</b></div>}{err&&<div className="mt-2 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">✗ {err}</div>}
+  const head=<>{D&&D.ec&&<div className="mt-2 px-4 py-3 rounded-xl bg-warnL text-warn text-sm"><b>今天 {D.ec.t} 提早閉店</b>（{D.ec.why}）。{D.ec.t} 以後做不完的時段暫停預約；已取消的預約會用 LINE 通知你，歡迎改約其他時間。</div>}{D&&D.S&&String(D.S.gbNotice||'').trim()&&<div className="mt-2 px-4 py-3 rounded-xl bg-brownL text-ink text-sm whitespace-pre-line leading-relaxed"><div className="text-xs text-brown font-semibold mb-1">📢 店家公告</div>{D.S.gbNotice}</div>}{D&&<div className="mt-2 px-1 text-sm">你好，<b>{D.me.name}</b></div>}{err&&<div className="mt-2 px-3 py-2 rounded-xl bg-warnL text-warn text-sm">✗ {err}</div>}
     {inB&&D&&<GuestCheckin D={D} S={S} b={inB} onClose={()=>setInB(null)} onDone={()=>{setInB(null);load(true)}}/>}
     {ask&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setAsk(null)}><div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
       <div className="text-lg mb-1">取消這筆預約？</div><div className="text-sm text-mute mb-4 num">{fmtDate(ask.date)} {ask.t}・{ask.g.map(gbItemTxt).join('／')}</div>
@@ -3934,6 +3934,7 @@ function GuestBook({D,S,onDone,edit,onCancelEdit}){
       <div className="text-[11px] text-mute mt-1.5 num">約 {money(est(x))}・{gDur(x)} 分鐘</div>
     </div>)}
     {date&&<><div className="text-xs text-mute mb-1">時間{busy==='slots'?<span className="inline-flex items-center ml-1 text-sageD"><Spin/>查詢中…</span>:slots?'（可預約 '+okN+' 個時段）':''}</div>
+      {D.ec&&date===D.ec.date&&<div className="text-xs text-warn mb-1">今天 {D.ec.t} 提早閉店（{D.ec.why}），只能預約 {D.ec.t} 前做得完的時間。</div>}
       {slots&&!okN&&<div className="text-sm text-warn mb-2">這一天沒有可以預約的時段了，請換一天，或來電詢問。</div>}
       <div className="grid grid-cols-5 gap-1.5 mb-3">{(slots||[]).map(x=><button key={x.t} type="button" disabled={!x.ok} title={x.msg||''} onClick={()=>setT(x.t)}
         className={'h-9 rounded-lg border text-sm num '+(t===x.t?'bg-sage border-sage text-white':x.ok?'bg-card border-sage/60 text-sageD':'bg-bg border-line text-neutral-300 line-through')}>{x.t}</button>)}</div>
@@ -4481,8 +4482,9 @@ const ceil10=m=>Math.ceil(m/10)*10;
 const isAdv=(b,today)=>b.date>today;   // 事先預約（不是今天的）才保留現場名額
 function mcPlanCtx({J,board,seats,S,d,date,nowM,skipId}){
   const cl=Number(S.cleanMin)||0,late=mcLate(d),T={},lv=(J&&J.lv||[]).filter(L=>L.from<=date&&L.to>=date);
-  const endOf=sh=>{if(!sh)return 1560;const a=tm(sh.in);let b=tm(sh.out);if(b<=a)b+=1440;return b};
+  const endOf0=sh=>{if(!sh)return 1560;const a=tm(sh.in);let b=tm(sh.out);if(b<=a)b+=1440;return b};
   const tea={};(J&&J.tea||[]).forEach(t=>{tea[t.tc]=t});
+  const ecM=J&&J.ec&&J.ec.date===date?tm(J.ec.t):9999;const endOf=sh=>Math.min(ecM,endOf0(sh));   // v0.1-152 提早閉店：服務要在閉店前做完
   const addLv=(x,tc)=>lv.filter(L=>L.tc===tc&&!L.all).forEach(L=>x.busy.push([tm(L.t1),tm(L.t2)]));
   board.list.forEach(r=>{if(!r.on)return;const sh=shiftOf((tea[r.tc]||{}).shift);
     const x=T[r.tc]={tc:r.tc,g:(tea[r.tc]||{}).g||'',sk:(tea[r.tc]||{}).sk,from:r.rest?Math.max(nowM,r.rest.back?tm(r.rest.back):nowM+15):nowM,to:r.zx&&r.out?endOf({in:'06:00',out:r.out}):endOf(sh),short:r.short,busy:[]};
@@ -4569,7 +4571,7 @@ function ArrangeForm({b0,J,S,ks,by,line,plan,todayDay,nowM,onClose,onSaved,ask})
       {isT?<>
         {sug.length?<div className="space-y-1.5 mb-2">{sug.map((m,i)=><button key={m} type="button" className={'w-full h-11 px-3 rounded-xl border text-left flex items-center '+(f.t===tf(m)?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>set('t',tf(m))}>
           <span className="text-xs w-14">{i===0?'最快':'或'}</span><b className="num text-lg">{tf(m)}</b><span className="ml-2 text-xs opacity-80">{m<=ceil10(nowM)?'現在就可以入場':'約等 '+(m-nowM)+' 分'}</span></button>)}</div>
-          :<div className="text-sm text-warn mb-2">今天已經排不進（老師、座位或營業時間不夠）</div>}
+          :<div className="text-sm text-warn mb-2">今天已經排不進（老師、座位或營業時間不夠）{J.ec&&J.ec.date===today?'・今天 '+J.ec.t+' 提早閉店':''}</div>}
         <select className="w-full h-10 px-3 rounded-xl border border-line bg-card num mb-1" value={f.t&&!sug.map(tf).includes(f.t)?f.t:''} onChange={e=>set('t',e.target.value)}>
           <option value="">或選其他時間（10 分鐘一格）</option>{times10.map(m=><option key={m} value={tf(m)}>{tf(m)}{fitAt(m)?'':'（排不下）'}</option>)}</select>
         <div className="text-[11px] text-mute mb-3">依目前服務中、今天其他預約、老師班表、請假、休息、短單、準下、床位／腳位與清潔時間算；以 10 分鐘為單位。實際由哪位老師服務，入場時照輪班配（A3）。</div>
@@ -4591,7 +4593,51 @@ function ArrangeForm({b0,J,S,ks,by,line,plan,todayDay,nowM,onClose,onSaved,ask})
     </div></div>);
 }
 /* 主櫃的「預約・排隊」區塊：選日期看預約；今天的顯示壓牌老師、在店等候、可以提前入場、遲到；點一筆可報到、確認、修改、取消、未到 */
-function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin}){
+/* v0.1-152 提早閉店（颱風等）：老闆、主管設定今天幾點服務全部結束。
+   送出時：今天還沒報到、服務會做到閉店之後的預約全部取消；有 LINE 的會員自動收到通知，沒有 LINE 的列出電話讓櫃台聯絡；在店等候的不自動取消。
+   之後主櫃安排客人、會員中心預約都只給閉店前做得完的時間。 */
+const EC_WHY=['颱風','地震','停電','其他'];
+function EarlyClose({ks,mgr,ask,toast,full}){
+  const J=useBk();const [open,setOpen]=useState(false);const [t,setT]=useState('');const [why,setWhy]=useState('颱風');const [oth,setOth]=useState('');
+  const [prev,setPrev]=useState(null);const [res,setRes]=useState(null);const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  useEffect(()=>{if(!J&&full)bkCall({op:'list'},ks).then(bkPut).catch(e=>setErr(e.message))},[]);
+  const ec=J&&J.ec&&J.ec.date===J.today?J.ec:null;
+  const nowM=tm(hm(new Date()));const opts=[];for(let m=Math.max(540,Math.ceil((nowM+30)/30)*30);m<=1560;m+=30)opts.push(tf(m));
+  const W=why==='其他'?(oth.trim()||'其他因素'):why;
+  const run=async op=>{if(MC.test)return setErr('「主櫃系統測試上線」時不能提早閉店（預約只存在這台）');setBusy(true);setErr('');
+    try{const j=await bkCall({op,t,why:W},ks);if(op==='closeprev')setPrev(j.prev);else{bkPut(j);if(op==='close'){setRes(j.closed);setPrev(null);setOpen(false)}else{setRes(null);toast&&toast('已取消提早閉店')}}}catch(e){setErr(e.message)}setBusy(false)};
+  const go=async()=>{const n=prev.cancel.length;if(!await ask({title:'今天 '+t+' 提早閉店？',msg:(n?'會取消 '+n+' 筆預約'+(prev.cancel.some(r=>r.line)?'，有 LINE 的會員會收到通知（每位 1 則訊息額度）':'')+'。取消後不會自動恢復。':'沒有需要取消的預約。'),okText:'確定閉店',danger:true}))return;run('close')};
+  const off=async()=>{if(!await ask({title:'取消提早閉店，恢復營業？',msg:'已經取消的預約不會恢復，需要的話請重新安排。',okText:'恢復營業'}))return;run('closeoff')};
+  const Res=res&&<div className="mt-2 text-xs space-y-1">
+    <div className="font-semibold">已取消 {res.cancel.length} 筆預約{res.cancel.filter(r=>r.sent).length?'・LINE 通知 '+res.cancel.filter(r=>r.sent).length+' 位':''}</div>
+    {res.cancel.filter(r=>!r.sent).length>0&&<div className="text-warn font-semibold">請打電話通知：</div>}
+    {res.cancel.filter(r=>!r.sent).map(r=><div key={r.id} className="num">{r.t} {r.who}{r.n>1?'・'+r.n+' 位':''}　{r.phone?<a className="underline" href={'tel:'+r.phone}>{r.phone}</a>:'（沒有電話）'}{r.line&&r.why==='limit'?'・LINE 額度用完':''}</div>)}
+    {res.here.length>0&&<div className="text-brown">在店等候、沒有自動取消：{res.here.map(r=>r.t+' '+r.who).join('、')}（請櫃台跟客人說明）</div>}</div>;
+  if(ec)return <div className="mb-2 px-3 py-2.5 rounded-xl bg-warnL text-warn text-sm">
+    <div className="flex items-center gap-2"><span className="flex-1"><b>今天 {ec.t} 提早閉店</b>（{ec.why}）・服務要在 {ec.t} 前做完{ec.by?<span className="text-xs">・{ec.by} 設定</span>:''}</span>
+      {mgr&&<button type="button" className="shrink-0 h-8 px-2 rounded-lg border border-warn text-xs disabled:opacity-50" disabled={busy} onClick={off}>恢復營業</button>}</div>
+    {Res}{err&&<div className="text-xs mt-1">✗ {err}</div>}</div>;
+  if(!mgr)return null;
+  const chip=on=>'h-9 px-3 rounded-full border text-sm '+(on?'bg-warn border-warn text-white':'bg-card border-line');
+  return <div className={full?'':'mb-2'}>
+    {!open?<button type="button" className={full?'w-full h-11 rounded-xl border border-warn text-warn':'w-full h-9 rounded-xl border border-dashed border-warn/60 text-warn text-sm'} onClick={()=>{setOpen(true);setT(t||opts[0]||'');setPrev(null);setRes(null)}}>提早閉店（颱風等）…</button>
+    :<div className="px-3 py-3 rounded-xl border border-warn bg-card text-sm space-y-2">
+      <div className="font-semibold text-warn">今天提早閉店</div>
+      <div className="text-xs text-mute">選服務全部結束的時間。今天還沒報到、會做到這個時間之後的預約會全部取消；有 LINE 的會員自動收到通知。</div>
+      <div><div className="text-xs mb-1">服務全部結束的時間</div>
+        <select className="h-10 px-2 rounded-lg border border-line bg-card num" value={t} onChange={e=>{setT(e.target.value);setPrev(null)}}>{opts.map(x=><option key={x} value={x}>{x}</option>)}</select></div>
+      <div><div className="text-xs mb-1">原因（會寫在給客人的通知裡）</div><div className="flex flex-wrap gap-1.5">{EC_WHY.map(x=><button key={x} type="button" className={chip(why===x)} onClick={()=>{setWhy(x);setPrev(null)}}>{x}</button>)}</div>
+        {why==='其他'&&<input className="w-full h-10 mt-1.5 px-3 rounded-lg border border-line bg-card" maxLength={20} placeholder="例：設備維修" value={oth} onChange={e=>setOth(e.target.value)}/>}</div>
+      {!prev?<button type="button" className="w-full h-10 rounded-xl bg-warn text-white disabled:opacity-50" disabled={busy||!t} onClick={()=>run('closeprev')}>{busy?'查詢中…':'看會影響哪些預約'}</button>
+      :<><div className="text-xs space-y-0.5">{prev.cancel.length?<><div className="font-semibold">會取消 {prev.cancel.length} 筆：</div>{prev.cancel.map(r=><div key={r.id} className="num">{r.t} {r.who}{r.n>1?'・'+r.n+' 位':''}・{r.items}　<span className={r.line?'text-sageD':'text-warn'}>{r.line?'LINE 通知':'要打電話'}</span></div>)}</>:<div>沒有會受影響的預約</div>}
+          {prev.here.length>0&&<div className="text-brown">在店等候（不會自動取消）：{prev.here.map(r=>r.t+' '+r.who).join('、')}</div>}</div>
+        <button type="button" className="w-full h-11 rounded-xl bg-warn text-white disabled:opacity-50" disabled={busy} onClick={go}>{busy?'處理中…':'確定 '+t+' 閉店'+(prev.cancel.length?'並取消 '+prev.cancel.length+' 筆預約':'')}</button></>}
+      <button type="button" className="w-full h-9 text-mute text-sm" onClick={()=>{setOpen(false);setPrev(null)}}>不用了</button>
+      {err&&<div className="text-xs text-warn">✗ {err}</div>}
+    </div>}
+    {Res}</div>;
+}
+function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin,mgr}){
   const J=useBk();const [day,setDay]=useState(date);const [form,setForm]=useState(null);const [sel,setSel]=useState(null);const [err,setErr]=useState('');const [showIn,setShowIn]=useState(false);
   const [ldAt,setLdAt]=useState('');const [ld,setLd]=useState(false);
   const load=()=>{setLd(true);return bkCall({op:'list'},ks).then(j=>{setErr('');bkPut(j);setLdAt(hm(new Date()))}).catch(e=>setErr(e.message)).finally(()=>setLd(false))};   // v0.1-132：記下次更新時間＋手動重新整理
@@ -4608,6 +4654,7 @@ function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin
   const folded=isToday?list.filter(b=>!bkLive(b)):[],shown=isToday?list.filter(b=>bkLive(b)):list;   // v0.1-131 今天：已報到、取消、未到收合，未報到的一眼看得到
   const inN=folded.filter(b=>b.st==='in').length,offN=folded.length-inN;
   return (<div>
+    <EarlyClose ks={ks} mgr={mgr} ask={ask} toast={toast}/>
     <div className="flex gap-2 mb-2"><button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>setForm({b0:null})}>＋ 安排客人</button>
       <button type="button" className="h-12 px-3 rounded-xl border border-line bg-card text-sm leading-tight disabled:opacity-50" disabled={ld} onClick={()=>{load();toast&&toast('預約已重新整理')}}>{ld?'更新中…':'↻ 重新整理'}<span className="block text-[10px] text-mute num">{ldAt?ldAt+' 更新':''}</span></button></div>
     <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">{days.map((d,i)=>{const n=(J.list||[]).filter(b=>b.date===d&&bkLive(b)).length;return <button key={d} type="button" className={'shrink-0 h-11 px-2 rounded-xl border text-xs leading-tight '+(day===d?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setDay(d)}>
@@ -4623,7 +4670,7 @@ function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin
           {e&&<span className="block text-xs text-sageD font-semibold">現在就可以入場（比 {b.t} 提早）</span>}
           {late>10&&<span className="block text-xs text-warn font-semibold">已遲到 {late} 分（超過 10 分鐘可取消，A6）</span>}
           {late>0&&late<=10&&<span className="block text-xs text-warn">遲到 {late} 分・時間從服務時間扣除</span>}</span>
-        <span className={'shrink-0 text-[11px] px-1.5 py-0.5 rounded '+BK_ST[b.st].c}>{BK_ST[b.st].l}</span>
+        <span className={'shrink-0 text-[11px] px-1.5 py-0.5 rounded '+BK_ST[b.st].c}>{BK_ST[b.st].l}{b.st==='cancel'&&b.ecx?'（閉店）':''}</span>
       </button>)};
       return <>{shown.map(Row)}
       {isToday&&!shown.length&&list.length>0&&<div className="text-xs text-mute py-2">今天的預約都處理完了</div>}
@@ -5027,7 +5074,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
     (desk||null),
     (<Sec title="會員資料"><CustBook mode={(cust&&cust.mode)||'demo'} ks={cust&&cust.ks} admin={cust&&cust.admin} me={op&&op.name} onOrder={c=>setEd({order:null,k:Date.now(),cu:c})}/></Sec>),
     (<Sec title="交接事項"><Card className="p-3"><HandNotes mode="mc" by={op.name} uid={op.uid||''} ks={cust&&cust.ks}/></Card></Sec>),
-    (<Sec title="預約・排隊"><Card className="p-3"><BookSec S={S} ks={ks} by={op.name} line={line} date={date} todayDay={Object.assign({date},d)} holds={holds} nowM={nowM} plan={plan} ask={ask} toast={toast} onCheckin={checkin}/></Card></Sec>),
+    (<Sec title="預約・排隊"><Card className="p-3"><BookSec S={S} ks={ks} by={op.name} line={line} date={date} todayDay={Object.assign({date},d)} holds={holds} nowM={nowM} plan={plan} ask={ask} toast={toast} onCheckin={checkin} mgr={isOwner}/></Card></Sec>),
     (payWin&&<Sec fold title={'老師費用領取・'+Number(payWin.ym.slice(5))+' 月'+PERIOD_LABEL[payWin.p]} right={<span className="text-xs text-mute num">{payAck.filter(x=>x.ym===payWin.ym&&x.p===payWin.p).length}／{payTea.length} 位已點</span>}>
         <div className="flex flex-wrap gap-1.5">{payTea.map(t=>{const x=payAck.find(y=>y.ym===payWin.ym&&y.p===payWin.p&&y.tc===t.tc);return <span key={t.tc} className={'w-[4.3rem] min-h-[3rem] flex flex-col items-center justify-center rounded-lg border text-center leading-tight '+(x?'bg-sageL border-sage text-sageD':'bg-card border-dashed border-neutral-300 text-neutral-500')}>
           <b className="num text-base">{t.tc}</b><span className="text-[10px] num">{x?'✓ '+x.t.slice(5).replace('-','/'):'未點'}</span></span>})}</div>
@@ -6259,6 +6306,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-152','10-23','提早閉店（颱風等）：老闆、主管在設定頁或主櫃「預約・排隊」按「提早閉店」，選服務全部結束的時間和原因，先看會影響哪些預約再確定。今天還沒報到、會做到閉店之後的預約全部取消，有 LINE 的會員自動收到通知，沒有 LINE 的列出電話給櫃台打；在店等候的不自動取消。之後主櫃安排客人、會員中心預約都只給閉店前做得完的時間，會員中心最上面顯示提早閉店。可以按「恢復營業」取消（已取消的預約不會恢復）（GAS gas-4.75）'],
   ['v0.1-151','10-23','會員列表改成分頁（‹ 第 1 頁・共 7 頁 ›）。設定 → 線上預約新增「會員到店用 LINE 自己報到並填服務前調查」：會員中心今天的預約出現「到店報到」，第一次來填長期身體狀況、如何得知緩緩，每次填這次的身體狀況、本次要加強的部位、其他注意事項；櫃台在預約列表看到「LINE 報到」與加強部位，入場開單時帶進備註。服務前調查的「特別注意事項」改成「本次要加強的部位」（頭到腳底，以背部為主）＋「其他注意事項」（GAS gas-4.74）'],
   ['v0.1-150','10-23','天災假：老闆、主管在設定頁開放日期（＋今天、或選日期），老師、櫃台在自己的頁面就能請「天災假」（只限開放的日期）；請假月曆、統計都列出天災假。會員中心公告：設定 → 線上預約可以寫公告，顯示在會員中心最上面（GAS gas-4.73）'],
   ['v0.1-149','10-23','座位保留加上清潔時間（照設定）；開單選床位／腳位時，除了換腳，也會替今天還沒報到的預約留位子：空位扣掉要留的不夠時，空位標「保留中」不能選，並寫出是留給誰。安排客人建議的時間本來就會檢查每位客人都有自己的座位（2 位要按腳＝同時要 2 個腳位，含清潔時間）'],
@@ -6582,7 +6630,9 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
       </Card>
       </>}
       {G_&&<><div className={sec}>會員資料</div><CustBook toast={toast} ask={ask} mode="owner" onOrder={onCustOrder}/></>}
-      {ST_&&<><div className={sec.replace('mt-5','mt-0')}>天災假（颱風、地震等停班停課）</div>
+      {ST_&&<><div className={sec.replace('mt-5','mt-0')}>提早閉店（颱風等，只限今天）</div>
+      <Card className="p-3 text-sm mb-1"><EarlyClose full mgr ask={ask} toast={toast}/></Card>
+      <div className={sec}>天災假（颱風、地震等停班停課）</div>
       <Card className="p-3 text-sm mb-1">{(()=>{const td=ymd(new Date());const L=(dr.disasterDays||[]).slice().sort();const add=d=>{if(!d)return;up(n=>{n.disasterDays=Array.from(new Set((n.disasterDays||[]).concat([d]))).sort()})};
         return <>
           <div className="text-xs text-mute mb-2">開放的日期，老師、櫃台可以在自己的頁面請「天災假」（家裡到公司有困難時）。存檔後生效。</div>
