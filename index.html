@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-143</title>
+<title>緩緩門店 v0.1-144</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-143';
+const VER='v0.1-144';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -2727,7 +2727,7 @@ function RoleToggles({P,onSaved}){
 }
 function ProfileReview({toast,only}){   // only：'t' 老師／'c' 櫃台／'g' 客人（人員頁各小分頁）；不給＝全部
   const st=useCloud();
-  const [qT,setQT]=useState('');const [qG,setQG]=useState('');const [gMax,setGMax]=useState(50);
+  const [qT,setQT]=useState('');const [qG,setQG]=useState('');const [gMax,setGMax]=useState(10);
   const [d,setD]=useState(null);
   const [msg,setMsg]=useState('');
   const [open,setOpen]=useState(null);const [edit,setEdit]=useState(null);
@@ -2804,7 +2804,7 @@ function ProfileReview({toast,only}){   // only：'t' 老師／'c' 櫃台／'g' 
                 <div className="text-mute">加入 {g.at?clockText(g.at):'—'}</div>
               </div>}
             </div>)}):<div className="text-xs text-mute py-2">{qg?'找不到手機有 '+qg+' 的客人':'還沒有會員'}</div>}
-          {G.length>gMax&&<button className="w-full h-9 mt-1 text-xs text-sageD" onClick={()=>setGMax(gMax+50)}>再顯示 50 位（共 {G.length} 位）</button>}</>}
+          {G.length>gMax&&<button className="w-full h-9 mt-1 text-xs text-sageD" onClick={()=>setGMax(gMax+10)}>再顯示 10 位（共 {G.length} 位）</button>}</>}
         </>);
       })()}
     </div>
@@ -4480,6 +4480,7 @@ function ArrangeForm({b0,J,S,ks,by,line,plan,todayDay,nowM,onClose,onSaved,ask})
           <span className="w-2"></span>{MINS.map(m=><button key={m} type="button" className={'h-9 px-2.5 rounded-full border text-sm num '+(x.min===m?'bg-brown border-brown text-white':'bg-card border-line')} onClick={()=>setG(i,{min:m})}>{m} 分</button>)}</div>
         <div className="flex flex-wrap gap-1.5 mt-1.5 items-center">
           <span className="text-xs text-mute">加鐘</span>{[0,1,2].map(n=><button key={n} type="button" className={'h-8 px-2.5 rounded-full border text-xs '+((Number(x.ex)||0)===n?'bg-brown border-brown text-white':'bg-card border-line')} onClick={()=>setG(i,{ex:n})}>{n?'+'+n*30+' 分':'無'}</button>)}
+          {Number(x.ex)>0&&<><span className="text-xs text-mute ml-1">加鐘做</span>{SV.map(([sv,l])=>{const on=(x.exs||x.svc)===sv;return <button key={'e'+sv} type="button" className={'h-8 px-2.5 rounded-full border text-xs '+(on?'bg-brown border-brown text-white':'bg-card border-line')} onClick={()=>setG(i,{exs:sv})}>{l}</button>})}</>}   {/* v0.1-144 加鐘可以選別的項目（例：指壓＋加鐘腳底 30 分） */}
           {['guasha','bagua'].map(id=>{const on=(x.ad||[]).includes(id);return <button key={id} type="button" className={'h-8 px-2.5 rounded-full border text-xs '+(on?'bg-brownL border-brown text-brown':'bg-card border-line')} onClick={()=>setG(i,{ad:on?x.ad.filter(y=>y!==id):(x.ad||[]).concat([id])})}>{on?'☑':'☐'} {id==='guasha'?'刮痧':'拔罐'} +30 分</button>})}</div>
         <div className="flex flex-wrap gap-1.5 mt-1.5 items-center"><span className="text-xs text-mute">指定老師</span>
           <button type="button" className={'h-8 px-2.5 rounded-full border text-xs '+(!x.tc?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setG(i,{tc:''})}>不指定</button>
@@ -4541,7 +4542,7 @@ function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin
         <span className="num w-12 shrink-0 font-semibold">{b.t}</span>
         <span className="flex-1 min-w-0">{bkWho(b)}{b.g.length>1?<span className="text-xs text-mute">・{b.g.length} 位</span>:''}
           {b.here&&bkLive(b)&&<span className="ml-1 text-[10px] px-1 rounded bg-brownL text-brown">在店等候</span>}{b.src&&<span className="ml-1 text-[10px] px-1 rounded bg-bg border border-line text-mute">{b.src}</span>}
-          <span className="block text-xs text-mute">{b.g.map(x=>(SVC_SHORT[x.svc]||'')+x.min+(Number(x.ex)?'+'+x.ex*30:'')+((x.ad||[]).length?'＋'+x.ad.map(a=>a==='guasha'?'刮痧':a==='bagua'?'拔罐':a).join(''):'')+(x.tc?'・指定 '+x.tc:'')).join('／')}{b.note?'・'+b.note:''}</span>
+          <span className="block text-xs text-mute">{b.g.map(x=>(SVC_SHORT[x.svc]||'')+x.min+(Number(x.ex)?'+'+(x.exs&&x.exs!==x.svc?SVC_SHORT[x.exs]||'':'')+x.ex*30:'')+((x.ad||[]).length?'＋'+x.ad.map(a=>a==='guasha'?'刮痧':a==='bagua'?'拔罐':a).join(''):'')+(x.tc?'・指定 '+x.tc:'')).join('／')}{b.note?'・'+b.note:''}</span>
           {isToday&&bkLive(b)&&hs.some(Boolean)&&<span className="block text-xs text-brown">壓牌：{hs.filter(Boolean).join('、')}</span>}
           {e&&<span className="block text-xs text-sageD font-semibold">現在就可以入場（比 {b.t} 提早）</span>}
           {late>10&&<span className="block text-xs text-warn font-semibold">已遲到 {late} 分（超過 10 分鐘可取消，A6）</span>}
@@ -4851,7 +4852,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
     setTsel(null);toast&&toast(tc+' '+({rest:'休息'+(x&&x.back?'到 '+x.back:''),back:'回來',zx:'準下',zxoff:'取消準下',short:'短單',shortoff:'取消短單'}[k]))};
   const line=cust&&cust.mode==='line'?{ks:cust.ks}:null;
   const plan=skipId=>mcPlanCtx({J,board,seats,S,d,date,nowM,skipId});   // v0.1-114：今天的排程（給安排客人建議時間）
-  const checkin=(b,hs)=>setEd({order:null,k:Date.now(),bk:b,init:{items:b.g.map((x,i)=>({svc:x.svc,min:x.min,ex:Number(x.ex)||0,exs:Number(x.ex)?x.svc:null,ad:x.ad||[],tc:x.tc||(hs[i]&&!/未上牌/.test(hs[i])?hs[i]:'')||(i===0?nextTc:'')||'',cu:i===0?b.cu:null}))},note:b.note||''});
+  const checkin=(b,hs)=>setEd({order:null,k:Date.now(),bk:b,init:{items:b.g.map((x,i)=>({svc:x.svc,min:x.min,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,ad:x.ad||[],tc:x.tc||(hs[i]&&!/未上牌/.test(hs[i])?hs[i]:'')||(i===0?nextTc:'')||'',cu:i===0?b.cu:null}))},note:b.note||''});
   const seat=w=>setEd({order:null,k:Date.now(),wait:w,init:{items:Array.from({length:w.n||1},(_,i)=>Object.assign({cu:i===0?w.cu:null,tc:i===0?(nextTc||''):''},w.g&&w.g[i]?{svc:w.g[i].svc,min:w.g[i].min}:{}))}});
   const OST={serving:{label:'服務中',cls:'text-brown'},done:{label:'到時・待買單',cls:'text-warn'},paid:{label:'已完成（已買單）',cls:'text-sageD'}};
   const act=(o,k,x)=>{const t=hm(new Date()),at=Date.now();
@@ -5839,7 +5840,7 @@ function CustBook({toast,ask,mode,ks,admin,onOrder,me}){   // v0.1-132 me：建�
   const st=useCloud();
   const ready=mode==='demo'||(mode==='line'?!!GAS_URL:st.on);
   const [list,setList]=useState(()=>mode==='demo'?jget('cust-demo',DEMO_CUSTS0):null);const [q,setQ]=useState('');const [f,setF]=useState(null);
-  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const [max,setMax]=useState(50);
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const [max,setMax]=useState(10);
   const canDel=mode==='owner'||!!admin;
   const [hist,setHist]=useState(null);   // v0.1-096：點會員時讀以往的消費 {id,list}|{id,err}
   const [pick,setPick]=useState(null);   // v0.1-101：點搜尋結果 → 選「新的訂單」或「編輯會員資料」
@@ -5952,7 +5953,7 @@ function CustBook({toast,ask,mode,ks,admin,onOrder,me}){   // v0.1-132 me：建�
       </div>}
     </div>)}
     {list&&!shown.length&&<div className="text-xs text-mute py-2">{q?'找不到符合的會員，可以按「＋ 新增會員」':'還沒有會員資料'}</div>}
-    {shown.length>max&&<button className="w-full h-9 mt-1 text-xs text-sageD" onClick={()=>setMax(max+50)}>再顯示 50 位（共 {shown.length} 位）</button>}
+    {shown.length>max&&<button className="w-full h-9 mt-1 text-xs text-sageD" onClick={()=>setMax(max+10)}>再顯示 10 位（共 {shown.length} 位）</button>}
     <div className="text-[11px] text-mute mt-2">紙本建檔、線上加入的會員都在這裡。資料只存在 Google 試算表「客戶資料」，不會出現在公開的開通名單；客人線上加入時手機和姓對得上，就自動接上舊資料。</div>
   </Card>);
 }
@@ -6172,6 +6173,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-144','10-23','會員資料、人員頁的會員列表改成一次 10 位（「再顯示 10 位」）；主櫃安排客人時，選了加鐘後可以選「加鐘做」哪個項目（例：指壓 60＋加鐘腳底 30），報到開單會帶入（GAS gas-4.68）'],
   ['v0.1-143','10-22','公務機通行證：公務機用 LINE 登入一次後，雲端發一張 30 天的通行證存在這台電腦，主櫃之後都用它證明是公務機，不再每小時遇到「LINE 登入過期」；到期前 7 天自動換新；設定 → 主櫃系統的「重設所有登入碼」會讓所有通行證一起失效（GAS gas-4.67）'],
   ['v0.1-142','10-22','修正：公務電腦（瀏覽器）輸入登入碼時一直顯示「LINE 登入過期，正在重新登入…」無限循環。重新登入前先清掉瀏覽器存的舊 LINE 登入；3 分鐘內最多自動重新登入一次，之後交給雲端判斷；真的過期才顯示「重新登入 LINE」按鈕，並顯示這台電腦的時間方便檢查時間是否正確'],
   ['v0.1-141','10-22','老師技能（可預約的項目：指壓、油壓、腳底）：預設指壓、腳底都會，油壓只有女老師；老闆頁人員 → 老師的編輯、老師頁「我的資料」、錄取後選編號時都可以設定。會員中心、主櫃開單、安排客人、名額計算都只把老師會做的項目排給他。兼職老師沒填可上班時間也會出現在會員中心的指定老師（選了之後時段都是灰的）（GAS gas-4.66）'],
