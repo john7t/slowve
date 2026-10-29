@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-154</title>
+<title>緩緩門店 v0.1-156</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-154';
+const VER='v0.1-156';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -3100,11 +3100,44 @@ const myLabel=l=>{
   return p.join(' ＋ ')+(l.xsOf?'（'+l.xsOf+' 老師的客人）':'');
 };
 /* v0.1-137 老師頁的牌況（只看）：上牌區（含休息、救援）與服務中；資料來自主櫃上傳的當天紀錄（GAS tboard，不含金額、客人） */
+/* v0.1-156 老師頁的牌況、我的預約情形共用同一份 tboard（每分鐘更新一次） */
+const TB={d:null,err:'',busy:false,subs:new Set(),timer:null,at:0};
+const tbEmit=()=>TB.subs.forEach(f=>f({d:TB.d,err:TB.err,busy:TB.busy}));
+async function tbLoad(){if(TB.busy)return;TB.busy=true;tbEmit();
+  try{const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請關閉後重新開啟');
+    TB.d=await cloud.call({action:'tboard',idToken:t},30000);TB.err='';TB.at=Date.now()}catch(e){TB.err=e.message}TB.busy=false;tbEmit()}
+function useTb(){const [v,setV]=useState({d:TB.d,err:TB.err,busy:TB.busy});
+  useEffect(()=>{TB.subs.add(setV);if(!TB.timer){if(Date.now()-TB.at>20000)tbLoad();TB.timer=setInterval(()=>{if(document.visibilityState!=='hidden')tbLoad()},60000)}
+    return ()=>{TB.subs.delete(setV);if(!TB.subs.size){clearInterval(TB.timer);TB.timer=null}}},[]);
+  return v}
+/* v0.1-156 老師頁「我的預約情形」：過去照實際訂單（服務中、已服務、休息），今天之後的時間標出指定你的預約（tboard 的 mybk）；可切換今天／明天 */
+function MyDayLive({me}){
+  const S=loadSettings();const {d,err}=useTb();const [day,setDay]=useState('today');const [shift,setShift]=useState('');
+  const tc=String((me&&me.code)||'');
+  useEffect(()=>{fetchMembers().then(l=>{const m=(l||[]).find(x=>x&&x.uid===(me&&me.uid));if(m)setShift(m.shift||'')}).catch(()=>{})},[]);
+  const today=bizToday(S.cutoff),date=day==='today'?today:addDays(today,1);
+  const tog=<div className="flex rounded-lg border border-line overflow-hidden text-xs w-fit mb-2">{[['today','今天'],['tomorrow','明天']].map(([k,l])=><button key={k} className={'px-3 h-7 '+(day===k?'bg-sage text-white':'bg-card')} onClick={()=>setDay(k)}>{l}</button>)}</div>;
+  if(!d)return <div className="text-sm text-mute">{tog}{err?'✗ '+err:<Ld/>}</div>;
+  const nowM=tm(hm(new Date()));const mine=[];
+  if(day==='today'){
+    (d.orders||[]).filter(mcLiveO).forEach(o=>orderItems(o).forEach(x=>{
+      const s0=tm(o.t||'00:00'),e0=o.endAt?tm(o.endAt):tm(mcEnd(o)),it=(SVC_SHORT[x.svc]||'')+(x.min||'');
+      if(String(x.tc||'')===tc)mine.push({s:s0,e:Math.max(s0+5,oSt(o)==='serving'?Math.max(e0,nowM):e0),kind:oSt(o)==='serving'?'serve':'done',item:it});
+      if(x.sh&&String(x.sh.tc)===tc&&x.sh.t)mine.push({s:s0,e:Math.max(s0+5,tm(x.sh.t)),kind:'done',item:it});}));   // 被打槍：做到打槍的時間
+    let rs=null;(d.tb||[]).filter(e=>String(e.tc)===tc).sort((a,b)=>(a.at||0)-(b.at||0)).forEach(e=>{
+      if(e.k==='rest')rs=tm(e.t);else if((e.k==='back'||e.k==='off'||e.k==='on')&&rs!=null){mine.push({s:rs,e:Math.max(rs+5,tm(e.t)),kind:'rest'});rs=null}});
+    if(rs!=null)mine.push({s:rs,e:Math.max(rs+5,nowM),kind:'rest'});
+  }
+  const bkOk=Array.isArray(d.mybk);
+  (d.mybk||[]).filter(b=>b.date===date&&(day!=='today'||tm(b.t)+(Number(b.dur)||60)>nowM)).forEach(b=>{const s0=tm(b.t);mine.push({s:s0,e:s0+(Number(b.dur)||60),kind:'book',who:b.who||'',item:b.item||'',how:'指定'+(b.n>1?'・同行 '+b.n+' 位':'')})});
+  const sh=shiftOf(shift);let on=sh?tm(sh.in):600,off=sh?tm(sh.out):1320;if(off<=on)off+=1440;
+  mine.forEach(b=>{on=Math.min(on,Math.floor(b.s/60)*60);off=Math.max(off,Math.ceil(b.e/60)*60)});
+  return <div>{tog}<MyDayView on={on} off={off} mine={mine} now={day==='today'?nowM:-1} label={sh?'上牌':'時間'}
+    note={bkOk?(day==='today'?'今天接下來沒有指定你的預約':'明天沒有指定你的預約'):'預約要等 GAS 更新後才會顯示'}/>
+    <div className="text-[11px] text-mute mt-1">已服務、服務中、休息照主櫃的紀錄；預約只列指定你的（不指定的到店時才依輪班安排）。</div></div>;
+}
 function TeacherBoardLive({me}){
-  const [d,setD]=useState(null);const [err,setErr]=useState('');const [busy,setBusy]=useState(false);
-  const load=async()=>{setBusy(true);try{const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請關閉後重新開啟');
-    const j=await cloud.call({action:'tboard',idToken:t},30000);setD(j);setErr('')}catch(e){setErr(e.message)}setBusy(false)};
-  useEffect(()=>{load();const t=setInterval(()=>{if(document.visibilityState!=='hidden')load()},60000);return ()=>clearInterval(t)},[]);
+  const {d,err,busy}=useTb();const load=tbLoad;
   if(!d)return <div className="text-sm text-mute">{err?'✗ '+err:<Ld/>}</div>;
   const bd=mcBoard(d,{});
   const up=bd.avail.concat(bd.rest,bd.rescue||[]).sort((a,b)=>a.rot-b.rot),sv=bd.serving.slice().sort((a,b)=>tm(a.serv.start)-tm(b.serv.start));
@@ -3229,7 +3262,7 @@ function TeacherLive({me,mode}){
         <div className="text-[11px] text-mute mt-2">只顯示你自己的支數與費用。責任歸老師的跳單，扣款會列在加扣項。</div>
       </Sec>),
     (<Sec title="上牌打卡"><PunchPanel me={me} kind="teacher"/></Sec>),
-    (<Sec title="我的預約情形" demo><MyDayStrip tc={DEMO_SHIFT[me&&me.code]?me.code:'77'} day="today"/></Sec>),
+    (<Sec title="我的預約情形"><MyDayLive me={me}/></Sec>),
     (D&&D.support?<Sec title="可上班日期和時間（兼職）"><AvailPanel/></Sec>:<Sec title="請假（事假・病假・休假）"><LeavePanel kind="teacher" managed data={lvD} onResp={j=>bootPut('teacher',uid,'leave','',j)}/></Sec>),
     (<Sec title="我的資料" fold><ProfilePanel me={me} kind="teacher" managed data={pfD} onResp={j=>bootPut('teacher',uid,'prof','',j)}/></Sec>),
     (<Sec title="排班規則" fold><Card className="p-4"><RuleBoard S={loadSettings()} live by={me&&me.code}/></Card></Sec>),
@@ -3457,21 +3490,21 @@ function SlotBoard({n}){
 /* 老師個人：今日預約情形（上牌到下牌，每小時一格） */
 function MyDayStrip({tc,day}){
   const blocks=useMemo(demoBlocks,[]);
-  const NOW=tm(DEMO_NOW);
   const sh=DEMO_SHIFT[tc]||['10:00','20:00'];
-  const on=tm(sh[0]),off=tm(sh[1]);
   const TOMORROW=[{tc,s:tm('11:00'),e:tm('12:30'),kind:'book',who:'王先生',item:'油壓 90',how:'指定'},{tc,s:tm('17:00'),e:tm('18:00'),kind:'book',who:'林小姐',item:'腳底 60',how:'不指定・依輪班排入'}];
-  const mine=day==='today'?blocks.filter(b=>b.tc===tc):TOMORROW;
-  const now=day==='today'?NOW:-1;
+  return <MyDayView on={tm(sh[0])} off={tm(sh[1])} mine={day==='today'?blocks.filter(b=>b.tc===tc):TOMORROW} now={day==='today'?tm(DEMO_NOW):-1}/>;
+}
+/* 一天的時間格（上牌到下牌，1 小時 1 格）：mine＝[{s,e,kind:book|walk|serve|done|rest,who,item,how}]，now＝現在（分鐘，-1＝不畫） */
+function MyDayView({on,off,mine,now,note,label}){
   const hrs=[];for(let h=on;h<off;h+=60)hrs.push(h);
   const cls=h=>{const bs=mine.filter(b=>b.s<h+60&&b.e>h);if(bs.some(b=>b.kind==='book'||b.kind==='walk'))return 'book';if(bs.some(b=>b.kind==='serve'))return 'serve';if(bs.some(b=>b.kind==='done'))return 'done';if(bs.some(b=>b.kind==='rest'))return 'rest';return 'free'};
   const cnt=k=>hrs.filter(h=>cls(h)===k).length;
-  const bk=mine.filter(b=>b.kind==='book'||b.kind==='walk');
+  const bk=mine.filter(b=>b.kind==='book'||b.kind==='walk').sort((a,b)=>a.s-b.s);
   const COL={done:'#6f7d62',serve:'#a0784f',book:'#b5543c',walk:'#b5543c',rest:'#cfc6b8'};
   return (
     <>
-      <div className="text-xs text-mute mb-2">上牌 <span className="num">{tf(on)}～{tf(off)}</span>・共 {hrs.length} 格（1 小時 1 格）</div>
-      <div className="grid gap-[3px]" style={{gridTemplateColumns:'repeat('+hrs.length+',minmax(0,1fr))'}}>
+      <div className="text-xs text-mute mb-2">{label||'上牌'} <span className="num">{tf(on)}～{tf(off)}</span>・共 {hrs.length} 格（1 小時 1 格）</div>
+      <div className="grid gap-[3px]" style={{gridTemplateColumns:'repeat('+Math.max(1,hrs.length)+',minmax(0,1fr))'}}>
         {hrs.map(h=>(
           <div key={h}>
             <div className="text-[10px] text-center text-mute num">{Math.floor(h/60)%24}</div>
@@ -3484,13 +3517,14 @@ function MyDayStrip({tc,day}){
       </div>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-mute">
         {[['book','預約'],['serve','服務中'],['done','已服務'],['rest','休息']].map(([k,l])=><span key={k} className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{background:COL[k],opacity:k==='done'?0.55:0.9}}></span>{l}</span>)}
-        {day==='today'&&<span className="flex items-center gap-1"><span className="inline-block w-[2px] h-3 bg-ink"></span>現在</span>}
+        {now>=0&&<span className="flex items-center gap-1"><span className="inline-block w-[2px] h-3 bg-ink"></span>現在</span>}
       </div>
       <div className="grid grid-cols-4 gap-2 mt-3 text-center">
         {[['有預約','book','text-warn'],['服務中','serve','text-brown'],['已服務','done','text-sageD'],['空','free','']].map(([l,k,c])=><div key={k} className="rounded-lg bg-bg py-1.5"><div className={'text-lg num '+c}>{cnt(k)}</div><div className="text-[11px] text-mute">{l}（格）</div></div>)}
       </div>
       <div className="mt-3 pt-2 border-t border-line">
-        {bk.length?bk.map((b,i)=><div key={i} className="flex items-center gap-2 py-1.5 text-sm"><span className="num text-warn w-24 shrink-0">{tf(b.s)}～{tf(b.e)}</span><span className="flex-1">{b.who}・{b.item}<span className="block text-xs text-mute">{b.kind==='walk'?'現場候位・':''}{b.how}</span></span></div>):<Ph>沒有預約</Ph>}
+        {bk.length?bk.map((b,i)=><div key={i} className="flex items-center gap-2 py-1.5 text-sm"><span className="num text-warn w-24 shrink-0">{tf(b.s)}～{tf(b.e)}</span><span className="flex-1">{b.who}{b.who&&b.item?'・':''}{b.item}<span className="block text-xs text-mute">{b.kind==='walk'?'現場候位・':''}{b.how}</span></span></div>)
+          :<div className="text-xs text-mute py-1">{note||'目前沒有指定你的預約'}</div>}
       </div>
     </>
   );
@@ -6308,6 +6342,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-156','10-29','老師頁「我的預約情形」改成真的資料：上牌到下牌每小時一格，已服務、服務中、休息照主櫃的實際紀錄；今天接下來和明天，有指定這位老師的預約就標在格子上，下面列出時間、客人、項目。可切換今天／明天（預約需 GAS gas-4.76）'],
+  ['v0.1-155','10-29','老闆頁「人員 → 老師／櫃台」的休假月曆、櫃台差勤，標題兩邊加 ‹ › 可以切換月份（看以前或之後的月份），旁邊「回本月」回到這個月'],
   ['v0.1-154','10-28','新增／修改訂單勾了 IG 打卡折價券時，下方金額改顯示實收（例：$1,300），並註明原價和折價券；主櫃「開單・先買單」的金額也是實收'],
   ['v0.1-153','10-28','主櫃開單、修改訂單也可以勾「IG 打卡折價券 −$100」（跟老闆頁新增訂單一樣）；先買單的客人開單時就能用，到時買單時仍可再勾或取消'],
   ['v0.1-152','10-23','提早閉店（颱風等）：老闆、主管在設定頁或主櫃「預約・排隊」按「提早閉店」，選服務全部結束的時間和原因，先看會影響哪些預約再確定。今天還沒報到、會做到閉店之後的預約全部取消，有 LINE 的會員自動收到通知，沒有 LINE 的列出電話給櫃台打；在店等候的不自動取消。之後主櫃安排客人、會員中心預約都只給閉店前做得完的時間，會員中心最上面顯示提早閉店。可以按「恢復營業」取消（已取消的預約不會恢復）（GAS gas-4.75）'],
@@ -6578,6 +6614,13 @@ function KcReset(){const st=useCloud();const [m,setM]=useState('');const [busy,s
 function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOrder}){
   page=page||'set';const P_=page==='people',T_=P_&&sub==='teacher',C_=P_&&sub==='counter',G_=P_&&sub==='guest',J_=P_&&sub==='join',ST_=page==='set';
   const [dr,setDr]=useState(()=>clone(S));
+  const [lvYm,setLvYm]=useState('');   // v0.1-155 人員頁休假、差勤可切換月份
+  const ymNow=bizToday(S.cutoff).slice(0,7),lym=lvYm||ymNow;
+  const ymShift=(ym,n)=>{const a=ym.split('-').map(Number);const d=new Date(a[0],a[1]-1+n,1);return d.getFullYear()+'-'+pad(d.getMonth()+1)};
+  const ymTitle=t=><div className={sec+' flex items-center gap-2'}><button type="button" aria-label="上個月" className="w-8 h-8 rounded-full border border-line bg-card text-ink text-base leading-none" onClick={()=>setLvYm(ymShift(lym,-1))}>‹</button>
+    <span className="num">{lym.slice(0,4)!==ymNow.slice(0,4)?lym.slice(0,4)+' 年 ':''}{Number(lym.slice(5,7))} 月{t}</span>
+    <button type="button" aria-label="下個月" className="w-8 h-8 rounded-full border border-line bg-card text-ink text-base leading-none" onClick={()=>setLvYm(ymShift(lym,1))}>›</button>
+    {lym!==ymNow&&<button type="button" className="text-xs text-sageD underline" onClick={()=>setLvYm('')}>回本月</button>}</div>;
   const [newT,setNewT]=useState('');
   const [newC,setNewC]=useState('');
   const [used,setUsed]=useState(storageBytes());
@@ -6621,9 +6664,9 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
       {P_&&<div className="flex rounded-lg border border-line overflow-hidden text-sm bg-card mb-1">
         {[['join','應徵'],['teacher','老師'],['counter','櫃台'],['guest','客人']].map(([k,l])=><button key={k} className={'flex-1 h-10 '+(sub===k?'bg-sage text-white':'')} onClick={()=>setSub&&setSub(k)}>{l}</button>)}
       </div>}
-      {(T_||C_)&&<><div className={sec}>{Number(bizToday(S.cutoff).slice(5,7))} 月{T_?'老師':'櫃台'}休假</div>
-        <LeaveCalendar ym={bizToday(S.cutoff).slice(0,7)} role={T_?'teacher':'counter'}/></>}
-      {C_&&<><div className={sec}>{Number(bizToday(S.cutoff).slice(5,7))} 月櫃台差勤</div><AttMonth ym={bizToday(S.cutoff).slice(0,7)} toast={toast}/></>}
+      {(T_||C_)&&<>{ymTitle(T_?'老師休假':'櫃台休假')}
+        <LeaveCalendar ym={lym} role={T_?'teacher':'counter'}/></>}
+      {C_&&<>{ymTitle('櫃台差勤')}<AttMonth ym={lym} toast={toast}/></>}
       {(T_||C_)&&<>
       <div className={sec}>{T_?'老師資料':'櫃台資料'}</div>
       <Card className="p-3">
