@@ -12,6 +12,6 @@
     {"uid":"U45297ab0e8bc7a6ed3a71231326add82","name":"酸莓","roles":["teacher"],"shift":"14:00-02:00","tc":"17","support":true},
     {"uid":"Ua5a177d427f9a57f92f6e4c496751696","name":"小媛","roles":["teacher","counter"],"shift":"14:00-02:00","tc":"09","admin":"manager","support":true},
     {"uid":"Uf770a2e1e3bf0866d46aedb93a2177be","name":"米娜小姐","roles":["guest"]},
-    {"uid":"Ua9377d7fd1474232b1b968a7d4c27189","roles":["applicant"],"apply":"teacher","stage":"applied"}
+    {"uid":"Ua9377d7fd1474232b1b968a7d4c27189","roles":["applicant"],"apply":"teacher","stage":"hired"}
   ]
 }
