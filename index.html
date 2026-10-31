@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-157</title>
+<title>緩緩門店 v0.1-158</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-157';
+const VER='v0.1-158';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -149,7 +149,7 @@ function mergeSettings(s){
   // v0.1-123 線上預約（客人頁）：開放、當天也可以、可指定老師、取消時限（小時）、一次最多幾位、LINE 確認
   // v0.1-128 店家資訊（圖文選單下排、會員中心）
   r.shopAddr=s.shopAddr||'新北市板橋區雙十路三段 10 巷 1 號 1 樓';r.shopTel=s.shopTel||'02-8257-1199';r.shopIg=s.shopIg||'';r.shopMap=s.shopMap||'';
-  r.gbOn=s.gbOn!==false;r.gbToday=!!s.gbToday;r.gbTc=s.gbTc!==false;r.gbNotify=s.gbNotify!==false;r.gbEdit=!!s.gbEdit;r.gbMgr=!!s.gbMgr;r.gbSelfIn=!!s.gbSelfIn;r.tagLd=Array.isArray(s.tagLd)?s.tagLd.map(x=>String(x).replace(/\D/g,'')).filter(Boolean).slice(0,10):['69'];r.gbNotice=String(s.gbNotice||'');r.disasterDays=Array.isArray(s.disasterDays)?s.disasterDays.filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)):[];
+  r.gbOn=s.gbOn!==false;r.gbToday=!!s.gbToday;r.gbTc=s.gbTc!==false;r.gbNotify=s.gbNotify!==false;r.gbEdit=!!s.gbEdit;r.gbMgr=!!s.gbMgr;r.gbSelfIn=!!s.gbSelfIn;r.ntRest=s.ntRest!==false;r.ntDaily=s.ntDaily!==false;r.tagLd=Array.isArray(s.tagLd)?s.tagLd.map(x=>String(x).replace(/\D/g,'')).filter(Boolean).slice(0,10):['69'];r.gbNotice=String(s.gbNotice||'');r.disasterDays=Array.isArray(s.disasterDays)?s.disasterDays.filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)):[];
   r.gbCancelH=s.gbCancelH==null||s.gbCancelH===''?3:Math.max(0,Math.min(48,Number(s.gbCancelH)||0));r.gbMax=Math.max(1,Math.min(6,Number(s.gbMax)||4));   // v0.1-107：主櫃系統測試上線（真的畫面，資料只存在主櫃那台、不上傳；會員資料是真的）
   // v0.1-070：主櫃座位與規則（腳位、床位、開放床位、清潔時間）
   r.seatFoot=Math.max(1,Math.min(20,Number(s.seatFoot)||4));
@@ -3143,7 +3143,7 @@ function TeacherBoardLive({me}){
   const up=bd.avail.concat(bd.rest,bd.rescue||[]).sort((a,b)=>a.rot-b.rot),sv=bd.serving.slice().sort((a,b)=>tm(a.serv.start)-tm(b.serv.start));
   const C='w-[4.3rem] min-h-[3.4rem] flex flex-col items-center justify-center rounded-lg px-1 py-1 text-center leading-tight ',T10='text-[10px] num leading-tight';
   const card=(r,cls,sub)=><div key={r.tc} className={C+cls}><b className="num text-lg leading-none">{r.tc}</b>{sub}</div>;
-  const upC=r=>r.serv?card(r,'border-2 bg-red-200 border-red-600 text-red-900',<><span className="text-[10px] font-semibold bg-red-600 text-white rounded px-1 my-0.5">救援</span><span className={T10}>{r.serv.end}回</span></>)
+  const upC=r=>r.serv?card(r,'border-2 bg-red-200 border-red-600 text-red-900',<><span className="text-[10px] font-semibold bg-red-600 text-white rounded px-1 my-0.5">{r.serv.xl?'超長':'救援'}</span><span className={T10}>{r.serv.end}回</span></>)
     :r.rest?card(r,'border bg-green-200 border-green-500 text-green-900',<span className={T10}>休息 {r.rest.t} 起</span>)
     :card(r,'border bg-white border-neutral-300',<span className={T10}>第 {r.rot} 位</span>);
   const G=(l,n,cls,list)=><div className="mb-2"><div className={'text-[11px] font-semibold mb-1 '+cls}>{l} {n}</div><div className="flex flex-wrap gap-1.5">{list.length?list:<div className={C+'border-[1.5px] border-dashed border-neutral-300'}/>}</div></div>;
@@ -3152,6 +3152,63 @@ function TeacherBoardLive({me}){
     {G('服務中',sv.length,'text-red-700',sv.map(r=>card(r,'border bg-red-200 border-red-400 text-red-900',<span className={T10}>{r.serv.end}回</span>)))}
     <div className="flex items-center justify-between text-[11px] text-mute mt-1"><span>主櫃上傳的紀錄，每分鐘更新</span><button className="underline" onClick={load}>{busy?'更新中…':'重新整理'}</button></div>
   </div>;
+}
+/* v0.1-158 老師頁「今日服務」：今天每一筆（點一下替客人評分、加標籤、寫服務記錄；營業日換日後就不能再記）＋「今日支數確認」（確認後從上牌區下牌） */
+const STARS=n=>'★★★★★'.slice(0,n)+'☆☆☆☆☆'.slice(0,5-n);
+async function tCall(b){const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請關閉後重新開啟');return cloud.call(Object.assign({idToken:t},b),30000)}
+function TeacherToday({me,today,tl,zh,ld,onRated}){
+  const [rv,setRv]=useState(null);const {d}=useTb();const [cf,setCf]=useState(false);const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  const tc=String((me&&me.code)||'');
+  const ev=((d&&d.tb)||[]).filter(e=>String(e.tc)===tc).sort((a,b)=>(a.at||0)-(b.at||0));
+  let on=false,ack=null;ev.forEach(e=>{if(e.k==='on'){on=true;ack=null}else if(e.k==='off')on=false;else if(e.k==='ack')ack=Object.assign({t:e.t},e.ack||{})});
+  const serving=((d&&d.orders)||[]).some(o=>(o.st||'paid')==='serving'&&(o.items||[]).some(x=>String(x.tc)===tc));
+  const doAck=async()=>{setBusy(true);setErr('');try{await tCall({action:'zack'});setCf(false);await tbLoad()}catch(e){setErr(e.message)}setBusy(false)};
+  const rows=tl.slice().sort((a,b)=>tm(a.t||'00:00')-tm(b.t||'00:00'));
+  return <div className="mt-3">
+    {rows.length>0&&<div className="border-t border-line">{rows.map((l,i)=>{const can=!!l.oid;return <button key={i} type="button" disabled={!can} className="w-full flex items-center gap-2 py-2 border-b border-line text-left text-sm disabled:opacity-80" onClick={()=>setRv(l)}>
+      <span className="num text-xs text-mute w-10 shrink-0">{l.t||''}</span>
+      <span className="flex-1 min-w-0">{myLabel(l)}{l.cn&&<span className="ml-1 text-xs text-mute">{l.cn}</span>}{l.ld&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>}
+        {can&&(l.rv?<span className="block text-xs text-brown">{STARS(l.rv.s)}{(l.rv.tags||[]).length?'・'+l.rv.tags.join(' '):''}</span>:<span className="block text-xs text-sageD">點一下替這位客人評分 ›</span>)}</span>
+      <span className="num text-sm shrink-0">{l.zh} 支</span></button>})}</div>}
+    {rows.some(l=>l.oid)&&<div className="text-[11px] text-mute mt-1">今天的服務可以評分、記錄到營業日換日（{loadSettings().cutoff||'05:00'}）為止，之後就不能再記。</div>}
+    <div className="mt-3">{ack?<div className="px-3 py-2.5 rounded-xl bg-sageL text-sageD text-sm">✓ {ack.t} 已確認今日支數（<b className="num">{ack.zh}</b> 支・老點 <b className="num">{ack.ld}</b>）{on?'':'・已下牌'}</div>
+      :<button type="button" className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={!d||serving} onClick={()=>setCf(true)}>{serving?'服務中，做完再確認支數':'今日支數確認'}</button>}
+      {!ack&&<div className="text-[11px] text-mute mt-1">下班前確認今天的支數、老點沒問題再按；按了會從上牌區下牌，櫃台的主櫃也會看到你已確認。</div>}</div>
+    {cf&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>!busy&&setCf(false)}>
+      <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
+        <div className="text-lg mb-2">今日支數確認</div>
+        <div className="grid grid-cols-2 gap-2 mb-3"><KV k="支數" v={zh}/><KV k="老點" v={ld}/></div>
+        <div className="text-sm text-mute mb-3">確認數字無誤後送出，{on?'會從上牌區下牌（記下現在的時間）':'會記錄你已確認'}。數字有問題請先找櫃台。</div>
+        {err&&<div className="text-sm text-warn mb-2">✗ {err}</div>}
+        <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={doAck}>{busy?'送出中…':'確認無誤'+(on?'，下牌':'')}</button>
+        <button className="w-full h-10 mt-1 text-sm text-mute" disabled={busy} onClick={()=>setCf(false)}>取消</button></div></div>}
+    {rv&&<RateSheet l={rv} today={today} onClose={()=>setRv(null)} onSaved={x=>{onRated(rv,x);setRv(null)}}/>}
+  </div>;
+}
+function RateSheet({l,today,onClose,onSaved}){
+  const r0=l.rv||{};const [s,setS]=useState(r0.s||0);const [tags,setTags]=useState((r0.tags||[]).join(' '));const [co,setCo]=useState(r0.co||'');const [self,setSelf]=useState(r0.self||'');
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  const tagList=tags.split(/[\s,，、]+/).filter(Boolean);const long=tagList.filter(t=>t.length>4);
+  const save=async()=>{if(!s)return setErr('請點星星評分');setBusy(true);setErr('');
+    try{const j=await tCall({action:'rate',date:l.date,oid:l.oid,ii:l.ii,stars:s,tags,co,self});onSaved({s:j.saved.s,tags:j.saved.tags,co:j.saved.co,self:j.saved.self})}catch(e){setErr(e.message)}setBusy(false)};
+  return <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="w-full max-w-md bg-card rounded-t-2xl sm:rounded-2xl p-5 max-h-[92vh] overflow-y-auto space-y-3" onClick={e=>e.stopPropagation()}>
+      <div><div className="text-lg">為此次客人評分</div><div className="text-xs text-mute num">{l.t} #{l.sn}・{myLabel(l)}{l.cn?'・'+l.cn:''}</div></div>
+      <div className="flex justify-center gap-1">{[1,2,3,4,5].map(n=><button key={n} type="button" aria-label={n+' 顆星'} className={'w-12 h-12 text-4xl leading-none '+(n<=s?'text-[#d4a33b]':'text-neutral-300')} onClick={()=>{setS(n);setErr('')}}>★</button>)}</div>
+      {l.prevSelf&&<div className="px-3 py-2 rounded-lg bg-bg text-xs"><span className="text-mute">上次你記的：</span>{l.prevSelf}</div>}
+      {l.cu1?<label className="block"><div className="text-sm font-semibold mb-1">請為此客人增加標籤</div>
+        <input className="w-full h-11 px-3 rounded-xl border border-line bg-card" maxLength={40} placeholder="例：怕癢 喜歡重 愛聊天（用空白隔開）" value={tags} onChange={e=>setTags(e.target.value)}/>
+        <div className={'text-[11px] mt-1 '+(long.length?'text-warn':'text-mute')}>{long.length?'標籤盡量 4 個字以內：'+long.join('、'):'每個標籤盡量 4 個字以內，用空白隔開；會加到這位客人的會員資料。'}</div></label>
+        :<div className="text-xs text-mute">這位客人沒有會員資料，標籤無法加到會員資料（評分和記錄仍會存）。</div>}
+      <div><div className="text-sm font-semibold mb-1">服務記錄說明</div>
+        <label className="block mb-2"><div className="text-xs text-mute mb-1">給公司看（櫃台、主管、老闆看得到）</div>
+          <textarea className="w-full min-h-[3.5rem] px-3 py-2 rounded-xl border border-line bg-card text-sm" maxLength={300} placeholder="例：客人說左肩痠痛，建議下次加刮痧" value={co} onChange={e=>setCo(e.target.value)}/></label>
+        <label className="block"><div className="text-xs text-mute mb-1">給自己看（只有你自己看得到）</div>
+          <textarea className="w-full min-h-[3.5rem] px-3 py-2 rounded-xl border border-line bg-bg text-sm" maxLength={300} placeholder="例：力道要重、不喜歡聊天" value={self} onChange={e=>setSelf(e.target.value)}/></label></div>
+      {err&&<div className="text-sm text-warn">✗ {err}</div>}
+      <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={save}>{busy?'儲存中…':'儲存'}</button>
+      <button className="w-full h-10 text-sm text-mute" onClick={onClose}>取消</button>
+    </div></div>;
 }
 function TeacherLive({me,mode}){
   const S=loadSettings();
@@ -3221,6 +3278,7 @@ function TeacherLive({me,mode}){
         {!isCur?<Ph>切回本月才看得到今日服務</Ph>:<>
           <div className="grid grid-cols-4 gap-2"><KV k="單數" v={tl.filter(l=>!l.xsOf).length}/><KV k="支數" v={zh(tl)}/><KV k="老點" v={ldN(tl)}/><KV k="費用" v={money(fee(tl))} cls="text-brown"/></div>
           {tl.length===0&&<div className="text-xs text-mute mt-2">今天還沒有上傳的服務紀錄。</div>}
+          <TeacherToday me={me} today={today} tl={tl} zh={zh(tl)} ld={ldN(tl)} onRated={(l,rv)=>setData(d=>d&&Object.assign({},d,{lines:(d.lines||[]).map(x=>x.date===l.date&&x.oid===l.oid&&x.ii===l.ii?Object.assign({},x,{rv}):x)}))}/>
           {sup&&tl.length>0&&<div className="mt-2 px-3 py-2 rounded-lg bg-brownL text-brown text-xs">支援老師：下班時向櫃台領現金。{(D.sup.find(x=>x.date===today))?'今日已結算 '+money(D.sup.find(x=>x.date===today).pay):'實際金額以櫃台結算為準。'}</div>}
         </>}
       </Sec>),
@@ -4381,21 +4439,27 @@ const shiftOf=sh=>{const m=/^(\d\d:\d\d)-(\d\d:\d\d)$/.exec(sh||'');return m?{in
 function mcBoard(d,shifts){
   const T={};
   (d.tb||[]).slice().sort((a,b)=>(a.at||0)-(b.at||0)).forEach(e=>{const r=T[e.tc]||(T[e.tc]={tc:e.tc,zh:0,n:0});
-    if(e.k==='on'){r.on=true;r.onT=e.t;r.since=e.t;r.sinceAt=e.at||0;r.offT=null;r.rest=null;r.zx=false;r.short=false}
+    if(e.k==='on'){r.on=true;r.onT=e.t;r.since=e.t;r.sinceAt=e.at||0;r.offT=null;r.rest=null;r.zx=false;r.short=false;r.ack=null}
+    else if(e.k==='ack')r.ack=Object.assign({t:e.t},e.ack||{});   // v0.1-158 老師按「今日支數確認」
     else if(e.k==='off'){r.on=false;r.offT=e.t;r.rest=null;r.zx=false;r.short=false}
     else if(e.k==='rest')r.rest={t:e.t,back:e.back||''};else if(e.k==='back')r.rest=null;
     else if(e.k==='zx')r.zx=true;else if(e.k==='zxoff')r.zx=false;else if(e.k==='short')r.short=true;else if(e.k==='shortoff')r.short=false});
+  const nowM=tm(hm(new Date()));
+  /* v0.1-158 超長單：一位客人服務超過 2 小時（含加鐘、加項）。開始 2 小時後，紅牌移到上牌區（白牌）最後面排隊；做完原地翻白，不再移到後面 */
   (d.orders||[]).filter(mcLiveO).forEach(o=>orderItems(o).forEach(x=>{const tc=String(x.tc||'');if(!tc)return;
     const r=T[tc]||(T[tc]={tc,zh:0,n:0,on:false});r.zh+=Number(x.zh)||0;r.n++;
-    if(oSt(o)==='serving')r.serv={id:o.id,sn:o.sn,end:mcEnd(o),start:o.t,label:(SVC_SHORT[x.svc]||'')+(x.min||''),rescue:!!x.sh};
+    const s0=tm(o.t||'00:00'),x2=s0+120,xl=!x.sh&&gDur(x)>120;
+    const sinceTo=m=>{if(r.on&&m>=tm(r.since||'06:00')){r.since=tf(m);r.sinceAt=o.ua||0}};
+    if(oSt(o)==='serving'){r.serv={id:o.id,sn:o.sn,end:mcEnd(o),start:o.t,label:(SVC_SHORT[x.svc]||'')+(x.min||''),rescue:!!x.sh,xl:xl&&nowM>=x2,xl0:xl,x2:tf(x2)};if(r.serv.xl)sinceTo(x2)}
+    else if(xl&&o.endAt&&tm(o.endAt)>x2)sinceTo(x2);   // 超長單做完：維持 2 小時那時排進去的位置
     else if(o.endAt&&r.on&&!x.sh&&tm(o.endAt)>=tm(r.since||'06:00')){r.since=o.endAt;r.sinceAt=o.ua||0}   // v0.1-135 救援牌做完不移位置（仍是頭班）
     if(x.sh){const s=T[String(x.sh.tc)];if(s&&s.on&&x.sh.t&&tm(x.sh.t)>=tm(s.since||'06:00')){s.since=x.sh.t;s.sinceAt=o.ua||0}}}));   // 被打槍的：從打槍的時間排到後面
   const list=Object.values(T);
   list.forEach(r=>{const sh=shiftOf((shifts||{})[r.tc]);r.out=sh?sh.out:''});
-  const q=list.filter(r=>r.on&&(!r.serv||r.serv.rescue)).sort((a,b)=>tm(a.since||'06:00')-tm(b.since||'06:00')||(a.sinceAt||0)-(b.sinceAt||0));   // 同一分鐘：先上牌（先到時）的先
+  const q=list.filter(r=>r.on&&(!r.serv||r.serv.rescue||r.serv.xl)).sort((a,b)=>tm(a.since||'06:00')-tm(b.since||'06:00')||(a.sinceAt||0)-(b.sinceAt||0));   // 同一分鐘：先上牌（先到時）的先
   q.forEach((r,i)=>{r.rot=i+1});   // 休息中的也排順位（保留位置）
   const lastOn=tc=>{const a=(d.tb||[]).filter(e=>e.tc===tc&&(e.k==='on'||e.k==='off')).sort((x,y)=>(x.at||0)-(y.at||0));return a[a.length-1]||null};
-  return {list,avail:q.filter(r=>!r.rest&&!r.serv),rest:q.filter(r=>r.rest&&!r.serv),rescue:q.filter(r=>r.serv),serving:list.filter(r=>r.on&&r.serv&&!r.serv.rescue).sort((a,b)=>tm(a.serv.end)-tm(b.serv.end)),off:list.filter(r=>!r.on).sort((a,b)=>(Number(a.tc)||0)-(Number(b.tc)||0)),
+  return {list,avail:q.filter(r=>!r.rest&&!r.serv),rest:q.filter(r=>r.rest&&!r.serv),rescue:q.filter(r=>r.serv),serving:list.filter(r=>r.on&&r.serv&&!r.serv.rescue&&!r.serv.xl).sort((a,b)=>tm(a.serv.end)-tm(b.serv.end)),off:list.filter(r=>!r.on).sort((a,b)=>(Number(a.tc)||0)-(Number(b.tc)||0)),
     lastOf:lastOn};
 }
 // 座位：服務中的佔用到下鐘；到時後空出清潔時間
@@ -4577,7 +4641,7 @@ function ArrangeForm({b0,J,S,ks,by,line,plan,todayDay,nowM,onClose,onSaved,ask})
       if(!isT){const c=capOf(f.t);if(!c.ok&&!await ask({title:'名額不夠，仍要預約？',msg:c.msgs.join('\n'),okText:'仍要預約',danger:true}))return}}
     const b=Object.assign({},f,st==='decl'?{st:'decl',t:f.t||(sug[0]!=null?tf(sug[0]):hm(new Date())).replace(/\d$/,'0'),name:f.name||'（沒留名）'}:{});
     if(st!=='decl')noteRemember(f.note);
-    setBusy(true);setErr('');try{const j=await bkCall({op:'save',b,by},ks);bkPut(j);onSaved&&onSaved(b,st)}catch(e){setErr(e.message)}setBusy(false)};
+    setBusy(true);setErr('');try{const j=await bkCall({op:'save',b,by},ks);bkPut(j);onSaved&&onSaved(b,st,j)}catch(e){setErr(e.message)}setBusy(false)};
   const SV=[['dry','指壓'],['oil','油壓'],['foot','腳底']];
   const free=isT?(ctx.T||[]).map(t=>t.tc).sort((a,b)=>Number(a)-Number(b)):(f.t?(J.tea||[]).filter(t=>teaOk(t,f.date,tm(f.t),tm(f.t)+bkDur(f),J.lv)).map(t=>t.tc).sort((a,b)=>Number(a)-Number(b)):[]);
   const wait=m=>m<=nowM?'現在':tf(m)+'（約等 '+(m-nowM)+' 分）';
@@ -4715,7 +4779,7 @@ function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin
     {!list.length&&<div className="text-xs text-mute py-2">這天還沒有預約</div>}
     {err&&<div className="text-xs text-warn mt-1">✗ {err}</div>}
     <div className="text-[11px] text-mute mt-1">現場、電話、事先預約都在這裡安排：系統給可以入場的時間，客人接受就留位子。</div>
-    {form&&<ArrangeForm b0={form.b0} J={J} S={S} ks={ks} by={by} line={line} plan={plan} todayDay={todayDay} nowM={nowM} ask={ask} onClose={()=>setForm(null)} onSaved={(f,st)=>{setForm(null);setDay(f.date);toast&&toast(st==='decl'?'已記錄：客人沒接受':'已安排 '+(f.date===date?'':f.date.slice(5)+' ')+f.t)}}/>}
+    {form&&<ArrangeForm b0={form.b0} J={J} S={S} ks={ks} by={by} line={line} plan={plan} todayDay={todayDay} nowM={nowM} ask={ask} onClose={()=>setForm(null)} onSaved={(f,st,j)=>{setForm(null);setDay(f.date);const nt=((j&&j.nt)||[]).map(x=>x.tc+' 號'+(x.sent?'已 LINE 通知':'通知沒發出'+(x.why==='limit'?'（額度用完）':x.why==='nouid'?'（沒有綁 LINE）':'')));toast&&toast((st==='decl'?'已記錄：客人沒接受':'已安排 '+(f.date===date?'':f.date.slice(5)+' ')+f.t)+(nt.length?'・休息中的 '+nt.join('、'):''))}}/>}
     {selB&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={()=>setSel(null)}>
       <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center gap-2"><span className="text-lg num">{selB.date.slice(5)} {selB.t}</span><span className={'ml-auto text-xs px-1.5 rounded '+BK_ST[selB.st].c}>{BK_ST[selB.st].l}</span></div>
@@ -4766,9 +4830,9 @@ function TeacherSheet({r,w,onAct,onTb,onLate,onEnd,onOrder,onTmpLv,onClose}){   
   const [back,setBack]=useState('');
   const opts=[15,30,60].map(m=>tf(tm(hm(new Date()))+m));
   const on=!!(r&&r.on),tc=(r||w).tc,offT=r&&!r.on&&r.offT;
-  const head=on?(r.rest?'休息中':r.serv?(r.serv.rescue?'救援中（做完仍是頭班）':'服務中'):'上牌'):offT?'已下牌':w&&w.lv?(w.tmp?'臨時請假':'今天請假'):'未上牌';
-  const sub=on?[r.serv?'#'+r.serv.sn+' '+r.serv.label+'・'+r.serv.start+' 起・預計 '+r.serv.end+' 回':'',r.onT?r.onT+' 上牌':'',r.out?'預定 '+r.out+' 下牌':'',r.rot?'輪班第 '+r.rot+' 位':'']
-    :offT?[offT+' 下牌']
+  const head=on?(r.rest?'休息中':r.serv?(r.serv.rescue?'救援中（做完仍是頭班）':r.serv.xl?'超長單服務中（已排進上牌區，做完原地翻白）':r.serv.xl0?'超長單服務中（'+r.serv.x2+' 排進上牌區最後）':'服務中'):'上牌'):offT?'已下牌':w&&w.lv?(w.tmp?'臨時請假':'今天請假'):'未上牌';
+  const sub=on?[r.serv?'#'+r.serv.sn+' '+r.serv.label+'・'+r.serv.start+' 起・預計 '+r.serv.end+' 回':'',r.onT?r.onT+' 上牌':'',r.out?'預定 '+r.out+' 下牌':'',r.rot?'輪班第 '+r.rot+' 位':'',r.ack?'✓ '+r.ack.t+' 已確認支數（'+(r.ack.zh||0)+' 支・老點 '+(r.ack.ld||0)+'）':'']
+    :offT?[offT+' 下牌',r.ack?'✓ '+r.ack.t+' 老師已確認今日支數（'+(r.ack.zh||0)+' 支・老點 '+(r.ack.ld||0)+'）':'老師還沒按今日支數確認']
     :w?[w.in?'班表 '+w.in+'～'+w.out:(w.support?'支援老師':'沒有排上牌時間'),w.eta?'預計 '+w.eta+' 到'+(w.note?'（'+w.note+'）':''):'',w.miss>0?'未到未電・逾 '+lateTxt(w.miss):'',w.lv?(w.kindL||'請假')+(w.tmp?(w.filed?'・已補假單':'・櫃台登記，待補假單'):''):'',w.lvTxt?'請假 '+w.lvTxt:'']:[];
   return (<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={onClose}>
     <div className="w-full max-w-sm bg-card rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
@@ -5043,7 +5107,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const CARD='w-[4.3rem] min-h-[3.4rem] flex flex-col items-center justify-center rounded-lg px-1 py-1 text-center leading-tight ';
   const T10='text-[10px] num leading-tight';
   const upCard=r=>{const p=press[r.tc],l=lao[r.tc],pos=r.tc===nextTc?'下一位':'第 '+r.rot+' 位';
-    if(r.serv)return [CARD+'border-2 bg-red-200 border-red-600 text-red-900',<><span className="text-[10px] leading-tight font-semibold bg-red-600 text-white rounded px-1 my-0.5">救援</span><span className={T10}>{r.serv.end}回</span><span className={T10}>{pos}</span></>];   // v0.1-135 救援牌：上牌區原地翻紅
+    if(r.serv)return [CARD+'border-2 bg-red-200 border-red-600 text-red-900',<><span className="text-[10px] leading-tight font-semibold bg-red-600 text-white rounded px-1 my-0.5">{r.serv.xl?'超長':'救援'}</span><span className={T10}>{r.serv.end}回</span><span className={T10}>{pos}</span></>];   // v0.1-135 救援牌：上牌區原地翻紅
     if(r.rest)return [CARD+'border bg-green-200 border-green-500 text-green-900',<><span className={T10}>休息</span><span className={T10}>{r.rest.t} 起</span></>];
     const zs=(r.zx||r.short)&&<span className="text-[10px] leading-tight">{r.zx?'準下':''}{r.zx&&r.short?'・':''}{r.short?'短單':''}</span>;
     if(l)return [CARD+'border bg-orange-200 border-orange-500 text-orange-900',<><span className={T10}>{pos}</span><span className={T10+' font-bold'}>老點 {l.t}</span>{zs}</>];
@@ -5091,7 +5155,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
             grp('服務中',board.serving.slice().sort((a,b)=>tm(a.serv.start)-tm(b.serv.start)||(Number(a.serv.sn)||0)-(Number(b.serv.sn)||0)).map(r=>[r.tc,[CARD+'border bg-red-200 border-red-400 text-red-900',<span className={T10}>{r.serv.end}回</span>]]),'text-red-700'),
             grp('未上牌',absent.wait.map(x=>[x.tc,wCard(x)])),
             grp('請假',nLv.map(x=>[x.tc,wCard(x)])),
-            grp('下牌',absent.off.map(r=>[r.tc,[CARD+'bg-neutral-100 text-neutral-500',<span className={T10}>{r.offT?r.offT+' 下牌':'未上牌'}</span>]]))];
+            grp('下牌',absent.off.map(r=>[r.tc,[CARD+'bg-neutral-100 text-neutral-500',<><span className={T10}>{r.offT?r.offT+' 下牌':'未上牌'}</span>{r.ack&&<span className="text-[10px] leading-tight text-sageD font-semibold">✓ 支數確認</span>}</>]]))];
           if(mode==='phone')return G.map((g,i)=><div key={i} className="flex flex-wrap gap-1.5 mb-2">{g}</div>);
           return <><div className="flex flex-wrap gap-1.5 mb-2">{G[0]}{gapCell('g1')}{G[1]}</div>
             <div className="flex flex-wrap gap-1.5 mb-2">{G[2]}{gapCell('g2')}{G[3]}{gapCell('g3')}{G[4]}</div></>})()}
@@ -5825,6 +5889,28 @@ function peoplePrefetch(){   // 老闆頁開啟時一併準備人員頁的資料
   loadMemAll();
 }
 /* v0.1-128 LINE 群發（GAS bcast，gas-4.57）：依開通名單的身分分組發送，每位算一則；額度用官方帳號的實際用量 */
+/* v0.1-158 老點 LINE 通知：① 休息中的老師有老點（櫃台安排、會員線上預約）② 每天 09:30 通知明天有老點的老師（多頁）。開關存在設定；次數由 GAS 自己記 */
+function NtCard({dr,up,toast,ask}){
+  const [I,setI]=useState(null);const [busy,setBusy]=useState('');const [err,setErr]=useState('');
+  const call=async(b,k)=>{setBusy(k||b.op);setErr('');try{const j=await cloud.call(Object.assign({action:'nt'},b),60000);if(b.op==='info')setI(j);return j}catch(e){setErr(e.message)}finally{setBusy('')}};
+  useEffect(()=>{if(cloudOn())call({op:'info'})},[]);
+  if(!cloudOn())return <div className="text-sm text-mute">要先開啟雲端同步才能設定。</div>;
+  const ym=ymd(new Date()).slice(0,7),cn=k=>I&&I.cnt&&I.cnt[k]?<>本月 <b className="num">{I.cnt[k][ym]||0}</b> 則・累計 <span className="num">{I.cnt[k].all||0}</span> 則</>:'本月 0 則';
+  const Row=({k,title,desc,kind})=><div className="py-2 border-b border-line last:border-0">
+    <label className="flex items-start gap-2"><input type="checkbox" className="mt-1 w-5 h-5 accent-[#6f7d62]" checked={dr[k]!==false} onChange={e=>up(x=>{x[k]=e.target.checked})}/><span className="flex-1"><span className="font-semibold">{title}</span><span className="block text-xs text-mute">{desc}</span></span></label>
+    <div className="flex items-center gap-2 mt-1.5 pl-7 text-xs"><span className="flex-1 text-mute">{cn(kind)}（系統自己記的）</span>
+      <button type="button" className="h-8 px-3 rounded-lg border border-sage text-sageD disabled:opacity-50" disabled={!!busy} onClick={async()=>{const j=await call({op:'test',kind},'t'+kind);if(j)toast&&toast('已發測試通知給 '+j.sent+' 位主管'+(j.sample?'（明天沒有老點，用範例內容）':''))}}>{busy==='t'+kind?'發送中…':'發測試給主管'}</button></div></div>;
+  return <div className="text-sm">
+    <Row k="ntRest" kind="rest" title="休息中的老師有老點時通知" desc="老師翻綠休息時，櫃台安排或會員線上預約指定他（今天的），用 LINE 通知「幾點有老點，請提前 10 分鐘進場」。"/>
+    <Row k="ntDaily" kind="daily" title="每天 09:30 通知明天有老點的老師" desc="多頁訊息：第 1 頁是明天幾月幾號有幾場，之後每場一頁（時間、項目、客人）。"/>
+    {I&&<div className="text-[11px] text-mute mt-2 space-y-0.5">
+      {I.last&&<div>最近一次每日通知：{I.last.at}・{fmtDate(I.last.date)} 的老點・發給 {I.last.sent} 位老師{(I.last.res||[]).some(x=>!x.sent)?'（'+I.last.res.filter(x=>!x.sent).map(x=>x.tc+(x.why==='nouid'?' 沒綁 LINE':' 沒發出')).join('、')+'）':''}</div>}
+      {!I.trig&&<div className="text-warn">GAS 還沒設定排程：請在 GAS 編輯器執行一次 setupNotifyTrigger（或 setupWarmTrigger），09:30 的通知才會自動發。</div>}</div>}
+    <button type="button" className="mt-2 h-8 px-3 rounded-lg border border-line text-xs disabled:opacity-50" disabled={!!busy} onClick={async()=>{if(!await ask({title:'現在發明天的老點通知？',msg:'會發給明天有老點的老師，每位 1 則額度。09:30 已經自動發過的話會重複發。',okText:'發送'}))return;const j=await call({op:'daily'},'d');if(j){toast&&toast(j.off?'這項通知已關閉':'已發給 '+j.sent+' 位老師');call({op:'info'})}}}>{busy==='d'?'發送中…':'現在補發明天的通知'}</button>
+    {err&&<div className="text-xs text-warn mt-2">✗ {err}</div>}
+    <div className="text-[11px] text-mute mt-2">開關改完要按「儲存設定」。老點＝預約有指定老師編號。</div>
+  </div>;
+}
 function LineBcast({toast,ask,dr,up}){
   const [P,setP]=useState(null);const [err,setErr]=useState('');const [busy,setBusy]=useState('');const [ct,setCt]=useState([]);   // v0.1-157 客人標籤（可複選，任一符合）
   const [tag,setTag]=useState('');const [title,setTitle]=useState('');const [text,setText]=useState('');const [btn,setBtn]=useState('');
@@ -6073,7 +6159,7 @@ function CustBook({toast,ask,mode,ks,admin,onOrder,me}){   // v0.1-132 me：建�
         {hist.list&&!hist.list.length&&<div className="text-xs text-mute">還沒有消費紀錄（訂單要選這位客人，並上傳雲端後才會出現）</div>}
         {hist.list&&hist.list.length>0&&<div className="max-h-56 overflow-y-auto">{hist.list.map((x,i)=><div key={i} className="flex items-baseline gap-2 py-1 border-b border-line last:border-0 text-xs num">
           <span className="w-11 text-mute">{mdTxt(x.date)}</span><span className="w-8 text-mute">#{x.sn}</span>
-          <span className="flex-1 min-w-0">{x.item}<span className="text-mute">・{x.tc}{x.ld?' 老點':''}</span>{x.skip&&<span className="ml-1 text-warn">跳單</span>}</span>
+          <span className="flex-1 min-w-0">{x.item}<span className="text-mute">・{x.tc}{x.ld?' 老點':''}</span>{x.skip&&<span className="ml-1 text-warn">跳單</span>}{x.rv&&<span className="block text-brown">{STARS(x.rv.s)} {x.rv.tc} 號評{(x.rv.tags||[]).length?'・'+x.rv.tags.join(' '):''}{x.rv.co?<span className="block text-ink">📝 {x.rv.co}</span>:''}</span>}</span>
           <span className="text-right">{money(x.amt)}{x.cp>0&&<span className="block text-brown">券 −{x.cp}</span>}</span></div>)}</div>}
       </div>}
       {f._m==='survey'?<>
@@ -6368,6 +6454,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-158','10-31','主櫃：超長單（一位客人超過 2 小時）開始 2 小時後紅牌移到上牌區最後，做完原地翻白。老點 LINE 通知：休息中的老師有老點時通知、每天 09:30 通知明天有老點的老師（多頁），老闆頁可關、記次數、可發測試給主管。老師頁：今日服務列出每一筆，點一下替客人評分（1～5 星）、加標籤、寫服務記錄（給公司看／給自己看），營業日換日後不能再記；「今日支數確認」按了就下牌，主櫃看得到（GAS gas-4.77）'],
   ['v0.1-157','10-30','客人標籤：會員資料可以自己加標籤（例：VIP、怕痛），也有自動標籤：男生／女生（依稱謂）、69老點（被 69 號老點過；老師編號可在 LINE 群發改）。會員列表顯示標籤，搜尋框打標籤也找得到。老闆頁 LINE 群發新增「依客人標籤」，顯示每個標籤可收 LINE 的人數，可複選發送。老師頁「我的預約情形」的預約開始顯示（GAS gas-4.76）'],
   ['v0.1-156','10-29','老師頁「我的預約情形」改成真的資料：上牌到下牌每小時一格，已服務、服務中、休息照主櫃的實際紀錄；今天接下來和明天，有指定這位老師的預約就標在格子上，下面列出時間、客人、項目。可切換今天／明天（預約需 GAS gas-4.76）'],
   ['v0.1-155','10-29','老闆頁「人員 → 老師／櫃台」的休假月曆、櫃台差勤，標題兩邊加 ‹ › 可以切換月份（看以前或之後的月份），旁邊「回本月」回到這個月'],
@@ -6934,6 +7021,8 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
       </Card>
       </>}
       {ST_&&<>
+      <div className={sec}>老點 LINE 通知（老師）</div>
+      <Card className="p-3"><NtCard dr={dr} up={up} toast={toast} ask={ask}/></Card>
       <div className={sec}>LINE 群發（依身分、客人標籤）</div>
       <Card className="p-3"><LineBcast toast={toast} ask={ask} dr={dr} up={up}/></Card>
       </>}
