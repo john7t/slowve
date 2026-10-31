@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-163</title>
+<title>緩緩門店 v0.1-164</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-163';
+const VER='v0.1-164';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -4827,7 +4827,8 @@ function LateSheet({x,list,late,onSave,onCancel,onClose}){
     </div></div>);
 }
 /* 點牌況的老師：休息／回來、準下、短單 */
-function TeacherSheet({r,w,onAct,onTb,onLate,onEnd,onOrder,onTmpLv,onClose}){   // v0.1-118：服務中的可以到時回牌；還沒上牌的可以登記臨時請假   // v0.1-116：點老師編號＝上牌／下牌＋其他動作（r＝牌況那一列；w＝未上牌／請假的資訊）
+const TB_K={on:'上牌',off:'下牌',rest:'休息',back:'回牌（休息結束）',zx:'準下',zxoff:'取消準下',short:'短單',shortoff:'取消短單',ack:'今日支數確認'};   // v0.1-164
+function TeacherSheet({r,w,onAct,onTb,onLate,onEnd,onOrder,onTmpLv,onClose,log}){   // v0.1-118：服務中的可以到時回牌；還沒上牌的可以登記臨時請假   // v0.1-116：點老師編號＝上牌／下牌＋其他動作（r＝牌況那一列；w＝未上牌／請假的資訊）
   const [back,setBack]=useState('');
   const opts=[15,30,60].map(m=>tf(tm(hm(new Date()))+m));
   const on=!!(r&&r.on),tc=(r||w).tc,offT=r&&!r.on&&r.offT;
@@ -4858,6 +4859,8 @@ function TeacherSheet({r,w,onAct,onTb,onLate,onEnd,onOrder,onTmpLv,onClose}){   
         :!(w&&w.lv)&&<div className="mb-2"><div className="text-xs text-mute mb-1">臨時請假（櫃台先登記，老師再上線補請假單）</div>
           <div className="grid grid-cols-2 gap-2"><button className="h-10 rounded-xl border border-neutral-400 text-sm" onClick={()=>onTmpLv('personal')}>事假</button><button className="h-10 rounded-xl border border-neutral-400 text-sm" onClick={()=>onTmpLv('sick')}>病假</button></div></div>)}
       {!on&&!offT&&!(w&&w.lv)&&onLate&&<button className="w-full h-11 rounded-xl border border-brown text-brown text-sm" onClick={onLate}>{w&&w.eta?'更新晚到（預計 '+w.eta+'）':'登記晚到（老師來電說會晚到）'}</button>}
+      {(log||[]).length>0&&<details className="mt-3 text-xs"><summary className="text-mute cursor-pointer">今日上下牌紀錄（{log.length}）</summary>
+        <div className="mt-1 max-h-40 overflow-y-auto">{log.map((e,k)=><div key={k} className="flex gap-2 py-0.5 border-b border-line last:border-0 num"><span className="w-11 text-mute">{e.t}</span><span className="flex-1">{TB_K[e.k]||e.k}{e.back?'（預計 '+e.back+' 回）':''}</span><span className="text-mute truncate max-w-[45%]">{e.by||''}</span></div>)}</div></details>}
       <button className="w-full h-10 mt-3 text-sm text-mute" onClick={onClose}>關閉</button>
     </div></div>);
 }
@@ -5229,7 +5232,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
     {xe&&<ExpenseEditor key={'mx'+xe.k} S={S} exp={xe.exp} locked={!!d.close} onSave={saveExp} onDelete={delExp} onClose={()=>setXe(null)} ask={ask}/>}
     {ed&&<OrderEditor key={'mc'+ed.k} S={S} order={ed.order} cu={ed.cu} init={ed.init} dayOrders={d.orders||[]} locked={!!d.close} mc={mcInfo} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
     {lateFor&&<LateSheet x={lateFor==='pick'?null:lateFor} list={absent.sched} late={late} onSave={saveLate} onCancel={tc=>{cancelLate(tc);setLateFor(null)}} onClose={()=>setLateFor(null)}/>}
-    {tsel&&((r,w)=>(r||w)&&<TeacherSheet r={r} w={w} onTb={onTb?k=>doTb(tsel,k):null} onLate={w&&!w.lv?()=>{setTsel(null);setLateFor(w)}:null}
+    {tsel&&((r,w)=>(r||w)&&<TeacherSheet log={(d.tb||[]).filter(e=>String(e.tc)===String(tsel)).sort((a,b)=>(a.at||0)-(b.at||0))} r={r} w={w} onTb={onTb?k=>doTb(tsel,k):null} onLate={w&&!w.lv?()=>{setTsel(null);setLateFor(w)}:null}
       onEnd={r&&r.serv?()=>{const o=(d.orders||[]).find(x=>x.id===r.serv.id);setTsel(null);if(o)act(o,'end')}:null} onOrder={r&&r.serv?()=>{const o=(d.orders||[]).find(x=>x.id===r.serv.id);setTsel(null);if(o)setSel(o)}:null}
       onTmpLv={(r&&r.on)?null:k=>tmpLvSet(tsel,k)} onClose={()=>setTsel(null)} onAct={(k,x)=>tAct(tsel,k,x)}/>)(board.list.find(x=>x.tc===tsel&&(x.on||x.offT)),absent.wait.find(x=>x.tc===tsel)||absent.lv.find(x=>x.tc===tsel&&x.lv))}
   </>;
@@ -6490,6 +6493,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-164','10-31','主櫃點老師編號，最下面多「今日上下牌紀錄」：每一次上牌、下牌、休息、回牌、準下、短單、支數確認的時間和操作的人'],
   ['v0.1-163','10-31','主櫃點老師編號時，輪班順位後面顯示「排隊依據」（例：16:36 #3 超長單滿 2 小時），方便核對白牌順序'],
   ['v0.1-162','10-31','LINE 群發可以發 Flex 卡片：發送內容選「Flex 卡片」，貼上 JSON，可以先「檢查格式（不發送）」、「先發給我自己」看樣子，再選對象群發（GAS gas-4.81）'],
   ['v0.1-161','10-31','主櫃畫面右側新增浮動按鈕：開單、預約、牌況、訂單、腳位、會員、支出、支援、交接，點一下就捲到那個區塊（收合的會展開）；最下面「收起」可以先藏起來'],
