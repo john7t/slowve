@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-161</title>
+<title>緩緩門店 v0.1-163</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-161';
+const VER='v0.1-163';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -4440,7 +4440,7 @@ const shiftOf=sh=>{const m=/^(\d\d:\d\d)-(\d\d:\d\d)$/.exec(sh||'');return m?{in
 function mcBoard(d,shifts){
   const T={};
   (d.tb||[]).slice().sort((a,b)=>(a.at||0)-(b.at||0)).forEach(e=>{const r=T[e.tc]||(T[e.tc]={tc:e.tc,zh:0,n:0});
-    if(e.k==='on'){r.on=true;r.onT=e.t;r.since=e.t;r.sinceAt=e.at||0;r.offT=null;r.rest=null;r.zx=false;r.short=false;r.ack=null}
+    if(e.k==='on'){r.on=true;r.onT=e.t;r.since=e.t;r.sinceAt=e.at||0;r.sinceWhy=e.t+' 上牌';r.offT=null;r.rest=null;r.zx=false;r.short=false;r.ack=null}
     else if(e.k==='ack')r.ack=Object.assign({t:e.t},e.ack||{});   // v0.1-158 老師按「今日支數確認」
     else if(e.k==='off'){r.on=false;r.offT=e.t;r.rest=null;r.zx=false;r.short=false}
     else if(e.k==='rest')r.rest={t:e.t,back:e.back||''};else if(e.k==='back')r.rest=null;
@@ -4450,11 +4450,11 @@ function mcBoard(d,shifts){
   (d.orders||[]).filter(mcLiveO).forEach(o=>orderItems(o).forEach(x=>{const tc=String(x.tc||'');if(!tc)return;
     const r=T[tc]||(T[tc]={tc,zh:0,n:0,on:false});r.zh+=Number(x.zh)||0;r.n++;
     const s0=tm(o.t||'00:00'),x2=s0+120,xl=!x.sh&&gDur(x)>120;
-    const sinceTo=m=>{if(r.on&&m>=tm(r.since||'06:00')){r.since=tf(m);r.sinceAt=o.ua||0}};
-    if(oSt(o)==='serving'){r.serv={id:o.id,sn:o.sn,end:mcEnd(o),start:o.t,label:(SVC_SHORT[x.svc]||'')+(x.min||''),rescue:!!x.sh,xl:xl&&nowM>=x2,xl0:xl,x2:tf(x2)};if(r.serv.xl)sinceTo(x2)}
-    else if(xl&&o.endAt&&tm(o.endAt)>x2)sinceTo(x2);   // 超長單做完：維持 2 小時那時排進去的位置
-    else if(o.endAt&&r.on&&!x.sh&&tm(o.endAt)>=tm(r.since||'06:00')){r.since=o.endAt;r.sinceAt=o.ua||0}   // v0.1-135 救援牌做完不移位置（仍是頭班）
-    if(x.sh){const s=T[String(x.sh.tc)];if(s&&s.on&&x.sh.t&&tm(x.sh.t)>=tm(s.since||'06:00')){s.since=x.sh.t;s.sinceAt=o.ua||0}}}));   // 被打槍的：從打槍的時間排到後面
+    const sinceTo=(m,w)=>{if(r.on&&m>=tm(r.since||'06:00')){r.since=tf(m);r.sinceAt=o.ua||0;r.sinceWhy=tf(m)+' '+w}};
+    if(oSt(o)==='serving'){r.serv={id:o.id,sn:o.sn,end:mcEnd(o),start:o.t,label:(SVC_SHORT[x.svc]||'')+(x.min||''),rescue:!!x.sh,xl:xl&&nowM>=x2,xl0:xl,x2:tf(x2)};if(r.serv.xl)sinceTo(x2,'#'+o.sn+' 超長單滿 2 小時')}
+    else if(xl&&o.endAt&&tm(o.endAt)>x2)sinceTo(x2,'#'+o.sn+' 超長單滿 2 小時（做完原地翻白）');   // 超長單做完：維持 2 小時那時排進去的位置
+    else if(o.endAt&&r.on&&!x.sh&&tm(o.endAt)>=tm(r.since||'06:00')){r.since=o.endAt;r.sinceAt=o.ua||0;r.sinceWhy=o.endAt+' #'+o.sn+' 到時回牌'}   // v0.1-135 救援牌做完不移位置（仍是頭班）
+    if(x.sh){const s=T[String(x.sh.tc)];if(s&&s.on&&x.sh.t&&tm(x.sh.t)>=tm(s.since||'06:00')){s.since=x.sh.t;s.sinceAt=o.ua||0;s.sinceWhy=x.sh.t+' #'+o.sn+' 被打槍'}}}));   // 被打槍的：從打槍的時間排到後面
   const list=Object.values(T);
   list.forEach(r=>{const sh=shiftOf((shifts||{})[r.tc]);r.out=sh?sh.out:''});
   const q=list.filter(r=>r.on&&(!r.serv||r.serv.rescue||r.serv.xl)).sort((a,b)=>tm(a.since||'06:00')-tm(b.since||'06:00')||(a.sinceAt||0)-(b.sinceAt||0));   // 同一分鐘：先上牌（先到時）的先
@@ -4832,7 +4832,7 @@ function TeacherSheet({r,w,onAct,onTb,onLate,onEnd,onOrder,onTmpLv,onClose}){   
   const opts=[15,30,60].map(m=>tf(tm(hm(new Date()))+m));
   const on=!!(r&&r.on),tc=(r||w).tc,offT=r&&!r.on&&r.offT;
   const head=on?(r.rest?'休息中':r.serv?(r.serv.rescue?'救援中（做完仍是頭班）':r.serv.xl?'超長單服務中（已排進上牌區，做完原地翻白）':r.serv.xl0?'超長單服務中（'+r.serv.x2+' 排進上牌區最後）':'服務中'):'上牌'):offT?'已下牌':w&&w.lv?(w.tmp?'臨時請假':'今天請假'):'未上牌';
-  const sub=on?[r.serv?'#'+r.serv.sn+' '+r.serv.label+'・'+r.serv.start+' 起・預計 '+r.serv.end+' 回':'',r.onT?r.onT+' 上牌':'',r.out?'預定 '+r.out+' 下牌':'',r.rot?'輪班第 '+r.rot+' 位':'',r.ack?'✓ '+r.ack.t+' 已確認支數（'+(r.ack.zh||0)+' 支・老點 '+(r.ack.ld||0)+'）':'']
+  const sub=on?[r.serv?'#'+r.serv.sn+' '+r.serv.label+'・'+r.serv.start+' 起・預計 '+r.serv.end+' 回':'',r.onT?r.onT+' 上牌':'',r.out?'預定 '+r.out+' 下牌':'',r.rot?'輪班第 '+r.rot+' 位'+(r.sinceWhy?'（排隊依據：'+r.sinceWhy+'）':''):'',r.ack?'✓ '+r.ack.t+' 已確認支數（'+(r.ack.zh||0)+' 支・老點 '+(r.ack.ld||0)+'）':'']
     :offT?[offT+' 下牌',r.ack?'✓ '+r.ack.t+' 老師已確認今日支數（'+(r.ack.zh||0)+' 支・老點 '+(r.ack.ld||0)+'）':'老師還沒按今日支數確認']
     :w?[w.in?'班表 '+w.in+'～'+w.out:(w.support?'支援老師':'沒有排上牌時間'),w.eta?'預計 '+w.eta+' 到'+(w.note?'（'+w.note+'）':''):'',w.miss>0?'未到未電・逾 '+lateTxt(w.miss):'',w.lv?(w.kindL||'請假')+(w.tmp?(w.filed?'・已補假單':'・櫃台登記，待補假單'):''):'',w.lvTxt?'請假 '+w.lvTxt:'']:[];
   return (<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6" onClick={onClose}>
@@ -5934,7 +5934,8 @@ function NtCard({dr,up,toast,ask}){
   </div>;
 }
 function LineBcast({toast,ask,dr,up}){
-  const [P,setP]=useState(null);const [err,setErr]=useState('');const [busy,setBusy]=useState('');const [ct,setCt]=useState([]);   // v0.1-157 客人標籤（可複選，任一符合）
+  const [P,setP]=useState(null);const [err,setErr]=useState('');const [busy,setBusy]=useState('');const [ct,setCt]=useState([]);const [mode,setMode]=useState('text');const [flex,setFlex]=useState('');const [alt,setAlt]=useState('');const [fok,setFok]=useState('');   // v0.1-162 Flex 卡片
+  // v0.1-157 客人標籤（可複選，任一符合）
   const [tag,setTag]=useState('');const [title,setTitle]=useState('');const [text,setText]=useState('');const [btn,setBtn]=useState('');
   const load=async()=>{setBusy('load');setErr('');try{setP(await cloud.call({action:'bcast',op:'preview'},60000))}catch(e){setErr(e.message)}setBusy('')};
   useEffect(()=>{if(cloudOn())load()},[]);
@@ -5943,8 +5944,11 @@ function LineBcast({toast,ask,dr,up}){
   const ctN=ct.length?(()=>{const x=CT.filter(y=>ct.includes(y.tag));return x.length===1?x[0].line:null})():0;   // 多個標籤會有重複的人，實際人數由 GAS 算（送出前再確認）
   const n=P&&tag?(tag==='ctag'?(ctN==null?CT.filter(y=>ct.includes(y.tag)).reduce((a,y)=>a+y.line,0):ctN):P.n[tag]):0,m=P&&P.msg,left=m?m.limit-m.used:0;
   const tagName=tag==='ctag'?'客人標籤：'+ct.join('、'):(P&&P.tags[tag])||'';
-  const send=async()=>{if(!await ask({title:'發給「'+tagName+'」'+(tag==='ctag'&&ct.length>1?'最多 ':'')+n+' 人？',msg:(title?'【'+title+'】\n':'')+text+'\n\n'+(tag==='ctag'&&ct.length>1?'同時有幾個標籤的人只發一次，實際人數可能比較少。':'')+'會用掉 '+n+' 則以內的額度（本月剩 '+left+' 則）。發出後不能收回。',okText:'發送'}))return;
-    setBusy('send');setErr('');try{const j=await cloud.call({action:'bcast',op:'send',tag,ctags:ct,title:title.trim(),text:text.trim(),btn},120000);setP(j);toast&&toast('已發送 '+j.sent+' 人'+(j.err?'（部分失敗）':''));setText('');setTitle('')}catch(e){setErr(e.message)}setBusy('')};
+  const isF=mode==='flex',body=isF?flex.trim():text.trim();
+  const fAlt=(()=>{if(alt.trim())return alt.trim();try{return JSON.parse(flex).altText||'緩緩通知'}catch(_e){return '緩緩通知'}})();
+  const ftry=async op=>{setBusy(op);setErr('');setFok('');try{const j=await cloud.call({action:'bcast',op,flex,alt:alt.trim()},60000);if(op==='fcheck')setFok('✓ 格式沒問題，LINE 可以收（通知列會顯示「'+j.alt+'」）');else{setFok('✓ 已發到你自己的 LINE，請打開手機看看');toast&&toast('已發給自己')}}catch(e){setErr(e.message)}setBusy('')};
+  const send=async()=>{if(!await ask({title:'發給「'+tagName+'」'+(tag==='ctag'&&ct.length>1?'最多 ':'')+n+' 人？',msg:(isF?'Flex 卡片（通知列：'+fAlt+'）':(title?'【'+title+'】\n':'')+text)+'\n\n'+(tag==='ctag'&&ct.length>1?'同時有幾個標籤的人只發一次，實際人數可能比較少。':'')+'會用掉 '+n+' 則以內的額度（本月剩 '+left+' 則）。發出後不能收回。',okText:'發送'}))return;
+    setBusy('send');setErr('');try{const j=await cloud.call(Object.assign({action:'bcast',op:'send',tag,ctags:ct},isF?{flex,alt:alt.trim()}:{title:title.trim(),text:text.trim(),btn}),120000);setP(j);toast&&toast('已發送 '+j.sent+' 人'+(j.err?'（部分失敗）':''));if(!isF){setText('');setTitle('')}}catch(e){setErr(e.message)}setBusy('')};
   return <div className="text-sm">
     {m&&<div className="text-xs mb-2">{m.on?<>本月已用 <b className="num">{m.used}</b> / {m.limit>=999999?'不限':m.limit} 則{m.real?'（官方帳號實際用量，含後台群發）':'（系統自己記的數字）'}</>:<span className="text-warn">GAS 還沒設定 LINE_MSG_TOKEN</span>}</div>}
     <div className="text-xs text-mute mb-1">發給</div>
@@ -5956,12 +5960,22 @@ function LineBcast({toast,ask,dr,up}){
       {dr&&up&&<div className="flex items-center gap-2 mb-2 text-xs"><span className="text-mute shrink-0">自動標籤「老點」的老師編號</span>
         <input className="w-32 h-8 px-2 rounded-lg border border-line bg-card num" placeholder="69" value={(dr.tagLd||['69']).join(',')} onChange={e=>{const v=e.target.value.split(/[,，、\s]+/).map(x=>x.replace(/\D/g,'')).filter(Boolean);up(x=>{x.tagLd=v})}}/>
         <span className="text-mute">（逗號分隔，按「儲存設定」生效）</span></div>}</>}
+    <div className="text-xs text-mute mb-1">發送內容</div>
+    <div className="flex rounded-lg border border-line overflow-hidden text-sm w-fit mb-2">{[['text','文字'],['flex','Flex 卡片']].map(([k,l])=><button key={k} type="button" className={'px-4 h-9 '+(mode===k?'bg-sage text-white':'bg-card')} onClick={()=>{setMode(k);setErr('');setFok('')}}>{l}</button>)}</div>
+    {isF?<>
+      <input className="w-full h-10 px-3 rounded-lg border border-line bg-card mb-2" maxLength={100} placeholder="通知列文字（例：【緩緩】新功能上線：服務評分）；JSON 裡有就可以不填" value={alt} onChange={e=>{setAlt(e.target.value);setFok('')}}/>
+      <textarea className="w-full h-40 px-3 py-2 rounded-lg border border-line bg-card mb-2 font-mono text-xs" placeholder={'把 Flex 的 JSON 整段貼在這裡（最外層是 bubble、carousel，或 type: flex 的整則訊息）'} value={flex} onChange={e=>{setFlex(e.target.value);setFok('')}}/>
+      <div className="flex gap-2 mb-2"><button type="button" className="flex-1 h-10 rounded-xl border border-sage text-sageD disabled:opacity-40" disabled={!flex.trim()||!!busy} onClick={()=>ftry('fcheck')}>{busy==='fcheck'?'檢查中…':'檢查格式（不發送）'}</button>
+        <button type="button" className="flex-1 h-10 rounded-xl border border-sage text-sageD disabled:opacity-40" disabled={!flex.trim()||!!busy} onClick={()=>ftry('fself')}>{busy==='fself'?'發送中…':'先發給我自己'}</button></div>
+      {fok&&<div className="text-xs text-sageD mb-2">{fok}</div>}
+      <div className="text-[11px] text-mute mb-2">卡片裡用到的圖片要先放到網路上（例：GitHub 的 brand 資料夾），打得開才會顯示。先發給自己看過再群發。</div>
+    </>:<>
     <input className="w-full h-10 px-3 rounded-lg border border-line bg-card mb-2" maxLength={40} placeholder="標題（選填，例：本週公休）" value={title} onChange={e=>setTitle(e.target.value)}/>
     <textarea className="w-full h-28 px-3 py-2 rounded-lg border border-line bg-card mb-2" maxLength={1000} placeholder="訊息內容" value={text} onChange={e=>setText(e.target.value)}/>
     <div className="text-xs text-mute mb-1">附按鈕（選填）</div>
-    <div className="flex flex-wrap gap-1.5 mb-2">{[['','不附'],['member','進入會員中心'],['staff','進入門店系統']].map(([k,l])=><button key={k||'none'} type="button" className={'h-8 px-3 rounded-full border text-xs '+(btn===k?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setBtn(k)}>{l}</button>)}</div>
+    <div className="flex flex-wrap gap-1.5 mb-2">{[['','不附'],['member','進入會員中心'],['staff','進入門店系統']].map(([k,l])=><button key={k||'none'} type="button" className={'h-8 px-3 rounded-full border text-xs '+(btn===k?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setBtn(k)}>{l}</button>)}</div></>}
     {tag&&n>left&&<div className="text-xs text-warn mb-2">額度不夠：本月剩 {left} 則，這組有 {n} 人。</div>}
-    <button className="w-full h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={!tag||!text.trim()||!n||n>left||!!busy} onClick={send}>{busy==='send'?'發送中…':tag?'發送給「'+tagName+'」'+(tag==='ctag'&&ct.length>1?'最多 ':'')+n+' 人':'先選要發給誰'}</button>
+    <button className="w-full h-11 rounded-xl bg-sage text-white disabled:opacity-40" disabled={!tag||!body||!n||n>left||!!busy} onClick={send}>{busy==='send'?'發送中…':tag?'發送給「'+tagName+'」'+(tag==='ctag'&&ct.length>1?'最多 ':'')+n+' 人':'先選要發給誰'}</button>
     {err&&<div className="text-xs text-warn mt-2">✗ {err}</div>}
     {P&&(P.log||[]).length>0&&<div className="mt-3 pt-2 border-t border-line"><div className="text-xs text-mute mb-1">最近發送</div>
       {P.log.slice(0,8).map((x,i)=><div key={i} className="text-xs py-1 border-b border-line last:border-0"><span className="num text-mute mr-2">{x.t}</span>{x.label||P.tags[x.tag]||x.tag} <span className="num">{x.n}</span> 人・{x.title?'【'+x.title+'】':''}{x.text}{x.err&&<span className="text-warn">（{x.err}）</span>}</div>)}</div>}
@@ -6476,6 +6490,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-163','10-31','主櫃點老師編號時，輪班順位後面顯示「排隊依據」（例：16:36 #3 超長單滿 2 小時），方便核對白牌順序'],
+  ['v0.1-162','10-31','LINE 群發可以發 Flex 卡片：發送內容選「Flex 卡片」，貼上 JSON，可以先「檢查格式（不發送）」、「先發給我自己」看樣子，再選對象群發（GAS gas-4.81）'],
   ['v0.1-161','10-31','主櫃畫面右側新增浮動按鈕：開單、預約、牌況、訂單、腳位、會員、支出、支援、交接，點一下就捲到那個區塊（收合的會展開）；最下面「收起」可以先藏起來'],
   ['v0.1-160','10-31','主櫃到了營業日換日時間（預設 05:00）自動登出回首頁，畫面提示「營業日已切換，請用自己的登入碼重新登入」；GAS 發的主櫃工作階段也只到換日時間為止（GAS gas-4.80）'],
   ['v0.1-159','10-31','老點 LINE 通知的「發測試給主管」一律用範例資料（明天沒有預約也能發）；沒發出時顯示原因（GAS gas-4.78）'],
