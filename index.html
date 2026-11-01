@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-167</title>
+<title>緩緩門店 v0.1-170</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-167';
+const VER='v0.1-170';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -149,7 +149,7 @@ function mergeSettings(s){
   // v0.1-123 線上預約（客人頁）：開放、當天也可以、可指定老師、取消時限（小時）、一次最多幾位、LINE 確認
   // v0.1-128 店家資訊（圖文選單下排、會員中心）
   r.shopAddr=s.shopAddr||'新北市板橋區雙十路三段 10 巷 1 號 1 樓';r.shopTel=s.shopTel||'02-8257-1199';r.shopIg=s.shopIg||'';r.shopMap=s.shopMap||'';
-  r.gbOn=s.gbOn!==false;r.gbToday=!!s.gbToday;r.gbTc=s.gbTc!==false;r.gbNotify=s.gbNotify!==false;r.gbEdit=!!s.gbEdit;r.gbMgr=!!s.gbMgr;r.gbSelfIn=!!s.gbSelfIn;r.ntRest=s.ntRest!==false;r.ntDaily=s.ntDaily!==false;r.tagLd=Array.isArray(s.tagLd)?s.tagLd.map(x=>String(x).replace(/\D/g,'')).filter(Boolean).slice(0,10):['69'];r.gbNotice=String(s.gbNotice||'');r.disasterDays=Array.isArray(s.disasterDays)?s.disasterDays.filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)):[];
+  r.gbOn=s.gbOn!==false;r.gbToday=!!s.gbToday;r.gbTc=s.gbTc!==false;r.gbNotify=s.gbNotify!==false;r.gbEdit=!!s.gbEdit;r.gbMgr=!!s.gbMgr;r.gbSelfIn=!!s.gbSelfIn;r.boardMode=s.boardMode==='fixed'?'fixed':'return';r.shBack=s.shBack!==false;r.ntRest=s.ntRest!==false;r.ntDaily=s.ntDaily!==false;r.tagLd=Array.isArray(s.tagLd)?s.tagLd.map(x=>String(x).replace(/\D/g,'')).filter(Boolean).slice(0,10):['69'];r.gbNotice=String(s.gbNotice||'');r.disasterDays=Array.isArray(s.disasterDays)?s.disasterDays.filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)):[];
   r.gbCancelH=s.gbCancelH==null||s.gbCancelH===''?3:Math.max(0,Math.min(48,Number(s.gbCancelH)||0));r.gbMax=Math.max(1,Math.min(6,Number(s.gbMax)||4));   // v0.1-107：主櫃系統測試上線（真的畫面，資料只存在主櫃那台、不上傳；會員資料是真的）
   // v0.1-070：主櫃座位與規則（腳位、床位、開放床位、清潔時間）
   r.seatFoot=Math.max(1,Math.min(20,Number(s.seatFoot)||4));
@@ -291,7 +291,7 @@ function syncCpExp(d,oid){
   const old=(d.expenses||[]).find(e=>e.id===id);
   d.expenses=(d.expenses||[]).filter(e=>e.id!==id);
   const c=o&&!o.void&&!o.del?orderCp(o):{n:0};
-  if(c.n){const now=Date.now();d.expenses.push({id,cat:'媒體宣傳',name:'IG 打卡折價券 #'+(o.sn||'-')+(c.n>1?'（'+c.n+' 張）':''),amt:c.amt,cash:true,note:'使用折價券自動新增',cpo:oid,ca:old?old.ca:now,ua:now})}
+  if(c.n){const now=Date.now();const nm=[...new Set(orderItems(o).filter(x=>Number(x.cp)>0).map(x=>x.cpn||'IG 打卡折價券'))].join('、');d.expenses.push({id,cat:'媒體宣傳',name:nm+' #'+(o.sn||'-')+(c.n>1?'（'+c.n+' 張）':''),amt:c.amt,cash:true,note:'使用折價券自動新增',cpo:oid,ca:old?old.ca:now,ua:now})}
   return d;
 }
 const orderTcs=o=>orderItems(o).map(x=>x.tc);
@@ -458,6 +458,25 @@ function NoteBox({value,onChange,placeholder,max,cls}){
     {hist.length>0&&<div className="flex flex-wrap gap-1.5 mt-1.5"><span className="text-[11px] text-mute self-center">之前的備註</span>{hist.map(h=><button key={h} type="button" className={chip(parts.includes(h))} onClick={()=>tog(h)}>{h}</button>)}</div>}
   </div>;
 }
+/* v0.1-168 主櫃開單的優惠券：輸入序號（下面列這台最近用過的序號），GAS 檢查期間、會員、LINE、每人次數後套用。
+   套用後 item.cp＝折抵、cpc＝序號、cpn＝名稱；營業額照原價，折抵記成「媒體宣傳」支出（syncCpExp） */
+function CpnBox({it,setIt,line,oid}){
+  const [code,setCode]=useState('');const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  const [rec,setRec]=useState(()=>jget('cpn-recent',[]));
+  const apply=async c=>{c=String(c||code).trim().toUpperCase();if(!c)return setErr('請輸入優惠券序號');if(!line)return setErr('主櫃上線後才能用優惠券序號');
+    setBusy(true);setErr('');try{const j=await custLineCall(line,{op:'cpcheck',code:c,cuId:(it.cu&&it.cu.id)||'',oid:oid||''});const cp=j.cp;
+      setIt(()=>({cp:cp.amt,cpc:cp.code,cpn:cp.name}));const r=[cp.code].concat(rec.filter(x=>x!==cp.code)).slice(0,6);setRec(r);jset('cpn-recent',r);setCode('')}catch(e){setErr(e.message)}setBusy(false)};
+  if(Number(it.cp)>0)return <div className="-mt-2 mb-4 flex items-center gap-2 px-3 min-h-11 rounded-xl border border-brown bg-brownL text-brown">
+    <span className="flex-1 text-sm">🎟 {it.cpn||'IG 打卡折價券'} <span className="num font-semibold">−{money(it.cp)}</span>{it.cpc&&<span className="ml-1 text-xs num opacity-80">{it.cpc}</span>}<span className="block text-[11px] text-mute">營業額照原價，折抵自動記成媒體宣傳支出</span></span>
+    <button type="button" className="w-8 h-8 rounded-full border border-brown/40 bg-card" aria-label="取消優惠券" onClick={()=>setIt(()=>({cp:0,cpc:'',cpn:''}))}>✕</button></div>;
+  return <div className="-mt-2 mb-4">
+    <div className="flex gap-2"><input className="flex-1 min-w-0 h-11 px-3 rounded-xl border border-line bg-card num uppercase" maxLength={16} placeholder="優惠券序號（例：SVJOIN100）" value={code} onChange={e=>{setCode(e.target.value.replace(/[^0-9a-z]/gi,'').toUpperCase());setErr('')}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();apply()}}}/>
+      <button type="button" className="h-11 px-4 rounded-xl border border-brown text-brown shrink-0 disabled:opacity-40" disabled={busy||!code} onClick={()=>apply()}>{busy?'檢查中…':'套用'}</button></div>
+    {rec.length>0&&<div className="flex flex-wrap items-center gap-1.5 mt-1.5"><span className="text-[11px] text-mute">近期：</span>{rec.map(c=><button key={c} type="button" disabled={busy} className="h-8 px-2.5 rounded-full border border-line bg-card text-xs num" onClick={()=>apply(c)}>{c}</button>)}</div>}
+    {err&&<div className="text-xs text-warn mt-1">✗ {err}</div>}
+    {!it.cu&&<div className="text-[11px] text-mute mt-1">會員限定的優惠券要先選客人（上面的「客人」）。</div>}
+  </div>;
+}
 function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onClose,ask,prev,count,inline,cu,mc,init}){   // v0.1-110 init：{items:[…]} 預約報到、候位入座帶入
   const isNew=!order;
   const origItems=order?orderItems(order):[];
@@ -535,7 +554,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
       const sameX2=!Number(o.ex2)||o.exs2===x.exs2,dEx2=sameX2?(Number(x.ex2)||0)-(Number(o.ex2)||0):-1;
       if(dEx<0||dEx2<0||lost)return [];const A=(o.adds||[]).slice();const d=priced[i].amt-(o.amt||0);
       if((dEx>0||dEx2>0||dAd.length)&&d>0)A.push(Object.assign({t:tNow,ex:Math.max(0,dEx),ad:dAd,amt:d},dEx2>0?{ex2:dEx2,exs2:x.exs2}:{}));return A};
-    const items=f.items.map((x,i)=>{const A=addsOf(x,i);return Object.assign({svc:x.svc,min:x.min,promo:!!x.promo,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,ex2:x.exs2&&x.exs2!==x.svc?Number(x.ex2)||0:0,exs2:x.exs2&&x.exs2!==x.svc&&Number(x.ex2)?x.exs2:null,emp:!!x.emp,cp:Number(x.cp)||0,ad:[...x.ad],tc:String(x.tc).trim(),cu:x.cu||null,ld:!!x.ld,rj:x.sh&&!(x.rj||[]).includes(String(x.sh.tc))?[...(x.rj||[]),String(x.sh.tc)]:[...(x.rj||[])],seat:x.seat||'',amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh},(priced[i].xs||[]).length?{xs:priced[i].xs}:{},A.length?{adds:A}:{},x.sh?{sh:Object.assign({tc:String(x.sh.tc),zh:Number(x.sh.zh)||0,t:x.sh.t||''},x.sh.tm?{tm:x.sh.tm}:{})}:{},mc&&!isNew&&!origItems[i]?{lateT:tNow}:x.lateT?{lateT:x.lateT}:{})});
+    const items=f.items.map((x,i)=>{const A=addsOf(x,i);return Object.assign({svc:x.svc,min:x.min,promo:!!x.promo,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,ex2:x.exs2&&x.exs2!==x.svc?Number(x.ex2)||0:0,exs2:x.exs2&&x.exs2!==x.svc&&Number(x.ex2)?x.exs2:null,emp:!!x.emp,cp:Number(x.cp)||0,cpc:Number(x.cp)?(x.cpc||''):'',cpn:Number(x.cp)?(x.cpn||''):'',ad:[...x.ad],tc:String(x.tc).trim(),cu:x.cu||null,ld:!!x.ld,rj:x.sh&&!(x.rj||[]).includes(String(x.sh.tc))?[...(x.rj||[]),String(x.sh.tc)]:[...(x.rj||[])],seat:x.seat||'',amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh},(priced[i].xs||[]).length?{xs:priced[i].xs}:{},A.length?{adds:A}:{},x.sh?{sh:Object.assign({tc:String(x.sh.tc),zh:Number(x.sh.zh)||0,t:x.sh.t||''},x.sh.tm?{tm:x.sh.tm}:{})}:{},mc&&!isNew&&!origItems[i]?{lateT:tNow}:x.lateT?{lateT:x.lateT}:{})});
     const keepMc={};['st','end','endAt','pay','by'].forEach(k=>{if(f[k]!=null)keepMc[k]=f[k]});   // v0.1-105：主櫃的狀態欄位，老闆修正時保留
     if(mc)noteRemember(f.note);
     onSave(Object.assign(keepMc,isNew&&mc&&f.prePay?{prePay:true}:{},f.del?{del:true,snDel:f.snDel,delAt:f.delAt}:{},{id:f.id,sn,t:f.t||'',note:f.note||'',void:!!f.void,skip:!!f.skip,skipRev:!!f.skipRev,skipBy:f.skipBy||'store',skipNote:f.skipNote||'',items,ca:f.ca||now,ua:now}),!!next);
@@ -682,8 +701,9 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
           <button type="button" className={'w-full h-11 rounded-xl border mb-4 text-left px-3 '+(it.emp?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setIt(x=>({emp:!x.emp}))}>
             {it.emp?'☑':'☐'} 員工按摩（{Math.round((Number(S.empRate)||1)*10)} 折）<span className="text-xs text-mute ml-1">老師費用照算</span>
           </button>
-{          <button type="button" className={'w-full h-11 rounded-xl border -mt-2 mb-4 text-left px-3 '+(Number(it.cp)?'bg-brownL border-brown text-brown':'bg-card border-line')} onClick={()=>setIt(x=>({cp:Number(x.cp)?0:(Number(S.coupon)||100)}))}>
-            {Number(it.cp)?'☑':'☐'} IG 打卡折價券 <span className="num">−{money(Number(it.cp)||Number(S.coupon)||100)}</span><span className="text-xs text-mute ml-1">自動記一筆媒體宣傳支出，老師費用照算</span>
+{mc?<CpnBox it={it} setIt={setIt} line={mc.line} oid={order&&order.id}/>:
+          <button type="button" className={'w-full h-11 rounded-xl border -mt-2 mb-4 text-left px-3 '+(Number(it.cp)?'bg-brownL border-brown text-brown':'bg-card border-line')} onClick={()=>setIt(x=>({cp:Number(x.cp)?0:(Number(S.coupon)||100),cpc:'',cpn:''}))}>
+            {Number(it.cp)?'☑':'☐'} {it.cpn||'IG 打卡折價券'} <span className="num">−{money(Number(it.cp)||Number(S.coupon)||100)}</span><span className="text-xs text-mute ml-1">自動記一筆媒體宣傳支出，老師費用照算</span>
           </button>}
           {(()=>{const tot0=zhiCalc(it,S),sh=it.sh;   // v0.1-135 打槍：原本的老師＝被打槍；選他做了幾支（0＝未滿 30 分鐘）；老師欄改成救援老師
             const on=()=>{if(!String(it.tc||'').trim())return;const head=it.svc?skHead(it.svc,[String(it.tc)]):mc&&(mc.tcs.find(t=>t.next&&t.tc!==String(it.tc))||mc.tcs.find(t=>!t.serv&&!t.rest&&t.tc!==String(it.tc)));
@@ -948,7 +968,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
       <MoneyRows title="營業額" meta={<>{st.n} 單{st.guests>st.n&&<span>・{st.guests} 位</span>}・{st.zh} 支{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</>}
         amt={st.amt} cashIn={st.cash} expCash={ex.cash} nonCash={ex.total-ex.cash} sup={sup.pay} skipRev={st.skipRev} fee={st.cm-sup.cm}/>
       {(()=>{const c=dd.orders.filter(o=>!o.void&&!o.del).reduce((a,o)=>{orderItems(o).forEach(x=>{if(Number(x.cp)){a.n++;a.amt+=Number(x.cp)}});return a},{n:0,amt:0});
-        return c.n>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-brown num">IG 打卡折價券 {c.n} 張・已折 {money(c.amt)}<span className="text-xs text-mute ml-1">（營業額照原價，已自動記為「媒體宣傳」支出；老師費用照算）</span></div>})()}
+        return c.n>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-brown num">優惠券 {c.n} 張・已折 {money(c.amt)}<span className="text-xs text-mute ml-1">（營業額照原價，已自動記為「媒體宣傳」支出；老師費用照算）</span></div>})()}
       {st.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {st.skipN} 筆・未收 {money(st.skip)}{st.skipRev>0&&<span>（其中 {money(st.skipRev)} 計入營業額）</span>}</div>}
     </Card>
   );
@@ -4459,6 +4479,7 @@ const shiftOf=sh=>{const m=/^(\d\d:\d\d)-(\d\d:\d\d)$/.exec(sh||'');return m?{in
    v0.1-110：tb 也記休息（rest／back，休息中保留順位、來客時略過，A2）、準下（zx／zxoff，A10）、短單（short／shortoff，A11）；下牌時全部清掉。
    shifts：{tc:'HH:mm-HH:mm'} 班表，準下用下牌時間 out。 */
 function mcBoard(d,shifts){
+  const S0=loadSettings(),fixed=(d.bmode||S0.boardMode)==='fixed',shBack=d.bmode?d.shBack!==false:S0.shBack!==false;   // v0.1-170 上牌順位：一律照上牌時間，做完原地翻白
   const T={};
   (d.tb||[]).slice().sort((a,b)=>(a.at||0)-(b.at||0)).forEach(e=>{const r=T[e.tc]||(T[e.tc]={tc:e.tc,zh:0,n:0});
     if(e.k==='on'){r.on=true;r.onT=e.t;r.since=e.t;r.sinceAt=e.at||0;r.sinceWhy=e.t+' 上牌';r.offT=null;r.rest=null;r.zx=false;r.short=false;r.ack=null}
@@ -4470,12 +4491,12 @@ function mcBoard(d,shifts){
   /* v0.1-158 超長單：一位客人服務超過 2 小時（含加鐘、加項）。開始 2 小時後，紅牌移到上牌區（白牌）最後面排隊；做完原地翻白，不再移到後面 */
   (d.orders||[]).filter(mcLiveO).forEach(o=>orderItems(o).forEach(x=>{const tc=String(x.tc||'');if(!tc)return;
     const r=T[tc]||(T[tc]={tc,zh:0,n:0,on:false});r.zh+=Number(x.zh)||0;r.n++;
-    const s0=tm(o.t||'00:00'),x2=s0+120,xl=!x.sh&&gDur(x)>120;
+    const s0=tm(o.t||'00:00'),x2=s0+120,xl=!fixed&&!x.sh&&gDur(x)>120;
     const sinceTo=(m,w)=>{if(r.on&&m>=tm(r.since||'06:00')){r.since=tf(m);r.sinceAt=o.ua||0;r.sinceWhy=tf(m)+' '+w}};
     if(oSt(o)==='serving'){r.serv={id:o.id,sn:o.sn,end:mcEnd(o),start:o.t,label:(SVC_SHORT[x.svc]||'')+(x.min||''),rescue:!!x.sh,xl:xl&&nowM>=x2,xl0:xl,x2:tf(x2)};if(r.serv.xl)sinceTo(x2,'#'+o.sn+' 超長單滿 2 小時')}
     else if(xl&&o.endAt&&tm(o.endAt)>x2)sinceTo(x2,'#'+o.sn+' 超長單滿 2 小時（做完原地翻白）');   // 超長單做完：維持 2 小時那時排進去的位置
-    else if(o.endAt&&r.on&&!x.sh&&tm(o.endAt)>=tm(r.since||'06:00')){r.since=o.endAt;r.sinceAt=o.ua||0;r.sinceWhy=o.endAt+' #'+o.sn+' 到時回牌'}   // v0.1-135 救援牌做完不移位置（仍是頭班）
-    if(x.sh){const s=T[String(x.sh.tc)];if(s&&s.on&&x.sh.t&&tm(x.sh.t)>=tm(s.since||'06:00')){s.since=x.sh.t;s.sinceAt=o.ua||0;s.sinceWhy=x.sh.t+' #'+o.sn+' 被打槍'}}}));   // 被打槍的：從打槍的時間排到後面
+    else if(!fixed&&o.endAt&&r.on&&!x.sh&&tm(o.endAt)>=tm(r.since||'06:00')){r.since=o.endAt;r.sinceAt=o.ua||0;r.sinceWhy=o.endAt+' #'+o.sn+' 到時回牌'}   // v0.1-135 救援牌做完不移位置（仍是頭班）
+    if(x.sh&&(!fixed||shBack)){const s=T[String(x.sh.tc)];if(s&&s.on&&x.sh.t&&tm(x.sh.t)>=tm(s.since||'06:00')){s.since=x.sh.t;s.sinceAt=o.ua||0;s.sinceWhy=x.sh.t+' #'+o.sn+' 被打槍'}}}));   // 被打槍的：從打槍的時間排到後面
   const list=Object.values(T);
   list.forEach(r=>{const sh=shiftOf((shifts||{})[r.tc]);r.out=sh?sh.out:''});
   const q=list.filter(r=>r.on&&(!r.serv||r.serv.rescue||r.serv.xl)).sort((a,b)=>tm(a.since||'06:00')-tm(b.since||'06:00')||(a.sinceAt||0)-(b.sinceAt||0));   // 同一分鐘：先上牌（先到時）的先
@@ -4890,8 +4911,7 @@ const lateTxt=m=>m>=60?Math.floor(m/60)+' 時'+(m%60?' '+(m%60)+' 分':''):m+' �
 /* 主櫃：點訂單的明細（金額只在這裡顯示）。服務中→到時；到時→買單（可勾 IG 打卡折價券）；老闆、主管可以取消買單 */
 function McOrderSheet({o,S,isOwner,onClose,onAct,onEdit,ask}){
   const its=orderItems(o),st=oSt(o),C=Number(S.coupon)||100;
-  const [cps,setCps]=useState(()=>its.map(x=>Number(x.cp)>0));
-  const cpOf=(x,j)=>st==='done'?(cps[j]?Math.min(C,x.amt||0):0):Math.min(Number(x.cp)||0,x.amt||0);
+  const cpOf=(x,j)=>Math.min(Number(x.cp)||0,x.amt||0);   // v0.1-168 優惠券在開單／修改訂單時輸入序號
   const tot=its.reduce((a,x,j)=>a+(x.amt||0)-cpOf(x,j),0);
   const pre=oPaid(o),due=o.pay?Math.max(0,tot-pre):tot;   // v0.1-134 先買單後又加點：只收差額
   const ST={serving:['服務中'+(o.pay?(oDue(o)?'・先付＋後加未付':'・已先付'):''),'text-brown'],done:[o.pay?'到時・待收後加':'到時・待買單','text-warn'],paid:['已完成','text-sageD']}[st];
@@ -4906,14 +4926,14 @@ function McOrderSheet({o,S,isOwner,onClose,onAct,onEdit,ask}){
         <div className="flex justify-between gap-2"><span>{its.length>1&&<span className="text-xs text-mute mr-1">客{j+1}</span>}{orderLabel(itemBase(x),S)}{x.lateT&&<span className="ml-1 text-xs text-brown num">{x.lateT} 加入</span>}</span><span className="num">{money(itemBase(x).amt)}</span></div>
         {(x.adds||[]).map((a,k)=><div key={k} className="flex justify-between gap-2 text-brown"><span>＋ {addLabel(a,x,S)} <span className="num text-xs">{a.t}</span></span><span className="num">{money(a.amt)}</span></div>)}
         <div className="text-xs text-mute mt-0.5">老師 <span className="num text-ink">{x.tc}</span>{x.sh?<span className="text-red-700">（救援 {x.zh} 支・{x.sh.tc} 被打槍 {x.sh.zh} 支{x.sh.t?'・'+x.sh.t+' 打槍':''}{x.sh.tm?'・計時器剩 '+x.sh.tm:''}）</span>:''}{x.ld?'・老點':''}{x.seat?'・'+SEAT_NAME(x.seat):''}{x.cu?'・客人 '+cuLabel(x.cu,its.filter((y,k)=>k!==j&&y.cu).map(y=>y.cu)):''}{st!=='done'&&Number(x.cp)>0?<span className="text-brown">・IG 打卡折價券 −{money(Math.min(Number(x.cp),x.amt||0))}</span>:''}</div>
-        {st==='done'&&<button type="button" className={'mt-1.5 w-full h-9 rounded-lg border text-left px-2 text-sm '+(cps[j]?'bg-brownL border-brown text-brown':'bg-card border-line')} onClick={()=>setCps(cps.map((v,i)=>i===j?!v:v))}>
-          {cps[j]?'☑':'☐'} IG 打卡折價券 <span className="num">−{money(C)}</span><span className="text-xs text-mute ml-1">記為媒體宣傳支出</span></button>}
+        {Number(x.cp)>0&&<div className="mt-1 text-xs text-brown">🎟 {x.cpn||'IG 打卡折價券'} <span className="num">−{money(cpOf(x,j))}</span>{x.cpc&&<span className="ml-1 num opacity-80">{x.cpc}</span>}</div>}
       </div>)}
       <div className="flex justify-between items-baseline pt-3"><span>{its.some((x,j)=>cpOf(x,j)>0)?'實收':'合計'}</span><span className="serif text-2xl text-brown num">{money(tot)}</span></div>
       {st!=='paid'&&o.pay&&<div className={'mt-3 px-3 py-2 rounded-lg text-sm '+(oDue(o)||st==='done'?'bg-warnL text-warn':'bg-sageL text-sageD')}>✓ 已先付 <span className="num">{money(pre)}</span>（<span className="num">{o.pay.t}</span>{o.pay.by?'・'+o.pay.by:''}）{st==='serving'?(oDue(o)?<>・後加 <b className="num">{money(oDue(o))}</b> 還沒收，到時再收</>:'・到時直接完成'):<>・要再收 <b className="num">{money(due)}</b></>}</div>}
       {st==='serving'&&<button className="w-full h-12 mt-3 rounded-xl bg-brown text-white text-lg" onClick={end}>到時（服務結束）</button>}
       {st==='serving'&&o.pay&&isOwner&&<button className="w-full h-10 mt-2 rounded-xl border border-warn text-warn text-sm" onClick={()=>onAct('unpre')}>取消先買單（老闆、主管）</button>}
-      {st==='done'&&<button className="w-full h-12 mt-3 rounded-xl bg-sage text-white text-lg" onClick={()=>onAct('pay',{cps,m:'cash'})}>{o.pay?'收後加・現金 ':'買單・現金 '}{money(due)}</button>}
+      {st==='done'&&<button className="w-full h-12 mt-3 rounded-xl bg-sage text-white text-lg" onClick={()=>onAct('pay',{m:'cash'})}>{o.pay?'收後加・現金 ':'買單・現金 '}{money(due)}</button>}
+      {st!=='paid'&&!its.some(x=>Number(x.cp)>0)&&<div className="text-[11px] text-mute mt-2">要用優惠券（IG 打卡、LINE 加入會員禮等）請按「修改訂單」，在客人那一欄輸入序號。</div>}
       {st==='done'&&<button className="w-full h-10 mt-1 text-sm text-mute underline" onClick={()=>onAct('unend')}>還沒結束，改回服務中</button>}
       {st==='paid'&&isOwner&&<button className="w-full h-10 mt-2 rounded-xl border border-warn text-warn text-sm" onClick={()=>onAct('unpay')}>取消買單（老闆、主管）{o.pay&&o.pay.pre?'・連同先買單':''}</button>}
       {(st!=='paid'||isOwner)&&<button className="w-full h-11 mt-2 rounded-xl border border-sage text-sageD" onClick={onEdit}>修改訂單</button>}
@@ -5122,7 +5142,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
       if(k==='end'){y.st=y.pay&&!oDue(y)?'paid':'done';y.endAt=t}   // 先買單的到時直接完成；後加的還沒收→待買單收差額
       if(k==='unend'){y.st='serving';delete y.endAt}
       if(k==='unpre'){delete y.pay}
-      if(k==='pay'){const C=Number(S.coupon)||100;y.items=orderItems(y).map((it,j)=>Object.assign({},it,{cp:x.cps[j]?Math.min(C,it.amt||0):0}));y.st='paid';y.pay=y.pay?Object.assign({},y.pay,{t2:t,by2:op.name}):{m:x.m||'cash',t,by:op.name};y.pay.amt=oNet(y)}
+      if(k==='pay'){if(x.cps){const C=Number(S.coupon)||100;y.items=orderItems(y).map((it,j)=>Object.assign({},it,{cp:x.cps[j]?Math.min(C,it.amt||0):0}))}y.st='paid';y.pay=y.pay?Object.assign({},y.pay,{t2:t,by2:op.name}):{m:x.m||'cash',t,by:op.name};y.pay.amt=oNet(y)}
       if(k==='unpay'){y.st=y.endAt?'done':'serving';delete y.pay}
       y.ua=at;dd.log=(dd.log||[]).concat([{act:'mc-'+k,at,sn:y.sn,by:op.name}]);
       return k==='pay'||k==='unpay'||k==='unpre'?syncCpExp(dd,y.id):dd});
@@ -5936,6 +5956,52 @@ function peoplePrefetch(){   // 老闆頁開啟時一併準備人員頁的資料
 }
 /* v0.1-128 LINE 群發（GAS bcast，gas-4.57）：依開通名單的身分分組發送，每位算一則；額度用官方帳號的實際用量 */
 /* v0.1-158 老點 LINE 通知：① 休息中的老師有老點（櫃台安排、會員線上預約）② 每天 09:30 通知明天有老點的老師（多頁）。開關存在設定；次數由 GAS 自己記 */
+/* v0.1-168 優惠券管理（老闆、主管）：新增時系統產生序號（可自訂）；預設每人 1 次、本月 1 號起 3 個月；可限 LINE 會員、或不用選會員（例：IG 打卡）。使用次數從日報訂單算 */
+function CpnAdmin({toast,ask}){
+  const [L,setL]=useState(null);const [f,setF]=useState(null);const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [open,setOpen]=useState('');
+  const call=async(b,k)=>{setBusy(k||b.op);setErr('');try{const j=await cloud.call(Object.assign({action:'cpn'},b),60000);if(j.list)setL(j.list);return j}catch(e){setErr(e.message)}finally{setBusy('')}};
+  useEffect(()=>{if(cloudOn())call({op:'list'})},[]);
+  if(!cloudOn())return <div className="text-sm text-mute">要先開啟雲端同步才能設定。</div>;
+  const ymdOf=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  const newF=async()=>{const n=new Date();const j=await call({op:'gen'},'gen');setF({isNew:true,code:(j&&j.code)||'',name:'',amt:100,per:1,from:ymdOf(new Date(n.getFullYear(),n.getMonth(),1)),to:ymdOf(new Date(n.getFullYear(),n.getMonth()+3,0)),total:0,line:false,noMem:false,on:true})};
+  const set=(k,v)=>setF(p=>Object.assign({},p,{[k]:v}));
+  const save=async()=>{const j=await call({op:'save',c:f},'save');if(j){toast&&toast('已儲存優惠券 '+f.code.toUpperCase());setF(null)}};
+  const today=ymd(new Date());const inp='h-10 px-3 rounded-lg border border-line bg-card';
+  const st=c=>!c.on?['已停用','text-mute']:c.to&&c.to<today?['已過期','text-mute']:c.from&&c.from>today?['未開始','text-brown']:['使用中','text-sageD'];
+  return <div className="text-sm">
+    {!f&&<button type="button" className="w-full h-10 rounded-xl bg-sage text-white mb-2 disabled:opacity-50" disabled={!!busy} onClick={newF}>{busy==='gen'?'產生序號…':'＋ 新增優惠券'}</button>}
+    {f&&<div className="rounded-xl border border-sage bg-sageL/30 p-3 mb-3 space-y-2">
+      <div className="font-semibold">{f.isNew?'新增優惠券':'修改 '+f.code}</div>
+      <label className="block"><span className="text-xs text-mute">序號（4～16 個英文大寫或數字；給客人看的，要跟 LINE 優惠券上的序號一樣）</span>
+        <div className="flex gap-2 mt-0.5"><input className={inp+' flex-1 num uppercase'} disabled={!f.isNew} maxLength={16} value={f.code} onChange={e=>set('code',e.target.value.replace(/[^0-9a-z]/gi,'').toUpperCase())}/>
+          {f.isNew&&<button type="button" className="h-10 px-3 rounded-lg border border-sage text-sageD shrink-0" onClick={async()=>{const j=await call({op:'gen'},'gen');if(j)set('code',j.code)}}>重新產生</button>}</div></label>
+      <label className="block"><span className="text-xs text-mute">名稱（開單、支出、會員紀錄會顯示）</span><input className={inp+' w-full mt-0.5'} maxLength={30} placeholder="例：LINE 加入會員禮" value={f.name} onChange={e=>set('name',e.target.value)}/></label>
+      <div className="grid grid-cols-3 gap-2">
+        <label><span className="text-xs text-mute">折抵金額</span><input className={inp+' w-full mt-0.5 num'} inputMode="numeric" value={f.amt} onChange={e=>set('amt',e.target.value.replace(/\D/g,''))}/></label>
+        <label><span className="text-xs text-mute">每人可用次數</span><input className={inp+' w-full mt-0.5 num'} inputMode="numeric" value={f.per} onChange={e=>set('per',e.target.value.replace(/\D/g,''))}/></label>
+        <label><span className="text-xs text-mute">總張數</span><input className={inp+' w-full mt-0.5 num'} inputMode="numeric" value={f.total} onChange={e=>set('total',e.target.value.replace(/\D/g,''))}/></label></div>
+      <div className="text-[11px] text-mute -mt-1">每人次數、總張數填 0＝不限。</div>
+      <div className="grid grid-cols-2 gap-2">
+        <label><span className="text-xs text-mute">開始</span><input type="date" className={inp+' w-full mt-0.5 num'} value={f.from} onChange={e=>set('from',e.target.value)}/></label>
+        <label><span className="text-xs text-mute">結束</span><input type="date" className={inp+' w-full mt-0.5 num'} value={f.to} onChange={e=>set('to',e.target.value)}/></label></div>
+      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1 w-5 h-5 accent-[#6f7d62]" checked={!!f.line} onChange={e=>set('line',e.target.checked)}/><span>限 LINE 會員<span className="block text-xs text-mute">櫃台自建、還沒綁 LINE 的會員不能用（例：加入會員禮）</span></span></label>
+      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1 w-5 h-5 accent-[#6f7d62]" checked={!!f.noMem} onChange={e=>set('noMem',e.target.checked)}/><span>不用選會員也能用<span className="block text-xs text-mute">例：IG 打卡折價券；沒選會員時不檢查每人次數</span></span></label>
+      {!f.isNew&&<label className="flex items-center gap-2"><input type="checkbox" className="w-5 h-5 accent-[#6f7d62]" checked={f.on!==false} onChange={e=>set('on',e.target.checked)}/><span>啟用</span></label>}
+      {err&&<div className="text-xs text-warn">✗ {err}</div>}
+      <div className="grid grid-cols-[1fr_2fr] gap-2"><button type="button" className="h-10 rounded-lg border border-line bg-card" onClick={()=>{setF(null);setErr('')}}>取消</button><button type="button" className="h-10 rounded-lg bg-sage text-white disabled:opacity-50" disabled={!!busy||!f.code||!f.name||!Number(f.amt)} onClick={save}>{busy==='save'?'儲存中…':'儲存'}</button></div>
+    </div>}
+    {!L?<div className="text-xs text-mute">{err?'✗ '+err:<Ld/>}</div>:L.map(c=>{const [sl,sc]=st(c);const op=open===c.code;return <div key={c.code} className="border-t border-line first:border-0 py-2">
+      <button type="button" className="w-full text-left" onClick={()=>setOpen(op?'':c.code)}>
+        <div className="flex items-center gap-2"><b className="num">{c.code}</b><span className="flex-1 min-w-0 truncate">{c.name}</span><span className={'text-xs '+sc}>{sl}</span></div>
+        <div className="text-xs text-mute num mt-0.5">−{money(c.amt)}・{c.per?'每人 '+c.per+' 次':'不限次數'}{c.total?'・共 '+c.total+' 張':''}・{c.from||'—'}～{c.to||'—'}{c.line?'・限 LINE 會員':''}{c.noMem?'・不用選會員':''}・已用 <b className="text-ink">{c.used}</b> 次</div></button>
+      {op&&<div className="mt-1.5 pl-1 text-xs">
+        {(c.users||[]).length?<div className="mb-1.5">{c.users.map((u,i)=><div key={i} className="num py-0.5"><span className="text-mute mr-2">{u.date.slice(5)}</span>{u.cu||'（沒有選會員）'}</div>)}</div>:<div className="text-mute mb-1.5">還沒有人用</div>}
+        <div className="flex gap-2"><button type="button" className="h-8 px-3 rounded-lg border border-sage text-sageD" onClick={()=>{setErr('');setF(Object.assign({},c,{isNew:false}))}}>修改</button>
+          <button type="button" className={'h-8 px-3 rounded-lg border '+(c.on?'border-warn text-warn':'border-sage text-sageD')} disabled={!!busy} onClick={async()=>{if(c.on&&ask&&!await ask({title:'停用 '+c.code+'？',msg:'停用後櫃台就不能再用這組序號（已經用過的紀錄保留）。',okText:'停用',danger:true}))return;const j=await call({op:'save',c:Object.assign({},c,{isNew:false,on:!c.on})},'tog');if(j)toast&&toast(c.on?'已停用':'已啟用')}}>{c.on?'停用':'啟用'}</button></div></div>}
+    </div>})}
+    <div className="text-[11px] text-mute mt-2">櫃台在主櫃開單時，於客人那一欄輸入序號（下面會列這台最近用過的序號）。系統會檢查期間、會員、LINE、每人次數；營業額照原價，折抵記成「媒體宣傳」支出，老師費用照算。LINE 官方帳號的優惠券序號請設成跟這裡一樣。</div>
+  </div>;
+}
 function NtCard({dr,up,toast,ask}){
   const [I,setI]=useState(null);const [busy,setBusy]=useState('');const [err,setErr]=useState('');
   const call=async(b,k)=>{setBusy(k||b.op);setErr('');try{const j=await cloud.call(Object.assign({action:'nt'},b),60000);if(b.op==='info')setI(j);return j}catch(e){setErr(e.message)}finally{setBusy('')}};
@@ -6081,6 +6147,11 @@ function custMatch(list,q){
 }
 // 訂單上的客人只存 {id,last,title,p4}（手機末 4 碼，不存完整手機）；顯示名稱與當天其他客人比對
 const custRef=c=>({id:c.id,last:c.last,title:c.title,p4:digits(c.phone).slice(-4)});
+/* v0.1-168 會員編號前的點：橘＝會員（LINE 註冊或櫃台綁定、還是好友）、紅＝會員但封鎖／刪除好友、白＝櫃台自建（還沒綁 LINE）；★＝老師評分平均 */
+const CuDot=({c})=>{const k=!c?'':c.uid?(c.fr==='blocked'?'b':'m'):'n';const T={m:'會員（LINE）',b:'會員，但已封鎖或刪除好友（收不到 LINE 通知）',n:'櫃台自建，還沒綁 LINE'};
+  return <span title={T[k]||''} aria-label={T[k]||''} className={'inline-block w-2.5 h-2.5 rounded-full shrink-0 '+(k==='m'?'bg-[#e8892b]':k==='b'?'bg-[#d33a2c]':'border border-neutral-400 bg-white')}></span>};
+const CuStar=({c})=>c&&c.star?<span className="ml-1 text-xs text-[#c9952c] num whitespace-nowrap">★{c.star}</span>:null;
+const CuLegend=()=><div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-mute"><span className="inline-flex items-center gap-1"><CuDot c={{uid:1}}/>會員（LINE）</span><span className="inline-flex items-center gap-1"><CuDot c={{uid:1,fr:'blocked'}}/>已封鎖</span><span className="inline-flex items-center gap-1"><CuDot c={{}}/>未綁 LINE</span><span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-[#4caf50]"></span>未註冊的 LINE 好友</span><span className="text-[#c9952c]">★ 老師評分</span></div>;
 const cuLabel=(cu,peers)=>custLabel(Object.assign({},cu,{phone:cu.p4||''}),(peers||[]).map(o=>Object.assign({},o,{phone:o.p4||''})));
 let __custs=null,__custP=null;
 function loadCusts(force){
@@ -6115,7 +6186,7 @@ function CustPick({value,onChange,demo,peers,line}){
   useEffect(()=>{if(demo||list)return;if(line){mcCustList(line,setList).then(setList).catch(e=>setErr(e.message));return}
     if(!st.on)return;loadCusts().then(setList).catch(e=>setErr(e.message))},[st.on]);
   if(value)return (<div className="flex items-center gap-2 min-h-12 px-3 rounded-xl border border-sage bg-sageL/40">
-    <span className="flex-1 num">{cuLabel(value,peers)}<span className="ml-2 text-xs text-mute">{value.id}</span></span>
+    {(()=>{const fc=(list||[]).find(x=>x.id===value.id);return <><CuDot c={fc}/><span className="flex-1 num">{cuLabel(value,peers)}<CuStar c={fc}/><span className="ml-2 text-xs text-mute">{value.id}</span></span></>})()}
     <button type="button" className="w-8 h-8 rounded-full border border-line bg-card text-mute" aria-label="清除客人" onClick={()=>onChange(null)}>✕</button></div>);
   if(!demo&&!line&&!st.on)return <div className="text-xs text-mute px-1 py-2">用 LINE 登入雲端同步後，才能選客人。</div>;
   const res=q?custMatch(list||[],q).slice(0,6):[];
@@ -6142,7 +6213,7 @@ function CustPick({value,onChange,demo,peers,line}){
     <div className="flex gap-2"><input className="flex-1 min-w-0 h-12 px-3 rounded-xl border border-line bg-card num" placeholder="編號、手機、末3碼或姓" value={q} onChange={e=>{setQ(e.target.value);setErr('')}}/>
       <button type="button" className="h-12 px-3 rounded-xl border border-sage text-sageD whitespace-nowrap" onClick={startAdd}>＋ 新增</button></div>
     {q&&<div className="mt-1 rounded-xl border border-line overflow-hidden">{res.map(c=><button key={c.id} type="button" className="w-full flex items-center gap-2 px-3 py-2 border-b border-line last:border-0 text-left text-sm bg-card active:bg-sageL" onClick={()=>{onChange(custRef(c));setQ('')}}>
-        <span className="w-12 text-xs text-mute num">{c.id}</span><span className="flex-1 num">{custLabel(c)}</span><span className="text-xs text-mute num">{c.phone?fmtPhone(c.phone):c.birth}</span></button>)}
+        <CuDot c={c}/><span className="w-12 text-xs text-mute num">{c.id}</span><span className="flex-1 num">{custLabel(c)}<CuStar c={c}/></span><span className="text-xs text-mute num">{c.phone?fmtPhone(c.phone):c.birth}</span></button>)}
       {!res.length&&<div className="px-3 py-2 text-xs text-mute bg-card">{list?'找不到，按「＋ 新增」建檔':<Ld/>}</div>}</div>}
     {err&&<div className="text-xs text-warn mt-1">{err}</div>}
   </div>);
@@ -6191,9 +6262,13 @@ function CustBook({toast,ask,mode,ks,admin,onOrder,me}){   // v0.1-132 me：建�
   const canDel=mode==='owner'||!!admin;
   const [hist,setHist]=useState(null);   // v0.1-096：點會員時讀以往的消費 {id,list}|{id,err}
   const [tagIn,setTagIn]=useState('');
+  const [vis,setVis]=useState(null);const [visOpen,setVisOpen]=useState(false);const [vb,setVb]=useState(null);
+  const [rec,setRec]=useState(()=>(jget('cust-recent',null)||{}).recent||{});   // v0.1-169 每位會員最近 5 筆服務（存本機）   // v0.1-168 未註冊的 LINE 好友、綁定
   const [pick,setPick]=useState(null);   // v0.1-101：點搜尋結果 → 選「新的訂單」或「編輯會員資料」
   const openC=async(c,m)=>{setErr('');setPick(null);setF(Object.assign(custFix(Object.assign({note:'',inote:'',tnote:'',first:'',fdate:'',fby:'',health:[],hoth:{},hlog:[],src:[],srcOther:''},c)),{_m:m||'edit'}));setHist({id:c.id});
-    try{const j=await api('orders',{id:c.id});setHist({id:c.id,list:j.list||[]})}catch(e){setHist({id:c.id,err:e.message})}};
+    const H0=jget('cust-hist',{});if(H0[c.id])setHist({id:c.id,list:H0[c.id].list,at:H0[c.id].at});   // v0.1-169 先顯示本機存的，再到雲端更新
+    try{const j=await api('orders',{id:c.id});setHist({id:c.id,list:j.list||[]});const H=jget('cust-hist',{});H[c.id]={at:Date.now(),list:(j.list||[]).slice(0,40)};
+      const ks=Object.keys(H).sort((a,b)=>H[b].at-H[a].at);ks.slice(150).forEach(k=>delete H[k]);try{jset('cust-hist',H)}catch(_e){}}catch(e){if(!H0[c.id])setHist({id:c.id,err:e.message})}};
   const api=async(op,b)=>{
     if(mode==='demo'){let L=jget('cust-demo',DEMO_CUSTS0).slice(),id=b&&b.id;
       if(op==='save'){const fm=b.form;if(!fm.last)throw new Error('請輸入姓');if(!/^09\d{8}$/.test(fm.phone||'')&&!fm.birth)throw new Error('手機（09 開頭 10 碼）和生日至少填一個');
@@ -6204,12 +6279,16 @@ function CustBook({toast,ask,mode,ks,admin,onOrder,me}){   // v0.1-132 me：建�
     if(mode==='line'){
       if(op==='list')return {list:await mcCustList({ks},b&&b.onFresh?(L=>b.onFresh({list:L})):null,b&&b.m)};
       const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請重新登入');
-      const j=await cloud.call(Object.assign({action:'cust',op,idToken:t},ks?{ks}:{},b||{}),30000);if(j.list&&(op==='save'||op==='del'))mcCustPut(j.rev,j.list);return j}
-    return op==='list'?preCall({action:'custlist'},0,b&&b.onFresh,b&&b.m):cloud.call(Object.assign({action:op==='save'?'custsave':op==='orders'?'custorders':'custdel'},b||{}),30000);
+      const j=await cloud.call(Object.assign({action:'cust',op,idToken:t},ks?{ks}:{},b||{}),30000);if(j.list&&(op==='save'||op==='del'||op==='bind'))mcCustPut(j.rev,j.list);return j}
+    return op==='list'?preCall({action:'custlist'},0,b&&b.onFresh,b&&b.m):cloud.call(Object.assign({action:{save:'custsave',orders:'custorders',del:'custdel',visitors:'custvis',bind:'custbind',recent:'custrecent'}[op]||'custdel'},b||{}),30000);
   };
   const put=L=>{__custs=L;setList(L)};
   const load=async m=>{setErr('');try{const j=await api('list',{onFresh:j=>put(j.list||[]),m});put(j.list||[])}catch(e){setErr(e.message)}};
   useEffect(()=>{if(ready&&mode!=='demo')load()},[ready]);
+  const loadRec=async()=>{try{const j=await api('recent');setRec(j.recent||{});try{jset('cust-recent',{at:Date.now(),stamp:j.stamp,recent:j.recent||{}})}catch(_e){}}catch(e){}};
+  useEffect(()=>{if(!ready||mode==='demo')return;const c0=jget('cust-recent',null);if(!c0||Date.now()-c0.at>5*60000)loadRec();const t=setInterval(loadRec,10*60000);return ()=>clearInterval(t)},[ready]);
+  const loadVis=async()=>{try{const j=await api('visitors');setVis(j.vis||[])}catch(e){setVis([])}};
+  useEffect(()=>{if(ready&&mode!=='demo')loadVis()},[ready]);
   if(!ready)return <Card className="p-3 text-sm text-mute">用 LINE 登入雲端同步後，才能查看與編輯會員資料。</Card>;
   const shown=custMatch(list||[],q).slice().sort((a,b)=>(digits(a.phone)||'z').localeCompare(digits(b.phone)||'z'));
   const set=(k,v)=>{setF(p=>Object.assign({},p,{[k]:v}));setErr('')};
@@ -6298,13 +6377,17 @@ function CustBook({toast,ask,mode,ks,admin,onOrder,me}){   // v0.1-132 me：建�
       {f.id&&!f.uid&&canDel&&f._m!=='survey'&&<button className="w-full h-9 text-xs text-warn" onClick={()=>del(f)}>刪除這筆</button>}
     </div>}
     {!f&&err&&<div className="text-xs text-warn mb-2">{err}</div>}
+    <div className="mb-1"><CuLegend/></div>
     {shown.slice(Math.min(page,Math.max(0,Math.ceil(shown.length/10)-1))*10).slice(0,10).map(c=><div key={c.id} className="border-b border-line last:border-0">
       <button className={'w-full flex items-center gap-2 py-2 text-left text-sm '+(pick===c.id?'text-sageD':'')} onClick={()=>setPick(pick===c.id?null:c.id)}>
-        <span className="w-12 text-xs text-mute num">{c.id}</span>
+        <CuDot c={c}/><span className="w-12 text-xs text-mute num">{c.id}</span>
         <span className="w-28 num">{c.phone?fmtPhone(c.phone):<span className="text-mute">—</span>}</span>
-        <span className="flex-1 min-w-0 num"><span className="whitespace-nowrap">{custLabel(c)}</span><TagChips c={c}/></span>
+        <span className="flex-1 min-w-0 num"><span className="whitespace-nowrap">{custLabel(c)}</span><CuStar c={c}/><TagChips c={c}/></span>
         <span className="text-mute">{pick===c.id?'⌄':'›'}</span>
       </button>
+      {pick===c.id&&(rec[c.id]||[]).length>0&&<div className="pb-2 -mt-1 pl-5 text-xs">{rec[c.id].slice(0,3).map((x,i)=><div key={i} className="flex items-baseline gap-2 py-0.5 border-b border-line/60 last:border-0">
+        <span className="num text-mute w-11 shrink-0">{x.d.slice(5)}</span><span className="flex-1 min-w-0"><span className="num">{x.i}</span><span className="text-mute">・{x.tc}{x.ld?' 老點':''}</span>{x.cp&&<span className="text-brown">・🎟</span>}{x.co&&<span className="block text-ink">📝 {x.co}</span>}</span>
+        {x.s?<span className="shrink-0 text-[#c9952c] num">★{x.s}</span>:null}</div>)}</div>}
       {pick===c.id&&<div className="grid grid-cols-2 gap-2 pb-2">
         <button className="h-11 rounded-xl bg-sage text-white disabled:opacity-50" disabled={!onOrder} onClick={()=>{setPick(null);onOrder(custRef(c))}}>＋ 新的訂單</button>
         <button className="h-11 rounded-xl border border-sage text-sageD bg-card" onClick={()=>openC(c)}>編輯會員資料</button>
@@ -6314,6 +6397,32 @@ function CustBook({toast,ask,mode,ks,admin,onOrder,me}){   // v0.1-132 me：建�
     </div>)}
     {list&&!shown.length&&<div className="text-xs text-mute py-2">{q?'找不到符合的會員，可以按「＋ 新增會員」':'還沒有會員資料'}</div>}
     <Pager n={shown.length} page={page} setPage={setPage}/>
+    {mode!=='demo'&&vis&&(()=>{const qq=q.trim(),txt=!!qq&&!/^[0-9cC]+$/.test(qq);const L=txt?vis.filter(v=>String(v.name||'').toLowerCase().includes(qq.toLowerCase())):vis;const show=visOpen||txt;
+      const G=<span className="inline-block w-2.5 h-2.5 rounded-full bg-[#4caf50] shrink-0" title="未註冊的 LINE 好友"></span>;
+      const bind=async b=>{setBusy(true);setErr('');try{const j=await api('bind',Object.assign({vuid:vb.v.vuid},b));put(j.list||[]);setVb(null);loadVis();toast&&toast('已綁定會員 '+j.id)}catch(e){setErr(e.message)}setBusy(false)};
+      const inp2='w-full h-10 px-3 rounded-lg border border-line bg-card';
+      return <div className="mt-3 pt-2 border-t border-line">
+        <button type="button" className="w-full flex items-center justify-between text-sm py-1" onClick={()=>setVisOpen(!visOpen)}><span className="flex items-center gap-1.5">{G}未註冊的 LINE 好友<span className="text-xs text-mute">{txt?'符合 '+L.length+' 位・':''}共 {vis.length} 位</span></span><span className="text-xs text-mute">{show?'▾':'▸'}</span></button>
+        {show&&<div>{L.slice(0,30).map(v=><div key={v.vuid} className="border-b border-line last:border-0">
+          <button type="button" className="w-full flex items-center gap-2 py-2 text-left text-sm" onClick={()=>{setErr('');setVb(vb&&vb.v.vuid===v.vuid?null:{v,m:'pick',q:'',last:'',title:'小姐',phone:''})}}>{G}<span className="flex-1 min-w-0 truncate">{v.name||'（沒有名稱）'}</span><span className="text-[11px] text-mute num">{v.last} 打開</span><span className="text-mute">{vb&&vb.v.vuid===v.vuid?'⌄':'›'}</span></button>
+          {vb&&vb.v.vuid===v.vuid&&<div className="mb-2 rounded-xl border border-sage bg-sageL/30 p-2 space-y-2 text-sm">
+            <div className="text-xs text-sageD">綁到既有的會員資料（客人還沒有會員資料時，請他在 LINE 會員中心自己加入）</div>
+            {vb.m==='pick'?<>
+              <input className={inp2+' num'} placeholder="搜尋會員：手機、末3碼、姓（只列還沒綁 LINE 的）" value={vb.q} onChange={e=>setVb(Object.assign({},vb,{q:e.target.value}))}/>
+              {vb.q&&custMatch(list||[],vb.q).filter(c=>!c.uid).slice(0,5).map(c=><button key={c.id} type="button" disabled={busy} className="w-full flex items-center gap-2 px-2 py-2 rounded-lg border border-line bg-card text-left" onClick={async()=>{if(ask&&!await ask({title:'把「'+(v.name||'這位 LINE 好友')+'」綁到 '+c.id+' '+custLabel(c)+'？',msg:'綁定後這位會員就是 LINE 會員（橘點），可以收 LINE 通知、使用限 LINE 會員的優惠券。',okText:'綁定'}))return;bind({id:c.id})}}><CuDot c={c}/><span className="text-xs text-mute num w-12">{c.id}</span><span className="flex-1 num">{custLabel(c)}</span><span className="text-xs text-mute num">{c.phone?fmtPhone(c.phone):c.birth}</span></button>)}
+              {vb.q&&!custMatch(list||[],vb.q).filter(c=>!c.uid).length&&<div className="text-xs text-mute">找不到還沒綁 LINE 的會員。</div>}
+            </>:<>
+              <div className="grid grid-cols-[1fr_auto] gap-2"><input className={inp2} placeholder="姓" maxLength={4} value={vb.last} onChange={e=>setVb(Object.assign({},vb,{last:e.target.value.trim()}))}/>
+                <div className="flex rounded-lg border border-line overflow-hidden">{['先生','小姐'].map(t=><button key={t} type="button" className={'px-3 '+(vb.title===t?'bg-sage text-white':'bg-card')} onClick={()=>setVb(Object.assign({},vb,{title:t}))}>{t}</button>)}</div></div>
+              <input className={inp2+' num text-center'} inputMode="tel" placeholder="手機 09xx-xxx-xxx" value={fmtPhone(vb.phone)} onChange={e=>setVb(Object.assign({},vb,{phone:digits(e.target.value).slice(0,10)}))}/>
+              <button type="button" disabled={busy||!vb.last||digits(vb.phone).length!==10} className="w-full h-10 rounded-lg bg-sage text-white disabled:opacity-40" onClick={()=>bind({form:{last:vb.last,title:vb.title,phone:digits(vb.phone),fby:me||'',fdate:ymd(new Date())+' '+hm(new Date())}})}>{busy?'建立中…':'建成會員並綁定 LINE'}</button>
+            </>}
+            {err&&<div className="text-xs text-warn">✗ {err}</div>}
+          </div>}
+        </div>)}
+          {!L.length&&<div className="text-xs text-mute py-1">{txt?'沒有符合的 LINE 好友':'目前沒有'}</div>}
+          <div className="text-[11px] text-mute mt-1">打開過緩緩 LINE 會員中心、但還沒填資料加入會員的人（不會用手機填表的客人）。點一下可以幫他綁到既有的會員資料。搜尋框打 LINE 名稱的任一個字就找得到。</div></div>}
+      </div>})()}
     <div className="text-[11px] text-mute mt-2">紙本建檔、線上加入的會員都在這裡。資料只存在 Google 試算表「客戶資料」，不會出現在公開的開通名單；客人線上加入時手機和姓對得上，就自動接上舊資料。</div>
   </Card>);
 }
@@ -6533,6 +6642,9 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-170','11-01','設定 → 主櫃系統新增「牌位排序方式」：回牌排隊（目前的方式，預設）／上牌順位（照上牌時間，做完原地翻白）；上牌順位可以選被打槍的老師要不要排到後面（GAS gas-4.89）'],
+  ['v0.1-169','11-01','會員資料點一位會員，名字下方直接列最近 3 筆服務（日期、項目、老師、老師評分★、給公司看的記錄）；每位會員最近的服務存在本機，查詢時馬上顯示。消費紀錄也先顯示本機存的再到雲端更新。未註冊的 LINE 好友先只提供「綁到既有的會員資料」（GAS gas-4.88）'],
+  ['v0.1-168','11-01','優惠券改成序號：老闆頁「設定 → 優惠券」新增券（系統產生序號，可設金額、每人次數、期間、總張數、限 LINE 會員、不用選會員）；主櫃開單在客人那一欄輸入序號（下面列近期序號），系統檢查後折抵。會員搜尋結果在編號前加點：橘＝LINE 會員、紅＝已封鎖、白＝未綁 LINE，名字後加老師評分★。新增「未註冊的 LINE 好友」：打開過會員中心但沒加入的人，可以用 LINE 名稱搜尋，櫃台幫他綁到會員資料或直接建成會員（GAS gas-4.87）'],
   ['v0.1-167','10-31','老師頁新增「未來一週老點」：今天起 7 天內指定自己的預約，依日期列出時間、項目、客人（GAS gas-4.85）'],
   ['v0.1-166','10-31','老闆頁「人員 → 客人」新增「客人評分統計」：1～5 星各幾位客人、標籤最多人的 5 個；LINE 群發可選「評分4星以上」「評分1～2星」。老師評分加標籤時，下面多兩排建議標籤（熱門 5 個、近期 5 個），點一下就加上（GAS gas-4.84）'],
   ['v0.1-165','10-31','上下牌紀錄裡老師自己按的「今日支數確認」改顯示老師編號（例：69 號（支數確認）），不顯示姓名（GAS gas-4.82）'],
@@ -6904,6 +7016,12 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
           <label><div className="text-xs text-mute mb-1">清潔時間</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.cleanMin)} onChange={v=>up(n=>{n.cleanMin=v===''?'':num(v)})}/><span>分</span></div></label>
         </div>
         <div className="text-xs text-mute mt-1">清潔時間：每位客人結束後，那個位子要空出來的分鐘數（想讓預約都從整點／半點開始，可以設 30 分）。</div>
+        <div className="text-xs text-mute mt-3 mb-1">牌位排序方式</div>
+        {[['return','回牌排隊（目前的方式）','做完回牌排到上牌區最後，等最久的先出；超長單滿 2 小時排到最後'],['fixed','上牌順位','一律照上牌時間排，做完原地翻白、位置不變；超長單不另外移動']].map(([k,t,d])=><button key={k} type="button" className={'w-full mb-1.5 rounded-xl border px-3 py-2 text-left text-sm '+((dr.boardMode||'return')===k?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>up(n=>{n.boardMode=k})}>
+          <span className="font-semibold">{(dr.boardMode||'return')===k?'◉':'○'} {t}</span><span className="block text-xs text-mute">{d}</span></button>)}
+        {dr.boardMode==='fixed'&&<button type="button" className={'w-full rounded-xl border px-3 py-2 text-left text-sm '+(dr.shBack!==false?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>up(n=>{n.shBack=n.shBack===false})}>
+          {dr.shBack!==false?'☑':'☐'} 被打槍的老師排到後面<span className="block text-xs text-mute">勾＝從打槍的時間起排到最後（罰則）；不勾＝維持原本的上牌順位</span></button>}
+        <div className="text-[11px] text-mute mt-1">改完按「儲存設定」，主櫃、老師頁的牌況和排班規則會跟著換。</div>
         <div className="text-xs text-mute mt-3 mb-1">預約時每個時段保留給現場客（C4）</div>
         <div className="grid grid-cols-2 gap-2">
           <label><div className="text-[11px] text-mute mb-1">老師</div><div className="flex items-center gap-1"><NumIn className="w-0 flex-1" value={String(dr.bkKeepT==null?1:dr.bkKeepT)} onChange={v=>up(n=>{n.bkKeepT=v===''?'':num(v)})}/><span className="text-sm">位</span></div></label>
@@ -7110,6 +7228,8 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
       </Card>
       </>}
       {ST_&&<>
+      <div className={sec}>優惠券（序號）</div>
+      <Card className="p-3"><CpnAdmin toast={toast} ask={ask}/></Card>
       <div className={sec}>老點 LINE 通知（老師）</div>
       <Card className="p-3"><NtCard dr={dr} up={up} toast={toast} ask={ask}/></Card>
       <div className={sec}>LINE 群發（依身分、客人標籤）</div>
