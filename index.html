@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-173</title>
+<title>緩緩門店 v0.1-174</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-173';
+const VER='v0.1-174';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -5009,6 +5009,137 @@ function HandNotes({mode,by,uid,ks,compact,title}){
     <div className="text-[11px] text-mute mt-1">別人寫的交接事項，狀態不是「已完成」時要寫處理說明。</div>
   </div>);
 }
+/* v0.1-174 耗材庫存：盤點（設定目前庫存）、叫貨（叫貨單位，到貨時加進庫存）、直接進貨、品項（老闆、主管設定安全庫存）。
+   低於安全庫存、沒有叫貨中的：盤點後 LINE 通知老闆、主管（GAS gas-4.93）。主櫃用 LINE＋ks，老闆頁用通行證。 */
+async function invCall(mode,b,ks){
+  if(mode==='mc'){const tk=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!tk)throw new Error('取不到主櫃的 LINE 身分，請重新開啟');
+    const k=ks!=null?ks:(MC.auth&&MC.auth.ks);return cloud.call(Object.assign({action:'inv',idToken:tk},k?{ks:k}:{},b),30000)}
+  return cloud.call(Object.assign({action:'inv'},b),30000);
+}
+const INV_EMPTY={name:'',cat:'',unit:'',safe:'',qty:'',ou:'',per:'',vendor:'',note:'',ord:'',off:false};
+function InvBox({mode,ks,toast,ask}){
+  const [d,setD]=useState(()=>jget('inv-last',null));const [tab,setTab]=useState('count');const [busy,setBusy]=useState('');const [err,setErr]=useState('');
+  const [cnt,setCnt]=useState({});const [of,setOf]=useState(null);const [rf,setRf]=useState({id:'',n:'',note:''});const [ar,setAr]=useState(null);const [ed,setEd]=useState(null);
+  const test=mode==='mc'&&MC.test;
+  const run=async(b,k,msg)=>{if(test&&b.op!=='list'){setErr('測試上線時不能改耗材庫存（庫存是真的資料）');return null}
+    setBusy(k||b.op);setErr('');try{const j=await invCall(mode,b,ks);setD(j);jset('inv-last',j);if(msg&&toast)toast(typeof msg==='function'?msg(j):msg);setBusy('');return j}catch(e){setErr(e.message);setBusy('');return null}};
+  useEffect(()=>{run({op:'list'},'load')},[mode,ks]);
+  const items=(d&&d.items)||[],act=items.filter(x=>!x.off),orders=(d&&d.orders)||[],open=orders.filter(o=>o.st==='ord'),openOf=id=>open.filter(o=>o.iid===id);
+  const low=act.filter(x=>x.safe>0&&x.qty<x.safe),need=low.filter(x=>!openOf(x.id).length);
+  const cats=[...new Set(act.map(x=>x.cat||'其他'))];
+  const inp='h-9 px-2 rounded-lg border border-line bg-white text-sm';
+  const fmtQ=n=>String(Math.round(Number(n||0)*100)/100);
+  const nCnt=Object.values(cnt).filter(v=>v!=='').length;
+  const saveCnt=async()=>{const L=Object.entries(cnt).filter(([,v])=>v!=='').map(([id,qty])=>({id,qty:Number(qty)}));if(!L.length)return setErr('請輸入盤點數量');
+    const j=await run({op:'count',counts:L},'count',j=>'已存盤點 '+L.length+' 項'+(j.alert&&j.alert.n?'・'+j.alert.n+' 項低於安全庫存，已通知老闆、主管':''));if(j)setCnt({})};
+  const Tab=({k,l,n})=><button type="button" className={'flex-1 h-9 text-sm '+(tab===k?'bg-sage text-white':'bg-card')} onClick={()=>{setTab(k);setErr('')}}>{l}{n?<span className={'ml-1 text-[11px] px-1.5 rounded-full '+(tab===k?'bg-white/25':'bg-warnL text-warn')}>{n}</span>:''}</button>;
+  const Row=({x,children})=><div className="flex items-center gap-2 py-2 border-b border-line last:border-0 text-sm">{children}</div>;
+  const qtyTag=x=>{const lo=x.safe>0&&x.qty<x.safe;return <span className={'num text-xs '+(lo?'text-warn font-semibold':'text-mute')}>{fmtQ(x.qty)} {x.unit}{x.safe>0?'／安全 '+fmtQ(x.safe):''}</span>};
+  if(!d)return <div className="text-sm text-mute">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>;
+  return (<div>
+    <div className="flex rounded-lg border border-line overflow-hidden mb-2"><Tab k="count" l="盤點"/><Tab k="order" l="叫貨" n={need.length+open.length}/><Tab k="item" l="品項"/><Tab k="log" l="紀錄"/></div>
+    {test&&<div className="text-xs text-warn mb-2">測試上線：可以看，不能改（耗材庫存是真的資料）</div>}
+    {err&&<div className="text-xs text-warn mb-2">✗ {err}</div>}
+    {low.length>0&&tab!=='order'&&<button type="button" className="w-full text-left text-xs px-3 py-2 mb-2 rounded-lg bg-warnL text-warn" onClick={()=>setTab('order')}>⚠ 低於安全庫存 {low.length} 項：{low.map(x=>x.name).join('、')}{need.length?'（'+need.length+' 項還沒叫貨）':'（都已叫貨）'} ›</button>}
+
+    {tab==='count'&&<>
+      {!act.length&&<div className="text-sm text-mute py-2">還沒有品項{d.admin?'，到「品項」新增':'，請老闆或主管到「品項」新增'}</div>}
+      {cats.map(c=><div key={c} className="mb-2">
+        <div className="text-[11px] text-mute font-semibold mt-1">{c}</div>
+        {act.filter(x=>(x.cat||'其他')===c).map(x=><Row key={x.id} x={x}>
+          <span className="flex-1 min-w-0"><span className="font-medium">{x.name}</span>{openOf(x.id).length>0&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">叫貨中</span>}
+            <span className="block">{qtyTag(x)}</span>
+            {x.ct&&<span className="block text-[10px] text-mute num">上次盤點 {String(x.ct).slice(5)} {x.cby}{String(x.ct).slice(0,10)===d.day?' ✓ 今天':''}</span>}</span>
+          <input className={inp+' w-20 text-right num'} inputMode="decimal" placeholder="實際" value={cnt[x.id]==null?'':cnt[x.id]} onChange={e=>{const v=e.target.value.replace(/[^\d.]/g,'');setCnt(o=>Object.assign({},o,{[x.id]:v}))}}/>
+          <span className="w-6 text-xs text-mute">{x.unit}</span>
+        </Row>)}
+      </div>)}
+      {act.length>0&&<button type="button" className="w-full h-11 rounded-xl bg-sage text-white disabled:opacity-50 mt-1" disabled={!!busy||!nCnt||test} onClick={saveCnt}>{busy==='count'?'儲存中…':'儲存盤點'+(nCnt?'（'+nCnt+' 項）':'')}</button>}
+      <div className="text-[11px] text-mute mt-1">只填有盤的品項；存了就把目前庫存改成盤點的數量。低於安全庫存、又沒叫貨的，會用 LINE 通知老闆、主管。</div>
+    </>}
+
+    {tab==='order'&&<>
+      <div className="text-xs font-semibold text-warn mt-1">需要叫貨（{need.length}）</div>
+      {!need.length&&<div className="text-xs text-mute py-1">沒有低於安全庫存、還沒叫貨的品項</div>}
+      {need.map(x=><div key={x.id} className="py-2 border-b border-line last:border-0 text-sm">
+        <div className="flex items-center gap-2"><span className="flex-1"><b className="font-medium">{x.name}</b><span className="block">{qtyTag(x)}</span>{x.vendor&&<span className="block text-[11px] text-mute">廠商：{x.vendor}</span>}</span>
+          <button type="button" className="h-8 px-3 rounded-full border border-brown text-brown text-xs bg-card" onClick={()=>setOf(of&&of.id===x.id?null:{id:x.id,n:'',eta:'',note:''})}>叫貨</button></div>
+        {of&&of.id===x.id&&<OrdForm x={x} f={of} setF={setOf} inp={inp} busy={busy} test={test} go={()=>run({op:'order',id:x.id,n:Number(of.n),eta:of.eta,note:of.note},'order','已記錄叫貨：'+x.name).then(j=>{if(j)setOf(null)})}/>}
+      </div>)}
+      <div className="text-xs font-semibold text-sageD mt-3">叫貨中（{open.length}）</div>
+      {!open.length&&<div className="text-xs text-mute py-1">沒有叫貨中的單</div>}
+      {open.map(o=><div key={o.id} className="py-2 border-b border-line last:border-0 text-sm">
+        <div className="flex items-start gap-2"><span className="flex-1 min-w-0"><b className="font-medium">{o.name}</b> <span className="num">{fmtQ(o.n)} {o.ou}</span>{o.per>1&&<span className="text-[11px] text-mute">（{fmtQ(o.n*o.per)} {(items.find(x=>x.id===o.iid)||{}).unit||''}）</span>}
+            <span className="block text-[11px] text-mute num">{String(o.t).slice(5)} {o.by} 叫貨{o.vendor?'・'+o.vendor:''}{o.eta?'・預計 '+o.eta.slice(5)+' 到':''}</span>
+            {o.note&&<span className="block text-[11px] text-ink">📝 {o.note}</span>}</span>
+          <button type="button" className="h-8 px-3 rounded-full bg-sage text-white text-xs" onClick={()=>setAr(ar&&ar.id===o.id?null:{id:o.id,n:String(o.n)})}>到貨</button>
+          <button type="button" className="h-8 px-2 rounded-full border border-line text-xs text-mute bg-card" disabled={!!busy||test} onClick={async()=>{if(await ask({title:'取消這張叫貨單？',msg:o.name+' '+fmtQ(o.n)+' '+o.ou,okText:'取消叫貨',danger:true}))run({op:'cancel',oid:o.id},'cancel','已取消叫貨')}}>取消</button></div>
+        {ar&&ar.id===o.id&&<div className="mt-1.5 flex items-center gap-2"><span className="text-xs text-mute">實際到貨</span><input className={inp+' w-20 text-right num'} inputMode="decimal" value={ar.n} onChange={e=>setAr({id:o.id,n:e.target.value.replace(/[^\d.]/g,'')})}/><span className="text-xs text-mute">{o.ou}</span>
+          <button type="button" className="ml-auto h-9 px-3 rounded-lg bg-sage text-white text-sm disabled:opacity-50" disabled={!!busy||!(Number(ar.n)>0)||test} onClick={()=>run({op:'arrive',oid:o.id,n:Number(ar.n)},'arrive','已到貨，庫存已加上').then(j=>{if(j)setAr(null)})}>{busy==='arrive'?'…':'確認到貨'}</button></div>}
+      </div>)}
+      <div className="text-xs font-semibold text-ink mt-3">直接進貨（沒有叫貨單）</div>
+      <div className="flex flex-wrap gap-2 mt-1">
+        <select className={inp+' flex-1 min-w-[8rem]'} value={rf.id} onChange={e=>setRf(Object.assign({},rf,{id:e.target.value}))}><option value="">選品項</option>{act.map(x=><option key={x.id} value={x.id}>{x.name}（{x.unit}）</option>)}</select>
+        <input className={inp+' w-20 text-right num'} inputMode="decimal" placeholder="數量" value={rf.n} onChange={e=>setRf(Object.assign({},rf,{n:e.target.value.replace(/[^\d.]/g,'')}))}/>
+        <input className={inp+' w-full'} maxLength={100} placeholder="備註（選填，例：門市自己買）" value={rf.note} onChange={e=>setRf(Object.assign({},rf,{note:e.target.value}))}/>
+        <button type="button" className="w-full h-10 rounded-lg border border-sage text-sageD text-sm disabled:opacity-50" disabled={!!busy||!rf.id||!(Number(rf.n)>0)||test} onClick={()=>run({op:'recv',id:rf.id,n:Number(rf.n),note:rf.note},'recv','已進貨，庫存已加上').then(j=>{if(j)setRf({id:'',n:'',note:''})})}>{busy==='recv'?'存檔中…':'記錄進貨'}</button></div>
+      {orders.some(o=>o.st!=='ord')&&<><div className="text-xs font-semibold text-mute mt-3">最近的叫貨單</div>
+        {orders.filter(o=>o.st!=='ord').slice(0,8).map(o=><div key={o.id} className="text-[11px] text-mute num py-0.5">{String(o.t).slice(5,10)} {o.name} {fmtQ(o.n)} {o.ou}・{o.st==='got'?'✓ '+String(o.gt).slice(5)+' 到貨'+(o.gn&&o.gn!==o.n?' '+fmtQ(o.gn)+' '+o.ou:'')+(o.gby?' '+o.gby:''):'已取消'}</div>)}</>}
+    </>}
+
+    {tab==='item'&&<>
+      {d.admin&&!ed&&<button type="button" className="w-full h-10 rounded-lg border border-sage text-sageD text-sm mb-2" onClick={()=>setEd(Object.assign({},INV_EMPTY))}>＋ 新增品項</button>}
+      {ed&&<ItemForm f={ed} setF={setEd} inp={inp} busy={busy} test={test} onCancel={()=>setEd(null)} go={()=>run({op:'item',item:ed},'item',ed.id?'已更新品項':'已新增品項').then(j=>{if(j)setEd(null)})}/>}
+      {items.map(x=><div key={x.id} className={'flex items-center gap-2 py-2 border-b border-line last:border-0 text-sm '+(x.off?'opacity-50':'')}>
+        <span className="flex-1 min-w-0"><b className="font-medium">{x.name}</b><span className="text-[11px] text-mute">{x.cat?'・'+x.cat:''}{x.off?'・停用':''}</span>
+          <span className="block">{qtyTag(x)}</span>
+          <span className="block text-[11px] text-mute">{x.ou?'叫貨 1 '+x.ou+'＝'+fmtQ(x.per)+' '+x.unit:'叫貨單位同 '+x.unit}{x.vendor?'・'+x.vendor:''}</span></span>
+        {d.admin&&<button type="button" className="h-8 px-3 rounded-full border border-line text-xs bg-card" onClick={()=>setEd({id:x.id,name:x.name,cat:x.cat,unit:x.unit,safe:String(x.safe),qty:String(x.qty),ou:x.ou,per:String(x.per),vendor:x.vendor,note:x.note,ord:String(x.ord||''),off:x.off})}>編輯</button>}
+      </div>)}
+      <div className="text-[11px] text-mute mt-1">{d.admin?'安全庫存：低於這個數量就提醒叫貨（填 0＝不提醒）。不用的品項勾「停用」，盤點就不會出現。':'品項和安全庫存由老闆、主管設定。'}</div>
+    </>}
+
+    {tab==='log'&&<>
+      {!(d.log||[]).length&&<div className="text-xs text-mute">還沒有紀錄</div>}
+      {(d.log||[]).map((l,i)=><div key={i} className="flex gap-2 py-1 border-b border-line last:border-0 text-xs">
+        <span className="num text-mute w-[4.6rem] shrink-0">{String(l.t).slice(5)}</span>
+        <span className={'shrink-0 w-14 '+(l.k==='盤點'?'text-ink':l.k==='叫貨'?'text-brown':/到貨|進貨/.test(l.k)?'text-sageD':'text-mute')}>{l.k}</span>
+        <span className="flex-1 min-w-0">{l.name} <span className="num">{l.n}</span>{l.after!==''&&l.k!=='盤點'&&l.k!=='叫貨'?<span className="text-mute num">（剩 {l.after}）</span>:''}{l.note&&<span className="text-mute">・{l.note}</span>}</span>
+        <span className="text-mute shrink-0">{l.by}</span></div>)}
+      <div className="text-[11px] text-mute mt-1">最近 40 筆；完整紀錄在試算表「耗材紀錄」。</div>
+    </>}
+    <div className="flex justify-end mt-2"><button type="button" className="text-xs text-mute underline" onClick={()=>run({op:'list'},'load')}>{busy==='load'?'更新中…':'重新整理'}</button></div>
+  </div>);
+}
+function OrdForm({x,f,setF,inp,busy,test,go}){
+  const u=x.ou||x.unit,sug=x.safe>0?Math.max(1,Math.ceil((x.safe*2-x.qty)/(x.ou?x.per||1:1))):'';
+  return <div className="mt-1.5 grid grid-cols-2 gap-2">
+    <label className="text-[11px] text-mute">數量（{u}）<input className={inp+' w-full text-right num'} inputMode="decimal" placeholder={sug?'建議 '+sug:''} value={f.n} onChange={e=>setF(Object.assign({},f,{n:e.target.value.replace(/[^\d.]/g,'')}))}/></label>
+    <label className="text-[11px] text-mute">預計到貨（選填）<input type="date" className={inp+' w-full'} value={f.eta} onChange={e=>setF(Object.assign({},f,{eta:e.target.value}))}/></label>
+    <input className={inp+' col-span-2'} maxLength={200} placeholder="叫貨註記（選填，例：LINE 跟甲商行叫、週五前要）" value={f.note} onChange={e=>setF(Object.assign({},f,{note:e.target.value}))}/>
+    <button type="button" className="col-span-2 h-10 rounded-lg bg-brown text-white text-sm disabled:opacity-50" disabled={!!busy||!(Number(f.n)>0)||test} onClick={go}>{busy==='order'?'存檔中…':'記錄叫貨'}</button>
+    {x.ou&&<div className="col-span-2 text-[11px] text-mute">1 {x.ou}＝{x.per} {x.unit}；建議量＝補到安全庫存的 2 倍</div>}
+  </div>;
+}
+function ItemForm({f,setF,inp,busy,test,onCancel,go}){
+  const F=(k,l,ph,cls,num)=><label className={'text-[11px] text-mute '+(cls||'')}>{l}<input className={inp+' w-full'+(num?' text-right num':'')} inputMode={num?'decimal':undefined} placeholder={ph||''} value={f[k]==null?'':f[k]} onChange={e=>{const v=num?e.target.value.replace(/[^\d.]/g,''):e.target.value;setF(Object.assign({},f,{[k]:v}))}}/></label>;
+  return <div className="p-3 mb-2 rounded-xl border border-sage bg-sageL/40 grid grid-cols-2 gap-2">
+    <div className="col-span-2 text-sm font-semibold text-sageD">{f.id?'編輯品項':'新增品項'}</div>
+    {F('name','名稱 *','例：按摩油','col-span-2')}
+    {F('cat','分類','例：油品、備品、布品、清潔')}
+    {F('unit','盤點單位','例：瓶、包、雙')}
+    {F('safe','安全庫存','低於就提醒','',1)}
+    {F('qty',f.id?'目前庫存（改了會記紀錄）':'目前庫存','','',1)}
+    {F('ou','叫貨單位（選填）','例：箱')}
+    {F('per','1 叫貨單位＝幾個','例：12','',1)}
+    {F('vendor','廠商／聯絡方式','例：甲商行 LINE','col-span-2')}
+    {F('note','備註','','')}
+    {F('ord','排序','數字小的在前','',1)}
+    <label className="col-span-2 text-sm flex items-center gap-2"><input type="checkbox" checked={!!f.off} onChange={e=>setF(Object.assign({},f,{off:e.target.checked}))}/>停用（盤點、叫貨不顯示）</label>
+    <button type="button" className="h-10 rounded-lg border border-line bg-card text-sm" onClick={onCancel}>取消</button>
+    <button type="button" className="h-10 rounded-lg bg-sage text-white text-sm disabled:opacity-50" disabled={!!busy||!String(f.name||'').trim()||test} onClick={go}>{busy==='item'?'存檔中…':'儲存'}</button>
+  </div>;
+}
 // 主櫃登入後：別人寫的、還沒完成、這次登入後還沒確認的交接事項，逐項點狀態才能開始操作
 function HnGate({by,uid,since,ks}){
   const [list,setList]=useState(__hn);const [busy,setBusy]=useState('');const [err,setErr]=useState('');
@@ -5026,7 +5157,7 @@ function HnGate({by,uid,since,ks}){
 }
 /* 主櫃上線的櫃台畫面（取代示範的 CounterHome；跟櫃台人員自己的頁面 CounterLive 不同） */
 /* v0.1-161 主櫃右側浮動按鈕：點一下捲到那個區塊（收合的區塊順便展開） */
-const MC_JUMP=[['開單','今日'],['預約','預約・排隊'],['牌況','老師牌況'],['訂單','訂單'],['腳位','座位'],['會員','會員資料'],['支出','費用支出'],['支援','支援費用現結'],['交接','交接事項']];
+const MC_JUMP=[['開單','今日'],['預約','預約・排隊'],['牌況','老師牌況'],['訂單','訂單'],['腳位','座位'],['會員','會員資料'],['支出','費用支出'],['支援','支援費用現結'],['交接','交接事項'],['庫存','耗材庫存']];
 function McJump(){
   const [hide,setHide]=useState(false);
   const go=k=>{const el=Array.from(document.querySelectorAll('[data-sec]')).find(x=>{const t=x.getAttribute('data-sec')||'';return k==='今日'?t.indexOf('今日')===0:t===k});if(!el)return;
@@ -5263,6 +5394,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
         </Card>
         <div className="text-[11px] text-mute mt-1 px-1">支援老師下班時從櫃台現金支付（還在服務中的支數也算進去）；付了就記在今天，交班時從應有現金扣除。</div>
       </Sec>),
+    (<Sec fold title="耗材庫存"><Card className="p-3"><InvBox mode="mc" ks={cust&&cust.ks} toast={toast} ask={ask}/></Card></Sec>),   // v0.1-174
   ];
   const sync=(()=>{const s=mcSt();return MC.err?<span className="text-warn">✗ {MC.err}</span>:MC.busy?<span>同步中…</span>:s.dirty?<span className="text-warn">有修改尚未上傳</span>:MC.at?<span>✓ 已同步 {hm(new Date(MC.at))}</span>:<span>讀取中…</span>})();
   const clearTest=async()=>{if(!await ask({title:'清除測試資料？',msg:'這台主櫃今天的測試訂單、上下牌、測試的交接事項都會清掉（會員資料不受影響）。',okText:'清除',danger:true}))return;jset(MCT(date),null);jset('mc-test-hn',[]);__hn=[];HN_SUBS.forEach(f=>f([]));MC.emit();toast&&toast('已清除測試資料')};
@@ -5271,7 +5403,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const selO=sel&&orders.find(o=>o.id===sel);
   return <>
     <McJump/>
-    <RolePage mode={mode} head={head} B={B} phone={[0,7,2,1,3,5,9,10,6,8,4]} wide={{top:[2],cols:[[0,7,3,9,6],[1,5,10,8,4]]}} xwide={{top:[2],cols:[[0,3,6],[7,1,9],[5,10,8,4]]}}/>
+    <RolePage mode={mode} head={head} B={B} phone={[0,7,2,1,3,5,9,10,6,11,8,4]} wide={{top:[2],cols:[[0,7,3,9,6],[1,5,10,11,8,4]]}} xwide={{top:[2],cols:[[0,3,6],[7,1,9],[5,10,11,8,4]]}}/>
     {selO&&<McOrderSheet o={selO} S={S} isOwner={isOwner} ask={ask} onClose={()=>setSel(null)} onAct={(k,x)=>act(selO,k,x)} onEdit={()=>{setSel(null);setEd({order:selO,k:Date.now()})}}/>}
     {xe&&<ExpenseEditor key={'mx'+xe.k} S={S} exp={xe.exp} locked={!!d.close} onSave={saveExp} onDelete={delExp} onClose={()=>setXe(null)} ask={ask}/>}
     {ed&&<OrderEditor key={'mc'+ed.k} S={S} order={ed.order} cu={ed.cu} init={ed.init} dayOrders={d.orders||[]} locked={!!d.close} mc={mcInfo} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
@@ -6645,6 +6777,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-174','11-04','耗材庫存（主櫃最下面「耗材庫存」、老闆頁設定）：品項（分類、盤點單位、安全庫存、叫貨單位與換算、廠商）、每日盤點、叫貨（數量、預計到貨、叫貨註記）→ 到貨自動加庫存、直接進貨、紀錄。低於安全庫存又沒叫貨的，盤點後 LINE 通知老闆、主管（每項每天一次）（GAS gas-4.93）'],
   ['v0.1-173','11-02','原地拉牌：牌況分白牌區（上牌）／紅牌區（服務中）。救援牌在上牌區原地翻紅；被打槍的老師留在服務中原地翻白（標「被打槍」），順位照開始做這位客人的時間，有客人時照順位接（主櫃、老師頁牌況都一樣）（GAS gas-4.92：規則文字）'],
   ['v0.1-172','11-02','原地拉牌的打槍／救援：被打槍的老師不動牌，照開始做這位客人的時間原地翻白；救援牌也不動，原地翻紅，做完回原位。拿掉「被打槍的老師排到後面」的勾選（回牌排隊不變）（GAS gas-4.91）'],
   ['v0.1-171','11-02','牌位排序方式「上牌順位」改成「原地拉牌」：白牌照上牌時間排；老師開始做事時排到開始的時間，做完原地翻白，中間有客人先做完的可以先出，前一張回牌後排回它後面（例：上牌 7、10、88，7、10 去做事，88 在前，回牌後是 88、7、10）（GAS gas-4.90）'],
@@ -7233,6 +7366,8 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
       </Card>
       </>}
       {ST_&&<>
+      <div className={sec}>耗材庫存</div>
+      <Card className="p-3"><InvBox mode="owner" toast={toast} ask={ask}/></Card>
       <div className={sec}>優惠券（序號）</div>
       <Card className="p-3"><CpnAdmin toast={toast} ask={ask}/></Card>
       <div className={sec}>老點 LINE 通知（老師）</div>
