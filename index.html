@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-174</title>
+<title>緩緩門店 v0.1-176</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-174';
+const VER='v0.1-176';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1090,18 +1090,70 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
     {fixLogs.slice().reverse().map((x,i)=><div key={i} className="flex gap-2 py-1 border-b border-line last:border-0 num"><span className="text-mute w-24 shrink-0">{clockText(x.at)}</span><span className="w-14 shrink-0 truncate">{x.by||'—'}</span><span className="flex-1 min-w-0">{x.t}</span></div>)}</Card></div>);
   const closeBtn=!ro&&!closed&&(st.n>0||exps.length>0)&&<button className="w-full h-12 mt-5 rounded-xl border border-sage text-sageD bg-card" onClick={()=>openClose(st,ex)}>日結</button>;
 
-  if(part==='side')return (<div className="pb-8">{dateNav}{maincBar}{summary}{closeCard}{expBlock}{tStats}{closeBtn}{fixBlock}</div>);
+  if(part==='side')return (<div className="pb-8">{dateNav}{maincBar}{summary}{closeCard}{expBlock}{tStats}<InvDayCard date={date}/>{closeBtn}{fixBlock}</div>);
   if(part==='list')return (<div className="pb-8">{ordersBlock}</div>);
   return (
     <div className={wide?'pb-8':'pb-28'}>
       {dateNav}{maincBar}{summary}{closeCard}
       <div className="mt-0">{ordersBlock}</div>
-      {expBlock}{tStats}{closeBtn}{fixBlock}
+      {expBlock}{tStats}<InvDayCard date={date}/>{closeBtn}{fixBlock}
       {!wide&&!ro&&!closed&&<button className="fixed z-30 right-5 bottom-24 w-16 h-16 rounded-full bg-sage text-white text-4xl shadow-lg active:bg-sageD" style={{marginBottom:'env(safe-area-inset-bottom)'}} onClick={()=>openEditor(null)} aria-label="新增訂單">＋</button>}
     </div>
   );
 }
 
+/* v0.1-176 老闆頁日結／月結的耗材資訊（GAS gas-4.95 action inv op day／month；通行證） */
+const invQ=n=>n==null?'—':String(Math.round(Number(n)*100)/100);
+function InvDayCard({date}){
+  const [d,setD]=useState(null);const [err,setErr]=useState('');
+  useEffect(()=>{if(!cloudOn())return;setD(null);setErr('');cloud.call({action:'inv',op:'day',date},30000).then(setD).catch(e=>setErr(e.message))},[date]);
+  if(!cloudOn())return null;
+  const row=(ic,cls,body)=><div className="flex gap-2 py-1.5 border-b border-line last:border-0 text-sm"><span className={'w-16 shrink-0 text-xs pt-0.5 '+cls}>{ic}</span><span className="flex-1 min-w-0">{body}</span></div>;
+  return (<><div className="text-sm text-mute mt-5 mb-2 px-1">耗材</div>
+    <Card className="px-3 py-1.5">
+      {!d&&<div className="text-xs text-mute py-2">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>}
+      {d&&<>
+        {row('盤點',d.counts.length?'text-sageD':'text-warn',d.counts.length?d.counts.map(c=>c.by+(c.teacher?'':'（櫃台）')+' '+c.t+'・'+c.n+' 項').join('；'):<span className="text-warn">今天沒有盤點</span>)}
+        {d.today&&row('安全庫存',d.low.length?'text-warn':'text-sageD',d.low.length?d.low.map((x,i)=><span key={i} className="block">{x.name} <span className="num text-warn">{invQ(x.qty)}/{invQ(x.safe)} {x.unit}</span>{x.ord?<span className="ml-1 text-[11px] px-1 rounded bg-sageL text-sageD">已叫貨</span>:<span className="ml-1 text-[11px] px-1 rounded bg-warnL text-warn">還沒叫貨</span>}</span>):'都在安全庫存以上')}
+        {row('到貨',d.arr.length?'text-sageD':'text-mute',d.arr.length?d.arr.map((x,i)=><span key={i} className="block">{x.name} <span className="num">+{invQ(x.n)} {x.unit}</span><span className="text-xs text-mute">（{x.k==='進貨'?'直接進貨':'叫貨到貨'}・{x.by}{x.note?'・'+x.note:''}）</span></span>):<span className="text-mute">今天沒有到貨</span>)}
+        {d.today&&d.late.length>0&&row('逾期未到','text-warn',d.late.map((x,i)=><span key={i} className="block">{x.name} {invQ(x.n)} {x.ou}<span className="text-xs text-mute">（預計 {mdTxt(x.eta)}・{x.by} 叫）</span></span>))}
+        {d.diff.length>0&&row('差異大','text-[#9a6a00]',d.diff.map((x,i)=><span key={i} className="block">{x.name} <span className="num">{x.d>0?'+':''}{invQ(x.d)} {x.unit}</span><span className="text-xs text-mute">（盤到 {invQ(x.after)}・{x.by}）</span></span>))}
+        {!d.today&&<div className="text-[11px] text-mute pb-1.5">安全庫存、逾期未到只在當天顯示</div>}
+      </>}
+    </Card></>);
+}
+function InvMonth({ym}){
+  const [d,setD]=useState(null);const [err,setErr]=useState('');
+  useEffect(()=>{if(!cloudOn())return;setD(null);setErr('');cloud.call({action:'inv',op:'month',ym},30000).then(setD).catch(e=>setErr(e.message))},[ym]);
+  const g=useMemo(()=>{const md=loadMonth(ym);let all=0,oil=0;Object.values(md.days||{}).forEach(dd=>(dd.orders||[]).filter(o=>!o.void).forEach(o=>orderItems(o).forEach(x=>{all++;if(x.svc==='oil')oil++})));return {all,oil}},[ym]);
+  if(!cloudOn())return null;
+  const per=(u,n)=>u==null||!n?'—':invQ(u/n*100);
+  return (<><div className="flex items-baseline justify-between mt-5 mb-2 px-1"><div className="text-sm text-mute">耗材</div>{d&&<div className="text-xs text-mute num">客人 {g.all} 位・油壓 {g.oil} 位</div>}</div>
+    {!d&&<Card className="p-3 text-xs text-mute">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</Card>}
+    {d&&<>
+      <Card className="overflow-hidden">
+        {!d.items.length&&<div className="p-3 text-sm text-mute">還沒有耗材品項</div>}
+        {d.items.length>0&&<table className="w-full text-sm num">
+          <thead className="text-xs text-mute bg-brownL/50"><tr><th className="text-left px-3 py-2 font-normal">品項</th><th className="font-normal text-right">用量</th><th className="font-normal text-right">每天</th><th className="font-normal text-right">每百位</th><th className="text-right px-3 font-normal">缺貨</th></tr></thead>
+          <tbody>{d.items.map(x=>{const up=x.prev!=null&&x.use!=null&&x.prev>0?Math.round((x.use-x.prev)/x.prev*100):null;return (
+            <tr key={x.id} className="border-t border-line align-top">
+              <td className="px-3 py-2">{x.name}<span className="block text-[11px] text-mute">{x.unit}{x.cat?'・'+x.cat:''}</span></td>
+              <td className="text-right py-2">{invQ(x.use)}<span className="block text-[11px] text-mute">上月 {invQ(x.prev)}{up!=null&&Math.abs(up)>=20?<b className={up>0?' text-warn':' text-sageD'}> {up>0?'+':''}{up}%</b>:''}</span></td>
+              <td className="text-right py-2">{invQ(x.avg)}</td>
+              <td className="text-right py-2">{per(x.use,g.all)}{x.cat==='油品'&&g.oil>0&&<span className="block text-[11px] text-mute">油壓 {per(x.use,g.oil)}</span>}</td>
+              <td className={'text-right px-3 py-2 '+(x.short?'text-warn':'text-mute')}>{x.short?x.short+' 天':'—'}</td>
+            </tr>)})}</tbody>
+        </table>}
+      </Card>
+      <div className="text-[11px] text-mute mt-1 px-1">用量＝月初庫存＋本月進貨－月底（或今天）庫存；每百位＝每 100 位客人用多少。上月差 20% 以上會標示。缺貨＝低於安全庫存的天數。</div>
+      <div className="text-sm text-mute mt-4 mb-2 px-1 flex justify-between"><span>盤點完成率</span><span className="num">{d.countDays}／{d.days} 天{d.days?'（'+Math.round(d.countDays/d.days*100)+'%）':''}</span></div>
+      <Card className="px-3 py-1.5">
+        {!d.who.length&&<div className="text-sm text-mute py-1.5">本月還沒有盤點</div>}
+        {d.who.map(w=><div key={w.by} className="flex items-center py-1.5 border-b border-line last:border-0 text-sm num"><span className="flex-1">{w.by}{!w.teacher&&<span className="ml-1 text-[11px] text-mute">櫃台／主管</span>}</span><span>{w.days} 天</span></div>)}
+      </Card>
+    </>}
+  </>);
+}
 /* ========== 月報 ========== */
 /* 發薪週期：上期 1～15 號（當月 20 號發薪）、下期 16 號～月底（次月 5 號發薪） */
 const PERIODS=[{id:'all',label:'整月'},{id:'h1',label:'上期'},{id:'h2',label:'下期'}];
@@ -1283,6 +1335,7 @@ function MonthPage({S,rev,goDay,openPay,ask,toast}){
             </div>);})}
         </Card>
       </>}
+      {per==='all'&&<InvMonth ym={ym}/>}
     </div>
   );
 }
@@ -3192,6 +3245,36 @@ function TeacherBoardLive({me}){
     <div className="flex items-center justify-between text-[11px] text-mute mt-1"><span>主櫃上傳的紀錄，每分鐘更新</span><button className="underline" onClick={load}>{busy?'更新中…':'重新整理'}</button></div>
   </div>;
 }
+/* v0.1-175 老師頁「今日盤點」：主管口頭安排輪值；當天第一位存檔的老師負責，其他人只能看，填的人當天可以再改（GAS gas-4.94 action tinv） */
+function TInvDay(){
+  const [d,setD]=useState(null);const [cnt,setCnt]=useState({});const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [ok,setOk]=useState('');
+  const put=j=>{setD(j);const c={};((j.rec&&j.rec.mine&&j.rec.counts)||[]).forEach(x=>{c[x.id]=String(x.qty)});setCnt(c)};
+  const load=async()=>{setBusy('load');setErr('');try{put(await tCall({action:'tinv',op:'list'}))}catch(e){setErr(e.message)}setBusy('')};
+  useEffect(()=>{load()},[]);
+  if(!d)return <div className="text-sm text-mute">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>;
+  const rec=d.rec,lock=rec&&!rec.mine,done={};((rec&&rec.counts)||[]).forEach(x=>{done[x.id]=x});
+  const n=Object.values(cnt).filter(v=>v!=='').length;
+  const save=async()=>{const L=Object.entries(cnt).filter(([,v])=>v!=='').map(([id,qty])=>({id,qty:Number(qty)}));if(!L.length)return setErr('請輸入盤點數量');
+    setBusy('save');setErr('');setOk('');try{const j=await tCall({action:'tinv',op:'count',counts:L});put(j);setOk('已存盤點 '+L.length+' 項'+(j.alert&&j.alert.n?'・'+j.alert.n+' 項低於安全庫存，已通知主管':''))}catch(e){setErr(e.message)}setBusy('')};
+  const cats=[...new Set(d.items.map(x=>x.cat||'其他'))];
+  return (<Card className="p-3">
+    <div className={'text-sm px-3 py-2 rounded-lg mb-2 '+(rec?(lock?'bg-bg text-mute':'bg-sageL text-sageD'):'bg-brownL text-brown')}>
+      {!rec?'今天還沒有人盤點。輪到你的話，填完按「儲存盤點」。':lock?<>今天由 <b className="num">{rec.tc}</b> 號盤點・<span className="num">{rec.t}</span>{rec.et?'（'+rec.et+' 修改）':''}，其他人不能再填或修改</>:<>✓ 你在 <span className="num">{rec.t}</span> 盤點了{rec.et?'（'+rec.et+' 修改）':''}，今天可以再修改</>}</div>
+    {!d.items.length&&<div className="text-sm text-mute">還沒有耗材品項，請主管先設定</div>}
+    {cats.map(c=><div key={c} className="mb-1">
+      <div className="text-[11px] text-mute font-semibold mt-1">{c}</div>
+      {d.items.filter(x=>(x.cat||'其他')===c).map(x=>{const r=done[x.id];return <div key={x.id} className="flex items-center gap-2 py-1.5 border-b border-line last:border-0 text-sm">
+        <span className="flex-1 min-w-0">{x.name}{x.note&&<span className="block text-[10px] text-mute">{x.note}</span>}</span>
+        {lock?<span className={'num '+(r?'text-ink':'text-mute')}>{r?r.qty+' '+x.unit:'—'}</span>
+          :<><input className="w-20 h-9 px-2 rounded-lg border border-line bg-white text-sm text-right num" inputMode="decimal" placeholder="數量" value={cnt[x.id]==null?'':cnt[x.id]} onChange={e=>{const v=e.target.value.replace(/[^\d.]/g,'');setCnt(o=>Object.assign({},o,{[x.id]:v}));setOk('')}}/><span className="w-6 text-xs text-mute">{x.unit}</span></>}
+      </div>})}
+    </div>)}
+    {err&&<div className="text-xs text-warn mt-1">✗ {err}</div>}
+    {ok&&<div className="text-xs text-sageD mt-1">✓ {ok}</div>}
+    {!lock&&d.items.length>0&&<button type="button" className="w-full h-11 mt-2 rounded-xl bg-sage text-white disabled:opacity-50" disabled={!!busy||!n} onClick={save}>{busy==='save'?'儲存中…':(rec?'儲存修改':'儲存盤點')+(n?'（'+n+' 項）':'')}</button>}
+    <div className="flex items-start gap-2 mt-1"><span className="flex-1 text-[11px] text-mute">{rec?'':'存了以後，今天只有你能修改，其他老師只能看。'}只填有盤的品項，填實際看到的數量。</span><button type="button" className="text-xs text-mute underline shrink-0" onClick={load}>{busy==='load'?'更新中…':'重新整理'}</button></div>
+  </Card>);
+}
 /* v0.1-158 老師頁「今日服務」：今天每一筆（點一下替客人評分、加標籤、寫服務記錄；營業日換日後就不能再記）＋「今日支數確認」（確認後從上牌區下牌） */
 const STARS=n=>'★★★★★'.slice(0,n)+'☆☆☆☆☆'.slice(0,5-n);
 async function tCall(b){const t=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!t)throw new Error('取不到 LINE 身分，請關閉後重新開啟');return cloud.call(Object.assign({idToken:t},b),30000)}
@@ -3367,9 +3450,10 @@ function TeacherLive({me,mode}){
     (<Sec title="排班規則" fold><Card className="p-4"><RuleBoard S={loadSettings()} live by={me&&me.code}/></Card></Sec>),
     (<Sec title="老師牌況"><TeacherBoardLive me={me}/></Sec>),
     (<Sec title="未來一週老點"><WeekLd/></Sec>),   // 9：v0.1-167
+    (<Sec title="今日盤點（耗材）"><TInvDay/></Sec>),   // 10：v0.1-175
   ];
   const head=(<div className="mt-1">{monthNav}{status}</div>);
-  return <RolePage mode={mode} head={head} B={B} phone={[8,0,1,2,3,5,4,9,6,7]} wide={{top:[8],cols:[[0,1,3,5],[2,4,9,6,7]]}} xwide={{top:[8],cols:[[0,3,5],[1,6],[2,4,9,7]]}}/>;
+  return <RolePage mode={mode} head={head} B={B} phone={[8,0,1,2,3,5,4,9,10,6,7]} wide={{top:[8],cols:[[0,1,3,5],[2,4,9,10,6,7]]}} xwide={{top:[8],cols:[[0,3,5],[1,6],[2,4,9,10,7]]}}/>;
 }
 
 function TeacherHome({me,mode,real}){
@@ -5043,6 +5127,7 @@ function InvBox({mode,ks,toast,ask}){
     {low.length>0&&tab!=='order'&&<button type="button" className="w-full text-left text-xs px-3 py-2 mb-2 rounded-lg bg-warnL text-warn" onClick={()=>setTab('order')}>⚠ 低於安全庫存 {low.length} 項：{low.map(x=>x.name).join('、')}{need.length?'（'+need.length+' 項還沒叫貨）':'（都已叫貨）'} ›</button>}
 
     {tab==='count'&&<>
+      <div className={'text-xs px-3 py-1.5 mb-2 rounded-lg '+(d.tcRec?'bg-sageL text-sageD':'bg-bg text-mute')}>{d.tcRec?<>今日老師盤點：<b className="num">{d.tcRec.tc}</b> 號・<span className="num">{d.tcRec.t}</span>{d.tcRec.et?'（'+d.tcRec.et+' 修改）':''}・{d.tcRec.n} 項 ✓</>:'今日老師盤點：還沒有人盤'}</div>
       {!act.length&&<div className="text-sm text-mute py-2">還沒有品項{d.admin?'，到「品項」新增':'，請老闆或主管到「品項」新增'}</div>}
       {cats.map(c=><div key={c} className="mb-2">
         <div className="text-[11px] text-mute font-semibold mt-1">{c}</div>
@@ -6777,6 +6862,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-176','11-04','老闆頁日報加「耗材」：今天誰盤點（沒盤紅字）、低於安全庫存（已叫貨／還沒叫貨）、到貨、逾期未到、盤點差異大的品項。月報（整月）加「耗材」：各品項用量（含上月比較）、每天平均、每百位客人（油品另算每百位油壓）、缺貨天數，以及盤點完成率與每個人盤了幾天（GAS gas-4.95）'],
+  ['v0.1-175','11-04','老師頁新增「今日盤點（耗材）」：主管口頭安排輪值，當天第一位存檔的老師負責，其他老師只能看、不能填或改，填的人當天可以再改；盤點數量直接改庫存、低於安全庫存通知主管。主櫃「耗材庫存 → 盤點」顯示今天由幾號盤點（GAS gas-4.94）'],
   ['v0.1-174','11-04','耗材庫存（主櫃最下面「耗材庫存」、老闆頁設定）：品項（分類、盤點單位、安全庫存、叫貨單位與換算、廠商）、每日盤點、叫貨（數量、預計到貨、叫貨註記）→ 到貨自動加庫存、直接進貨、紀錄。低於安全庫存又沒叫貨的，盤點後 LINE 通知老闆、主管（每項每天一次）（GAS gas-4.93）'],
   ['v0.1-173','11-02','原地拉牌：牌況分白牌區（上牌）／紅牌區（服務中）。救援牌在上牌區原地翻紅；被打槍的老師留在服務中原地翻白（標「被打槍」），順位照開始做這位客人的時間，有客人時照順位接（主櫃、老師頁牌況都一樣）（GAS gas-4.92：規則文字）'],
   ['v0.1-172','11-02','原地拉牌的打槍／救援：被打槍的老師不動牌，照開始做這位客人的時間原地翻白；救援牌也不動，原地翻紅，做完回原位。拿掉「被打槍的老師排到後面」的勾選（回牌排隊不變）（GAS gas-4.91）'],
