@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-183</title>
+<title>緩緩門店 v0.1-184</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-183';
+const VER='v0.1-184';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -1116,13 +1116,13 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
     {fixLogs.slice().reverse().map((x,i)=><div key={i} className="flex gap-2 py-1 border-b border-line last:border-0 num"><span className="text-mute w-24 shrink-0">{clockText(x.at)}</span><span className="w-14 shrink-0 truncate">{x.by||'—'}</span><span className="flex-1 min-w-0">{x.t}</span></div>)}</Card></div>);
   const closeBtn=!ro&&!closed&&(st.n>0||exps.length>0)&&<button className="w-full h-12 mt-5 rounded-xl border border-sage text-sageD bg-card" onClick={()=>openClose(st,ex)}>日結</button>;
 
-  if(part==='side')return (<div className="pb-8">{dateNav}{maincBar}{summary}{closeCard}{expBlock}{tStats}<InvDayCard date={date}/>{closeBtn}{fixBlock}</div>);
+  if(part==='side')return (<div className="pb-8">{dateNav}{maincBar}{summary}{closeCard}{expBlock}{tStats}<DeclDayCard date={date} guests={st.guests}/><TbPunctDay date={date} S={S}/><InvDayCard date={date}/>{closeBtn}{fixBlock}</div>);
   if(part==='list')return (<div className="pb-8">{ordersBlock}</div>);
   return (
     <div className={wide?'pb-8':'pb-28'}>
       {dateNav}{maincBar}{summary}{closeCard}
       <div className="mt-0">{ordersBlock}</div>
-      {expBlock}{tStats}<InvDayCard date={date}/>{closeBtn}{fixBlock}
+      {expBlock}{tStats}<DeclDayCard date={date} guests={st.guests}/><TbPunctDay date={date} S={S}/><InvDayCard date={date}/>{closeBtn}{fixBlock}
       {!wide&&!ro&&!closed&&<button className="fixed z-30 right-5 bottom-24 w-16 h-16 rounded-full bg-sage text-white text-4xl shadow-lg active:bg-sageD" style={{marginBottom:'env(safe-area-inset-bottom)'}} onClick={()=>openEditor(null)} aria-label="新增訂單">＋</button>}
     </div>
   );
@@ -1226,7 +1226,7 @@ function AnaPage({S}){
   const [rk,setRk]=useState('d30');
   const [from,to]=anaRange(rk);
   const [dc,setDc]=useState(null);   // v0.1-183 客滿沒接到的客人（主櫃安排客人「客人沒接受」，GAS bkdecl）
-  useEffect(()=>{if(!cloudOn())return;setDc(null);cloud.call({action:'bkdecl',from,to},30000).then(j=>setDc(j.list||[])).catch(e=>setDc({err:e.message}))},[from,to]);
+  useEffect(()=>{if(!cloudOn())return;setDc(null);declGet(from,to).then(setDc).catch(e=>setDc({err:e.message}))},[from,to]);
   const A=useMemo(()=>{
     const days=anaDays(from,to),wd=Array.from({length:7},()=>({g:0,n:0,days:0})),hr={},sex={M:0,F:0,'':0},svc={},dur={},tcZh={},tcLd={},tcN={},ad={},cus={};
     let guests=0,rev=0,ordersN=0,openDays=0,ldN=0;
@@ -1274,6 +1274,7 @@ function AnaPage({S}){
     </AnaCard>
 
     <DeclCard dc={dc} A={A} hrRows={hrRows}/>
+    <CapCard from={from} to={to} dc={dc} S={S}/>
 
     <AnaCard t="男女比" sub={'依會員稱謂；非會員算「未知」'}>
       <div className="flex h-7 rounded-lg overflow-hidden text-[11px] text-white num">{[['F','女',"#a0784f"],['M','男','#56624b'],['','未知','#cfc6b8']].map(([k,l,c])=>A.sex[k]?<div key={l} style={{width:(A.sex[k]/sexT*100)+'%',background:c}} className="flex items-center justify-center whitespace-nowrap overflow-hidden">{l} {pct(A.sex[k],sexT)}</div>:null)}</div>
@@ -1314,6 +1315,151 @@ function AnaPage({S}){
     </AnaCard>
     </>}
   </div>);
+}
+/* v0.1-184 客滿沒接到（日報、月報）、上下牌準時統計（日報、月報）、人力與需求（分析）。
+   班表來自 GAS tbsched（正職：開通名單的上下牌時間；兼職支援：老師頁填的可上班時間；請假）。時間一律換成營業日分鐘（05:00 前算隔天）。 */
+const bmin=t=>{const m=tm(t);return m<300?m+1440:m};
+const TB_GRACE=10;   // 容許誤差（分）
+const __tbs={},__dcl={};
+const tbSchedGet=(from,to)=>{const k=from+'|'+to;if(!__tbs[k])__tbs[k]=cloud.call({action:'tbsched',from,to},30000).catch(e=>{delete __tbs[k];throw e});return __tbs[k]};
+const declGet=(from,to)=>{const k=from+'|'+to;if(!__dcl[k])__dcl[k]=cloud.call({action:'bkdecl',from,to},30000).then(j=>j.list||[]).catch(e=>{delete __dcl[k];throw e});return __dcl[k]};
+function schedFor(sc,tc,date){
+  const t=(sc.tea||[]).find(x=>x.tc===String(tc));if(!t)return null;
+  let s=null;if(t.support){const a=(t.av||[]).find(x=>x.from<=date&&x.to>=date);if(a)s={in:a.t1,out:a.t2}}else{const sh=shiftOf(t.shift);if(sh)s={in:sh.in,out:sh.out}}
+  if(!s)return null;
+  for(const L of (sc.lv||[]).filter(x=>x.tc===String(tc)&&x.from<=date&&x.to>=date)){if(L.all||!L.t1)return {leave:true,in:s.in,out:s.out};
+    if(bmin(L.t1)<=bmin(s.in)+TB_GRACE)s.in=L.t2;if(bmin(L.t2)>=bmin(s.out)-TB_GRACE)s.out=L.t1}
+  return s;
+}
+function tbPunct(day,date,sc,today){   // 每位老師一列：{tc,sch,on,off,late,early,noOn,noOff,rep,tmp}；只回有問題的
+  const tb=(day.tb||[]).slice().sort((a,b)=>(a.at||0)-(b.at||0)),tcs=new Set(tb.filter(e=>e.k==='on'||e.k==='off').map(e=>String(e.tc)));
+  (sc.tea||[]).forEach(t=>{const s=schedFor(sc,t.tc,date);if(s&&!s.leave)tcs.add(t.tc)});
+  const past=date<today,out=[];
+  tcs.forEach(tc=>{const ev=tb.filter(e=>String(e.tc)===tc),io=ev.filter(e=>e.k==='on'||e.k==='off'),s=schedFor(sc,tc,date);
+    if(s&&s.leave)return;
+    const on=(io.find(e=>e.k==='on')||{}).t||'',last=io[io.length-1],off=last&&last.k==='off'?last.t:'';
+    const rep=ev.some(e=>e.k==='late'),tmp=ev.some(e=>e.k==='tmplv');
+    const r={tc,sch:s?s.in+'-'+s.out:'',on,off,late:0,early:0,noOn:false,noOff:false,rep,tmp};
+    if(s&&on){const d=bmin(on)-bmin(s.in);if(d>TB_GRACE)r.late=d}
+    if(s&&!on&&past)r.noOn=true;
+    if(s&&off&&!tmp){const d=bmin(s.out)-bmin(off);if(d>TB_GRACE)r.early=d}
+    if(on&&!off&&past)r.noOff=true;
+    if(r.late||r.early||r.noOn||r.noOff)out.push(r)});
+  return out.sort((a,b)=>Number(a.tc)-Number(b.tc)||a.tc.localeCompare(b.tc));
+}
+const punctTxt=r=>[r.noOn&&'排班但沒上牌',r.late&&'晚 '+r.late+' 分上牌'+(r.rep?'（有報備晚到）':''),r.early&&'早 '+r.early+' 分下牌',r.noOff&&'沒下牌'].filter(Boolean).join('・');
+function TbPunctDay({date,S}){
+  const [sc,setSc]=useState(null);const [err,setErr]=useState('');
+  useEffect(()=>{if(!cloudOn())return;setSc(null);setErr('');const ym=date.slice(0,7);tbSchedGet(ym+'-01',ym+'-31').then(setSc).catch(e=>setErr(e.message))},[date]);
+  if(!cloudOn())return null;
+  const day=getDay(loadMonth(monKey(date)),date),L=sc?tbPunct(day,date,sc,bizToday(S.cutoff)):null;
+  return (<><div className="text-sm text-mute mt-5 mb-2 px-1">上下牌準時</div>
+    <Card className="px-3 py-1.5">
+      {!sc&&<div className="text-xs text-mute py-2">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>}
+      {L&&!L.length&&<div className="text-sm text-sageD py-1.5">✓ 都有照班表上下牌（誤差 {TB_GRACE} 分內）</div>}
+      {L&&L.map(r=><div key={r.tc} className="flex gap-2 py-1.5 border-b border-line last:border-0 text-sm">
+        <b className="num w-10 shrink-0">{r.tc}</b><span className="flex-1 min-w-0"><span className={r.rep&&!r.early&&!r.noOff&&!r.noOn?'text-brown':'text-warn'}>{punctTxt(r)}</span>
+          <span className="block text-[11px] text-mute num">班表 {r.sch?r.sch.replace('-','～'):'—'}・上牌 {r.on||'—'}・下牌 {r.off||'—'}</span></span></div>)}
+      {L&&<div className="text-[11px] text-mute py-1.5">比對班表（正職：上下牌時間；兼職：可上班時間；請假的不算）。誤差 {TB_GRACE} 分內不列出；臨時請假的不算早下。</div>}
+    </Card></>);
+}
+function TbPunctMonth({ym,S}){
+  const [sc,setSc]=useState(null);const [err,setErr]=useState('');
+  useEffect(()=>{if(!cloudOn())return;setSc(null);setErr('');tbSchedGet(ym+'-01',ym+'-31').then(setSc).catch(e=>setErr(e.message))},[ym]);
+  const rows=useMemo(()=>{if(!sc)return null;const today=bizToday(S.cutoff),md=loadMonth(ym),T={};
+    Object.keys(md.days||{}).sort().forEach(dd=>{const date=ym+'-'+dd;if(date>today)return;tbPunct(md.days[dd],date,sc,today).forEach(r=>{const t=T[r.tc]||(T[r.tc]={tc:r.tc,late:0,lateM:0,rep:0,early:0,earlyM:0,noOn:0,noOff:0});
+      if(r.late){t.late++;t.lateM+=r.late;if(r.rep)t.rep++}if(r.early){t.early++;t.earlyM+=r.early}if(r.noOn)t.noOn++;if(r.noOff)t.noOff++})});
+    return Object.values(T).sort((a,b)=>(b.late+b.early+b.noOn+b.noOff)-(a.late+a.early+a.noOn+a.noOff)||Number(a.tc)-Number(b.tc))},[sc,ym,S]);
+  if(!cloudOn())return null;
+  return (<><div className="text-sm text-mute mt-5 mb-2 px-1">上下牌準時（本月）</div>
+    <Card className="overflow-hidden">
+      {!rows&&<div className="p-3 text-xs text-mute">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>}
+      {rows&&!rows.length&&<div className="p-3 text-sm text-sageD">✓ 本月都有照班表上下牌（誤差 {TB_GRACE} 分內）</div>}
+      {rows&&rows.length>0&&<table className="w-full text-sm num">
+        <thead className="text-[11px] text-mute bg-brownL/50"><tr><th className="text-left px-3 py-2 font-normal">老師</th><th className="font-normal text-right">晚上牌</th><th className="font-normal text-right">早下牌</th><th className="font-normal text-right">沒下牌</th><th className="font-normal text-right px-3">沒上牌</th></tr></thead>
+        <tbody>{rows.map(r=><tr key={r.tc} className="border-t border-line align-top">
+          <td className="px-3 py-2 font-semibold">{r.tc}</td>
+          <td className="text-right py-2">{r.late?<>{r.late} 次<span className="block text-[10px] text-mute">共 {r.lateM} 分{r.rep?'・報備 '+r.rep:''}</span></>:'—'}</td>
+          <td className="text-right py-2">{r.early?<>{r.early} 次<span className="block text-[10px] text-mute">共 {r.earlyM} 分</span></>:'—'}</td>
+          <td className="text-right py-2">{r.noOff?r.noOff+' 次':'—'}</td>
+          <td className="text-right py-2 px-3">{r.noOn?r.noOn+' 次':'—'}</td></tr>)}</tbody></table>}
+    </Card>
+    <div className="text-[11px] text-mute mt-1 px-1">誤差 {TB_GRACE} 分內不算；請假、臨時請假不算。班表用目前的設定（正職上下牌時間、兼職可上班時間），以前改過班的那幾天可能不準。</div></>);
+}
+function DeclDayCard({date,guests}){
+  const [L,setL]=useState(null);const [err,setErr]=useState('');
+  useEffect(()=>{if(!cloudOn())return;setL(null);setErr('');declGet(date,date).then(setL).catch(e=>setErr(e.message))},[date]);
+  if(!cloudOn())return null;
+  const P=(L||[]).reduce((a,b)=>a+b.n,0);
+  return (<><div className="text-sm text-mute mt-5 mb-2 px-1">客滿沒接到</div>
+    <Card className="px-3 py-1.5">
+      {!L&&<div className="text-xs text-mute py-2">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>}
+      {L&&!L.length&&<div className="text-sm text-mute py-1.5">今天沒有紀錄</div>}
+      {L&&L.length>0&&<><div className="text-sm py-1.5 num"><b className="text-warn">{L.length} 組・{P} 位</b><span className="text-xs text-mute">（占想來的客人 {Math.round(P/(P+(guests||0))*100)}%）</span></div>
+        {L.slice().sort((a,b)=>bmin(a.at||a.t)-bmin(b.at||b.t)).map((b,i)=><div key={i} className="flex gap-3 py-1 border-t border-line text-sm num"><span className="w-12">{b.at||b.t}</span><span className="flex-1">{b.n} 位</span><span className="text-mute text-xs">{b.src||''}</span></div>)}</>}
+      <div className="text-[11px] text-mute py-1.5">主櫃安排客人按「客人沒接受（記一筆）」的紀錄。</div>
+    </Card></>);
+}
+function DeclMonthCard({ym,guests,goAna}){
+  const [d,setD]=useState(null);const [err,setErr]=useState('');
+  useEffect(()=>{if(!cloudOn())return;setD(null);setErr('');const p=parseYmd(ym+'-01');p.setDate(0);const pym=ymd(p).slice(0,7);
+    Promise.all([declGet(ym+'-01',ym+'-31'),declGet(pym+'-01',pym+'-31')]).then(([a,b])=>setD({a,b})).catch(e=>setErr(e.message))},[ym]);
+  if(!cloudOn())return null;
+  const P=L=>L.reduce((x,y)=>x+y.n,0);
+  const top=(L,f,lb)=>{const m={};L.forEach(b=>{const k=f(b);if(k!=null)m[k]=(m[k]||0)+b.n});return Object.entries(m).sort((x,y)=>y[1]-x[1]).slice(0,2).map(([k,v])=>lb(k)+' '+v+' 位').join('、')||'—'};
+  return (<><div className="text-sm text-mute mt-5 mb-2 px-1">客滿沒接到（本月）</div>
+    <Card className="px-3 py-2">
+      {!d&&<div className="text-xs text-mute py-1">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>}
+      {d&&!d.a.length&&<div className="text-sm text-mute">本月沒有紀錄{d.b.length?'（上月 '+d.b.length+' 組・'+P(d.b)+' 位）':''}</div>}
+      {d&&d.a.length>0&&(()=>{const pa=P(d.a),pb=P(d.b),up=pb?Math.round((pa-pb)/pb*100):null,days=new Set(d.a.map(b=>b.date)).size;return <div className="text-sm num space-y-1">
+        <div><b className="text-warn">{d.a.length} 組・{pa} 位</b><span className="text-xs text-mute">（占想來的客人 {Math.round(pa/(pa+(guests||0))*100)}%・{days} 天有）</span></div>
+        <div className="text-xs">上月 {d.b.length} 組・{pb} 位{up!=null&&<b className={up>0?' text-warn':' text-sageD'}>（{up>0?'+':''}{up}%）</b>}</div>
+        <div className="text-xs">最常客滿：{top(d.a,b=>parseYmd(b.date).getDay(),k=>'週'+WD[k])}；{top(d.a,b=>{const h=Number(String(b.at||b.t).slice(0,2));return isNaN(h)?null:h},k=>String(k).padStart(2,'0')+' 點')}</div>
+        {goAna&&<button type="button" className="text-xs text-sageD underline" onClick={goAna}>看詳細圖表 → 分析</button>}</div>})()}
+    </Card></>);
+}
+/* 人力與需求：每個鐘頭（取 :30）平均上牌幾位、服務中幾位、使用率，對照客滿沒接到的人數；老師上牌效率 */
+function capCalc(days,today,S){
+  const H=Array.from({length:18},(_,i)=>i+9),G={all:{},wkd:{},wke:{}},T={};
+  H.forEach(h=>['all','wkd','wke'].forEach(g=>{G[g][h]={on:0,sv:0,n:0}}));
+  days.forEach(D=>{const tb=(getDay(loadMonth(monKey(D.date)),D.date).tb||[]).slice().sort((a,b)=>(a.at||0)-(b.at||0));if(!tb.some(e=>e.k==='on'))return;
+    const w=parseYmd(D.date).getDay(),grp=w===0||w===6?'wke':'wkd',ON={},SV={},open={};
+    tb.forEach(e=>{const tc=String(e.tc);if(e.k==='on'){if(open[tc]==null)open[tc]=bmin(e.t)}else if(e.k==='off'&&open[tc]!=null){(ON[tc]=ON[tc]||[]).push([open[tc],bmin(e.t)]);delete open[tc]}});
+    D.orders.forEach(o=>orderLines(o).forEach(l=>{if(!l.tc||!o.t)return;const a=bmin(o.t);let b=bmin(o.endAt||mcEnd(o));if(b<a)b+=1440;(SV[l.tc]=SV[l.tc]||[]).push([a,b]);
+      const t=T[l.tc]||(T[l.tc]={tc:l.tc,on:0,sv:0,zh:0,days:new Set()});t.sv+=b-a;t.zh+=zhiOf(l,S)}));
+    Object.keys(open).forEach(tc=>{const ends=(SV[tc]||[]).map(x=>x[1]);(ON[tc]=ON[tc]||[]).push([open[tc],Math.max(open[tc],...ends,D.date<today?open[tc]:bmin(hm(new Date())))])});   // 沒下牌：算到最後一位客人做完
+    Object.entries(ON).forEach(([tc,iv])=>{const t=T[tc]||(T[tc]={tc,on:0,sv:0,zh:0,days:new Set()});t.days.add(D.date);iv.forEach(([a,b])=>{t.on+=Math.max(0,b-a)})});
+    H.forEach(h=>{const m=h*60+30,inn=iv=>iv.some(([a,b])=>a<=m&&m<b);const on=Object.values(ON).filter(inn).length,sv=Object.values(SV).filter(inn).length;
+      [G.all[h],G[grp][h]].forEach(x=>{x.on+=on;x.sv+=Math.min(sv,Math.max(on,sv));x.n++})})});
+  return {H,G,T:Object.values(T).map(t=>Object.assign(t,{days:t.days.size})).filter(t=>t.on>0).sort((a,b)=>b.on-a.on)};
+}
+function CapCard({from,to,dc,S}){
+  const [g,setG]=useState('all');
+  const C=useMemo(()=>capCalc(anaDays(from,to),bizToday(S.cutoff),S),[from,to,S]);
+  const dcH={};(Array.isArray(dc)?dc:[]).forEach(b=>{const w=parseYmd(b.date).getDay(),gg=w===0||w===6?'wke':'wkd';if(g!=='all'&&gg!==g)return;const h=Number(String(b.at||b.t).slice(0,2));if(!isNaN(h)){const hh=h<5?h+24:h;dcH[hh]=(dcH[hh]||0)+b.n}});
+  const rows=C.H.map(h=>{const x=C.G[g][h];const on=x.n?x.on/x.n:0,sv=x.n?x.sv/x.n:0;return {h,on,sv,u:x.on?Math.round(x.sv/x.on*100):null,dc:dcH[h]||0}}).filter(r=>r.on>=0.05||r.dc);
+  if(!rows.length)return <AnaCard t="人力與需求"><div className="text-sm text-mute">這段期間沒有上下牌紀錄</div></AnaCard>;
+  const mx=Math.max(1,...rows.map(r=>r.on));
+  const short=rows.filter(r=>r.u!=null&&(r.u>=85||r.dc)).sort((a,b)=>b.dc-a.dc||b.u-a.u).slice(0,3),idle=rows.filter(r=>r.u!=null&&r.on>=2&&r.u<50).sort((a,b)=>a.u-b.u).slice(0,3);
+  const hl=h=>String(h%24).padStart(2,'0')+' 點';
+  return (<><AnaCard t="人力與需求" sub="每個鐘頭平均（取半點）">
+    <div className="flex rounded-lg border border-line overflow-hidden text-xs mb-2">{[['all','全部'],['wkd','平日（一～五）'],['wke','假日（六日）']].map(([k,l])=><button key={k} type="button" className={'flex-1 h-8 '+(g===k?'bg-sage text-white':'bg-card')} onClick={()=>setG(k)}>{l}</button>)}</div>
+    <div className="flex gap-3 text-[11px] text-mute mb-1"><span><i className="inline-block w-3 h-2 rounded-sm align-middle mr-1" style={{background:'#e4dccf'}}/>上牌</span><span><i className="inline-block w-3 h-2 rounded-sm align-middle mr-1" style={{background:'#56624b'}}/>服務中</span><span className="text-warn">● 沒接到</span></div>
+    <div className="space-y-1">{rows.map(r=><div key={r.h} className="flex items-center gap-2 text-xs num">
+      <span className="w-10 shrink-0 text-right text-mute">{String(r.h%24).padStart(2,'0')}</span>
+      <div className="flex-1 min-w-0" style={{position:'relative',height:20}}><div className="rounded" style={{position:'absolute',top:0,bottom:0,left:0,width:(r.on/mx*100)+'%',background:'#e4dccf'}}/><div className="rounded" style={{position:'absolute',top:0,bottom:0,left:0,width:(r.sv/mx*100)+'%',background:r.u>=85?'#56624b':'#8f9b81'}}/></div>
+      <span className="w-[4.6rem] shrink-0 text-right">{Math.round(r.sv*10)/10}/{Math.round(r.on*10)/10}<span className={'ml-1 '+(r.u>=85?'text-sageD font-semibold':'text-mute')}>{r.u==null?'—':r.u+'%'}</span></span>
+      <span className={'w-8 shrink-0 text-right '+(r.dc?'text-warn font-semibold':'text-mute')}>{r.dc||''}</span></div>)}</div>
+    <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+      <div className="rounded-lg bg-warnL/60 p-2"><div className="font-semibold text-warn mb-0.5">最常不夠用</div>{short.length?short.map(r=><div key={r.h} className="num">{hl(r.h)}・使用率 {r.u}%{r.dc?'・沒接到 '+r.dc:''}</div>):<div className="text-mute">沒有明顯不夠的時段</div>}</div>
+      <div className="rounded-lg bg-sageL/60 p-2"><div className="font-semibold text-sageD mb-0.5">最常閒置</div>{idle.length?idle.map(r=><div key={r.h} className="num">{hl(r.h)}・使用率 {r.u}%・上牌 {Math.round(r.on*10)/10} 位</div>):<div className="text-mute">沒有明顯閒置的時段</div>}</div></div>
+    <div className="text-[11px] text-mute mt-2 leading-relaxed">數字＝服務中／上牌（平均人數），使用率＝服務中÷上牌。使用率高又有客人沒接到 → 老師可能不夠；使用率不高卻沒接到 → 先查床位、腳位或排班。老師忘記下牌會讓上牌人數偏高（沒下牌的算到最後一位客人做完）。</div>
+  </AnaCard>
+  <AnaCard t="老師上牌效率" sub="上牌時數、服務時數、使用率">
+    <table className="w-full text-sm num"><thead><tr className="text-[11px] text-mute border-b border-line"><th className="text-left font-normal py-1">老師</th><th className="text-right font-normal">上牌</th><th className="text-right font-normal">服務</th><th className="text-right font-normal">支數</th><th className="text-right font-normal">使用率</th></tr></thead>
+      <tbody>{C.T.map(t=>{const u=Math.round(t.sv/t.on*100);return <tr key={t.tc} className="border-b border-line last:border-0"><td className="py-1.5 font-semibold">{t.tc}<span className="text-[10px] text-mute font-normal ml-1">{t.days} 天</span></td><td className="text-right">{Math.round(t.on/6)/10} 時</td><td className="text-right">{Math.round(t.sv/6)/10} 時</td><td className="text-right">{Math.round(t.zh*10)/10}</td><td className={'text-right '+(u>=80?'text-sageD font-semibold':u<40?'text-warn':'')}>{Math.min(u,100)}%</td></tr>})}</tbody></table>
+    <div className="text-[11px] text-mute mt-1">使用率＝服務時數÷上牌時數。很低的話，可以看是不是排在客人少的時段。</div>
+  </AnaCard></>);
 }
 /* ========== 月報 ========== */
 /* 發薪週期：上期 1～15 號（當月 20 號發薪）、下期 16 號～月底（次月 5 號發薪） */
@@ -1372,7 +1518,7 @@ function PeriodSeg({value,onChange,ym,noAll}){
   );
 }
 
-function MonthPage({S,rev,goDay,openPay,ask,toast}){
+function MonthPage({S,rev,goDay,goAna,openPay,ask,toast}){
   const testTc=useTestTcs();
   const [rv,setRv]=useState(0);   // 發放紀錄改了之後重算
   const [ym,setYm]=useState(()=>monKey(bizToday(S.cutoff)));
@@ -1497,7 +1643,7 @@ function MonthPage({S,rev,goDay,openPay,ask,toast}){
             </div>);})}
         </Card>
       </>}
-      {per==='all'&&<InvMonth ym={ym}/>}
+      {per==='all'&&<><DeclMonthCard ym={ym} guests={data.tot.guests} goAna={goAna}/><TbPunctMonth ym={ym} S={S}/><InvMonth ym={ym}/></>}
     </div>
   );
 }
@@ -5031,14 +5177,14 @@ function EarlyClose({ks,mgr,ask,toast,full}){
     {Res}</div>;
 }
 function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin,mgr}){
-  const J=useBk();const [day,setDay]=useState(date);const [form,setForm]=useState(null);const [sel,setSel]=useState(null);const [err,setErr]=useState('');const [showIn,setShowIn]=useState(false);
+  const J=useBk();const [day,setDay]=useState(date);const [form,setForm]=useState(null);const [showDecl,setShowDecl]=useState(false);const [sel,setSel]=useState(null);const [err,setErr]=useState('');const [showIn,setShowIn]=useState(false);
   const [ldAt,setLdAt]=useState('');const [ld,setLd]=useState(false);
   const load=()=>{setLd(true);return bkCall({op:'list'},ks).then(j=>{setErr('');bkPut(j);setLdAt(hm(new Date()))}).catch(e=>setErr(e.message)).finally(()=>setLd(false))};   // v0.1-132：記下次更新時間＋手動重新整理
   useEffect(()=>{load();const t=setInterval(()=>{if(document.visibilityState!=='hidden')load()},60000);return ()=>clearInterval(t)},[ks,MC.test]);
   if(!J)return <div className="text-sm text-mute">{err?'✗ '+err:<Ld/>}</div>;
   const days=[];for(let i=0;i<=14;i++)days.push(addDays(J.today,i));
   const list=(J.list||[]).filter(b=>b.date===day&&b.st!=='decl');
-  const decl=(J.list||[]).filter(b=>b.date===day&&b.st==='decl').length;
+  const declL=(J.list||[]).filter(b=>b.date===day&&b.st==='decl'),decl=declL.length,declP=declL.reduce((a,b)=>a+((b.g||[]).length||1),0);   // v0.1-184
   const isToday=day===date;
   const early=b=>isToday&&bkLive(b)&&b.here&&tm(b.t)>ceil10(nowM)&&!!mcFit(plan(b.id),b.g||[],ceil10(nowM));   // 在店等候、現在就排得下
   const setSt=async(b,st)=>{try{const j=await bkCall({op:'st',id:b.id,st},ks);bkPut(j);setSel(null);toast&&toast(BK_ST[st].l)}catch(e){setErr(e.message)}};
@@ -5052,7 +5198,8 @@ function BookSec({S,ks,by,line,date,todayDay,holds,nowM,plan,ask,toast,onCheckin
       <button type="button" className="h-12 px-3 rounded-xl border border-line bg-card text-sm leading-tight disabled:opacity-50" disabled={ld} onClick={()=>{load();toast&&toast('預約已重新整理')}}>{ld?'更新中…':'↻ 重新整理'}<span className="block text-[10px] text-mute num">{ldAt?ldAt+' 更新':''}</span></button></div>
     <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">{days.map((d,i)=>{const n=(J.list||[]).filter(b=>b.date===d&&bkLive(b)).length;return <button key={d} type="button" className={'shrink-0 h-11 px-2 rounded-xl border text-xs leading-tight '+(day===d?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setDay(d)}>
       <span className="block">{i===0?'今天':i===1?'明天':Number(d.slice(5,7))+'/'+Number(d.slice(8))}</span><span className="block num opacity-80">{n?n+' 組':'—'}</span></button>})}</div>
-    {isToday&&<div className="text-xs text-mute mb-1">在店等候 {waitN} 組{decl?'・今天客人沒接受 '+decl+' 組':''}</div>}
+    {isToday&&<div className="text-xs text-mute mb-1">在店等候 {waitN} 組{decl?<button type="button" className="ml-1 underline decoration-dotted" onClick={()=>setShowDecl(v=>!v)}>・今天沒接到 {decl} 組・{declP} 位 {showDecl?'▴':'▾'}</button>:''}</div>}
+    {isToday&&showDecl&&decl>0&&<div className="mb-2 px-3 py-1.5 rounded-lg bg-bg text-xs num">{declL.slice().sort((a,b)=>(a.at||0)-(b.at||0)).map(b=><div key={b.id} className="flex gap-3 py-0.5"><span className="w-12">{b.at?hm(new Date(b.at)):b.t}</span><span className="flex-1">{(b.g||[]).length||1} 位</span><span className="text-mute">{BK_SRC[b.src]||b.src||''}</span></div>)}</div>}
     {(()=>{const Row=b=>{const late=isToday&&bkLive(b)&&!b.here?nowM-tm(b.t):-1,hs=(holds.byBk||{})[b.id]||[],e=early(b);return (
       <button key={b.id} className={'w-full text-left flex items-start gap-2 py-2 border-b border-line last:border-0 text-sm '+(bkLive(b)?'':'opacity-60')+(e?' bg-sageL/50':'')} onClick={()=>setSel(b.id)}>
         <span className="num w-12 shrink-0 font-semibold">{b.t}</span>
@@ -7029,6 +7176,7 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-184','11-07','客滿沒接到：主櫃預約上方顯示今天幾組・幾位（點開看時間、人數、來源）；日報、月報各一張卡（月報含上月比較、最常客滿的星期幾與時段，可跳到分析）。上下牌準時：日報列出今天晚上牌、早下牌、沒下牌、排班沒上牌的老師；月報統計每位老師的次數與分鐘（比對正職上下牌時間、兼職可上班時間，請假不算，誤差 10 分）。分析新增「人力與需求」（每個鐘頭平均上牌、服務中、使用率，對照沒接到的人數，平日／假日，最常不夠用與閒置的時段）與「老師上牌效率」（GAS gas-5.01 action tbsched）'],
   ['v0.1-183','11-07','分析新增「客滿沒接到的客人」：主櫃安排客人按「客人沒接受（記一筆）」的紀錄，看沒接到幾組、幾位、占想來客人的比例、平均每天，依星期幾、時段（對照有接到的人數）、來源分布，做為排班與老師人數的參考（GAS gas-5.00 action bkdecl）'],
   ['v0.1-182','11-07','分析：最下面被底部選單擋住、拉不到底，修正；時段分布標明是「這段期間合計」，加上最多時段的平均每天人數'],
   ['v0.1-181','11-07','招待：站主櫃的人都可以勾（開單時或服務中）。開單、安排客人多「看部落客文章來的」，下面可選招待過的部落客帳號（招待單備註的 @帳號），也可以不選；報到開單會帶過去。老闆頁報表新增「分析」：最近 30 天／本月／上月的來客數、日均、營業額、客單價，星期幾來客（平日深色）、時段分布、男女比（依會員稱謂）、老點排行（不含招待）、老師支數排行、項目與時長、加購、會員回訪、部落客成效（看文章來的人數、營業額、招待前後 14 天日均來客）（GAS gas-4.99）'],
@@ -8181,7 +8329,7 @@ function App(){
   );
   const otherTabs=(<>
     {tab==='ana'&&<div className={wide?'px-4 max-w-3xl':'max-w-md mx-auto px-4'}><AnaPage S={S}/></div>}
-    {tab==='month'&&<MonthPage S={S} rev={rev} ask={ask} toast={toast} goDay={d=>{setDate(d);setTab('day');setRepLast('day')}} openPay={(ym,tc,per)=>setPay({ym,tc,per})}/>}
+    {tab==='month'&&<MonthPage S={S} rev={rev} ask={ask} toast={toast} goAna={()=>setTab('ana')} goDay={d=>{setDate(d);setTab('day');setRepLast('day')}} openPay={(ym,tc,per)=>setPay({ym,tc,per})}/>}
     {tab==='people'&&<SettingsPage key="people" page="people" onCustOrder={cu=>{setDate(ymd(new Date()));setTab('day');setRepLast('day');setXe(null);setEd({order:null,k:Date.now(),cu});toast('新的訂單：'+cuLabel(cu))}} sub={pSub} setSub={setPSub} S={S} saveS={saveS} ask={ask} toast={toast} lay={lay} onImported={()=>{setS(loadSettings());bump()}}/>}
     {tab==='set'&&<SettingsPage key="set" page="set" S={S} saveS={saveS} ask={ask} toast={toast} lay={lay} onImported={()=>{setS(loadSettings());bump()}}/>}
   </>);
