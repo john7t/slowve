@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-179</title>
+<title>緩緩門店 v0.1-181</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-179';
+const VER='v0.1-181';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -273,7 +273,7 @@ function orderItems(o){
 // 攤平成「每位客人一行」，並帶上整筆的欄位（統計、老師明細、薪資條都用這個）
 // 指定老師的品項（修腳皮→69）另外產生一行給那位老師：金額 0（營業額已算在主行）、只有支數與費用，xsOf＝原本服務的老師
 function orderLines(o,date){
-  const base={sn:o.sn,t:o.t,skip:o.skip,skipRev:o.skipRev,skipBy:o.skipBy,skipNote:o.skipNote,void:o.void,note:o.note,ca:o.ca};
+  const base={comp:o.comp,sn:o.sn,t:o.t,skip:o.skip,skipRev:o.skipRev,skipBy:o.skipBy,skipNote:o.skipNote,void:o.void,note:o.note,ca:o.ca};
   const out=[];
   orderItems(o).forEach((it,i)=>{
     out.push(Object.assign({},it,{id:o.id+'_'+i,oid:o.id,idx:i},base,date?{date}:{}));
@@ -283,6 +283,18 @@ function orderLines(o,date){
   return out;
 }
 const orderAmt=o=>orderItems(o).reduce((s,x)=>s+(x.amt||0),0);
+/* v0.1-181 部落客：招待單備註取出帳號（@帳號，沒有 @ 就取「・」前面的字）；訂單／預約 ref={k:'blog',acct}＝看部落客文章來的 */
+const blogAcct=note=>{const n=String(note||'').trim(),m=n.match(/@[A-Za-z0-9._]+/);return (m?m[0]:n.split(/[・\s,，]/)[0]).slice(0,40)};
+function ownerBlogs(){const seen={};const t=ymd(new Date());[0,1,2].forEach(k=>{const d=parseYmd(t.slice(0,8)+'01');d.setMonth(d.getMonth()-k);const md=loadMonth(ymd(d).slice(0,7));
+  Object.keys(md.days||{}).forEach(dd=>{(md.days[dd].orders||[]).forEach(o=>{if(o.void||o.del||!o.comp)return;const a=blogAcct(o.comp.note);const date=ymd(d).slice(0,7)+'-'+dd;if(a&&(!seen[a]||seen[a]<date))seen[a]=date})})});
+  return Object.keys(seen).map(a=>({acct:a,d:seen[a]})).sort((x,y)=>x.d<y.d?1:-1)}
+function RefPick({value,onChange,blogs}){   // 看部落客文章來的（可不選帳號）
+  const on=!!(value&&value.k==='blog');const L=blogs||[];
+  return <div className="mb-3"><button type="button" className={'w-full h-11 border text-left px-3 text-sm '+(on?'rounded-t-xl bg-brownL border-brown text-brown':'rounded-xl bg-card border-line')} onClick={()=>onChange(on?null:{k:'blog',acct:''})}>{on?'☑':'☐'} 看部落客文章來的<span className="text-xs text-mute ml-1">（下面可選部落客，也可以不選）</span></button>
+    {on&&<div className="px-3 py-2 rounded-b-xl border border-t-0 border-brown bg-card flex flex-wrap gap-1.5">
+      {L.length?L.map(b=><button key={b.acct} type="button" className={'h-8 px-3 rounded-full border text-xs '+(value.acct===b.acct?'bg-brown border-brown text-white':'bg-card border-line')} onClick={()=>onChange({k:'blog',acct:value.acct===b.acct?'':b.acct})}>{b.acct}</button>):<span className="text-xs text-mute">還沒有招待過的部落客帳號（招待單備註寫 @帳號 就會出現在這裡）</span>}
+    </div>}</div>;
+}
 /* v0.1-083 折價券：營業額照原價，客人少付的錢自動記一筆「媒體宣傳」現金支出（id＝cp_訂單id），
    所以現金結餘＝抽屜實收；老師費用照算。訂單新增、修改、作廢、恢復、刪除時都重新同步。 */
 const orderCp=o=>orderItems(o).reduce((a,x)=>{const c=Number(x.cp)||0;if(c){a.n++;a.amt+=Math.min(c,x.amt||0)}return a},{n:0,amt:0});
@@ -290,7 +302,7 @@ function syncCpExp(d,oid){
   const o=d.orders.find(x=>x.id===oid);const id='cp_'+oid;
   const old=(d.expenses||[]).find(e=>e.id===id);
   d.expenses=(d.expenses||[]).filter(e=>e.id!==id);
-  const c=o&&!o.void&&!o.del?orderCp(o):{n:0};
+  const c=o&&!o.void&&!o.del&&!o.comp?orderCp(o):{n:0};   // v0.1-180 招待單不另記折價券支出
   if(c.n){const now=Date.now();const nm=[...new Set(orderItems(o).filter(x=>Number(x.cp)>0).map(x=>x.cpn||'IG 打卡折價券'))].join('、');d.expenses.push({id,cat:'媒體宣傳',name:nm+' #'+(o.sn||'-')+(c.n>1?'（'+c.n+' 張）':''),amt:c.amt,cash:true,note:'使用折價券自動新增',cpo:oid,ca:old?old.ca:now,ua:now})}
   return d;
 }
@@ -298,15 +310,17 @@ const orderTcs=o=>orderItems(o).map(x=>x.tc);
 const orderSummary=(o,S)=>orderItems(o).map(x=>orderLabel(x,S)+' '+x.tc+'師').join('／');
 function statsOf(orders,S){
   const live=orders.filter(o=>!o.void);
-  const r={n:live.length,guests:0,amt:0,cash:0,cm:0,zh:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},rj:{}};
+  const r={n:live.length,guests:0,amt:0,cash:0,cm:0,zh:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},rj:{},comp:0,compN:0,compG:0,compCm:0,compZh:0,compList:[]};   // v0.1-180 comp：招待（不計營業額、現金；老師費用照算，月結標為媒體宣傳）
   live.forEach(o=>{
     const oa=orderAmt(o);
-    if(o.skip){r.skip+=oa;r.skipN++;if(o.skipRev)r.skipRev+=oa;const by=o.skipBy||'store';r.skipBy[by]=(r.skipBy[by]||0)+oa;r.skipList.push(o)}
+    if(o.comp){r.comp+=oa;r.compN++;r.compList.push(o)}
+    if(o.skip&&!o.comp){r.skip+=oa;r.skipN++;if(o.skipRev)r.skipRev+=oa;const by=o.skipBy||'store';r.skipBy[by]=(r.skipBy[by]||0)+oa;r.skipList.push(o)}
     orderLines(o).forEach(l=>{
-      const z=zhiOf(l,S);const a=l.amt||0;const rev=o.skip?(o.skipRev?a:0):a;
-      if(!l.xsOf)r.guests++;r.amt+=rev;r.cash+=o.skip?0:a;r.cm+=l.cm||0;r.zh+=z;
+      const z=zhiOf(l,S);const a=l.amt||0;const rev=o.comp?0:o.skip?(o.skipRev?a:0):a;
+      if(!l.xsOf)r.guests++;r.amt+=rev;r.cash+=o.skip||o.comp?0:a;r.cm+=l.cm||0;r.zh+=z;
+      if(o.comp){r.compCm+=l.cm||0;r.compZh+=z;if(!l.xsOf)r.compG++}
       const t=r.byT[l.tc]||(r.byT[l.tc]={tc:l.tc,n:0,zh:0,ld:0,cm:0,amt:0,skipDed:0});
-      t.n++;t.zh+=z;t.ld+=l.ld?1:0;t.cm+=l.cm||0;t.amt+=rev;
+      t.n++;t.zh+=z;t.ld+=l.ld&&!o.comp?1:0;t.cm+=l.cm||0;t.amt+=rev;
       if(o.skip&&o.skipBy==='teacher'&&!l.xsOf)t.skipDed+=a;   // 責任歸老師的跳單：老師吸收自己服務那位客人的金額
       (l.rj||[]).forEach(c=>{r.rj[c]=(r.rj[c]||0)+1});
     });
@@ -477,12 +491,12 @@ function CpnBox({it,setIt,line,oid}){
     {!it.cu&&<div className="text-[11px] text-mute mt-1">會員限定的優惠券要先選客人（上面的「客人」）。</div>}
   </div>;
 }
-function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onClose,ask,prev,count,inline,cu,mc,init}){   // v0.1-110 init：{items:[…]} 預約報到、候位入座帶入
+function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onClose,ask,prev,count,inline,cu,mc,init,compOk}){   // v0.1-180 compOk：可以設定招待（主櫃：主管、老闆；老闆頁：一律可以）   // v0.1-110 init：{items:[…]} 預約報到、候位入座帶入
   const isNew=!order;
   const origItems=order?orderItems(order):[];
   const nextSn=()=>{let mx=0;dayOrders.forEach(o=>{const n=parseInt(o.sn,10);if(!isNaN(n)&&n>mx)mx=n});return String(mx+1)};
   const [f,setF]=useState(()=>order?Object.assign({},order,{items:origItems.map(x=>Object.assign({},x,{ad:[...(x.ad||[])],rj:[...(x.rj||[])]},x.exs&&x.exs!==x.svc&&Number(x.ex)&&!Number(x.ex2)?{ex:0,exs:null,ex2:Number(x.ex),exs2:x.exs}:{}))}):
-    {id:newId(S.device),sn:nextSn(),t:mc?hm(new Date()):'',items:init&&init.items&&init.items.length?init.items.map(x=>Object.assign(blankItem(),x,{ad:[...(x.ad||[])]})):[Object.assign(blankItem(),cu?{cu}:{},mc&&mc.tcs.find(t=>t.next)?{tc:mc.tcs.find(t=>t.next).tc}:{})],skip:false,skipRev:false,skipBy:'store',skipNote:'',note:'',void:false});
+    {id:newId(S.device),sn:nextSn(),t:mc?hm(new Date()):'',items:init&&init.items&&init.items.length?init.items.map(x=>Object.assign(blankItem(),x,{ad:[...(x.ad||[])]})):[Object.assign(blankItem(),cu?{cu}:{},mc&&mc.tcs.find(t=>t.next)?{tc:mc.tcs.find(t=>t.next).tc}:{})],skip:false,skipRev:false,skipBy:'store',skipNote:'',note:'',void:false,ref:(init&&init.ref)||null});
   const [cur,setCur]=useState(0);
   const [rjIn,setRjIn]=useState('');
   const set=(k,v)=>setF(p=>Object.assign({},p,{[k]:v}));
@@ -539,6 +553,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
       if(cant(tc,x.svc)){setCur(i);await ask({title:who+tc+' 號沒有做'+SVC_NAME(x.svc),msg:'請換一位會做'+SVC_NAME(x.svc)+'的老師（老師技能在人員資料設定）。',okOnly:true});return}
       if(x.sh&&String(x.sh.tc)===tc){setCur(i);await ask({title:who+'請選救援老師',msg:tc+' 是被打槍的老師，救援要換另一位（通常是排牌頭班）。',okOnly:true});return}
     }
+    if(f.comp&&!String(f.comp.note||'').trim()){await ask({title:'請填招待備註',msg:'例：部落客名稱或 IG 帳號、合作內容（@xxx・IG 貼文＋限動）',okOnly:true});return}
     const sn=String(f.sn||'').trim();
     const dup=sn&&dayOrders.find(o=>o.id!==f.id&&!o.void&&String(o.sn)===sn);
     if(dup){
@@ -557,7 +572,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
     const items=f.items.map((x,i)=>{const A=addsOf(x,i);return Object.assign({svc:x.svc,min:x.min,promo:!!x.promo,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,ex2:x.exs2&&x.exs2!==x.svc?Number(x.ex2)||0:0,exs2:x.exs2&&x.exs2!==x.svc&&Number(x.ex2)?x.exs2:null,emp:!!x.emp,cp:Number(x.cp)||0,cpc:Number(x.cp)?(x.cpc||''):'',cpn:Number(x.cp)?(x.cpn||''):'',ad:[...x.ad],tc:String(x.tc).trim(),cu:x.cu||null,ld:!!x.ld,rj:x.sh&&!(x.rj||[]).includes(String(x.sh.tc))?[...(x.rj||[]),String(x.sh.tc)]:[...(x.rj||[])],seat:x.seat||'',amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh},(priced[i].xs||[]).length?{xs:priced[i].xs}:{},A.length?{adds:A}:{},x.sh?{sh:Object.assign({tc:String(x.sh.tc),zh:Number(x.sh.zh)||0,t:x.sh.t||''},x.sh.tm?{tm:x.sh.tm}:{})}:{},mc&&!isNew&&!origItems[i]?{lateT:tNow}:x.lateT?{lateT:x.lateT}:{})});
     const keepMc={};['st','end','endAt','pay','by'].forEach(k=>{if(f[k]!=null)keepMc[k]=f[k]});   // v0.1-105：主櫃的狀態欄位，老闆修正時保留
     if(mc)noteRemember(f.note);
-    onSave(Object.assign(keepMc,isNew&&mc&&f.prePay?{prePay:true}:{},f.del?{del:true,snDel:f.snDel,delAt:f.delAt}:{},{id:f.id,sn,t:f.t||'',note:f.note||'',void:!!f.void,skip:!!f.skip,skipRev:!!f.skipRev,skipBy:f.skipBy||'store',skipNote:f.skipNote||'',items,ca:f.ca||now,ua:now}),!!next);
+    onSave(Object.assign(keepMc,isNew&&mc&&f.prePay?{prePay:true}:{},f.del?{del:true,snDel:f.snDel,delAt:f.delAt}:{},{id:f.id,sn,t:f.t||'',note:f.note||'',void:!!f.void,skip:!!f.skip,skipRev:!!f.skipRev,skipBy:f.skipBy||'store',skipNote:f.skipNote||'',items,ca:f.ca||now,ua:now},{comp:f.comp?{k:'media',note:String(f.comp.note||'').trim(),by:f.comp.by||(mc&&mc.op)||''}:null,ref:!f.comp&&f.ref&&f.ref.k==='blog'?{k:'blog',acct:f.ref.acct||''}:null}),!!next);
   };
 
   const cellCls=on=>'h-14 rounded-xl border text-base num transition-colors '+(on?'bg-sage border-sage text-white shadow-inner':'bg-card border-line active:bg-sageL');
@@ -569,8 +584,9 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
       <div className="flex items-end justify-between mb-3">
         <div className="text-sm text-mute">{f.items.length>1&&<span className="text-ink">{f.items.length} 位・</span>}<span className="num text-ink">{tot.zh}</span> 支{!mc&&<>・老師抽成 <span className="num text-ink">{money(tot.cm)}</span></>}
           {priced.some(p=>(p.xs||[]).length)&&<div className="text-xs text-brown">{priced.flatMap(p=>p.xs||[]).map((x,k)=><span key={k} className="mr-2">另 {x.tc} 老師 {x.zh} 支 {money(x.cm)}</span>)}</div>}</div>
-        <div className="text-right"><span className="text-sm text-mute mr-1">{f.skip?(f.skipRev?'跳單・計入':'跳單・不計入'):cpTot?'實收':'金額'}</span><span className={'serif text-3xl num '+(f.skip?'text-warn'+(f.skipRev?'':' line-through'):'text-brown')}>{money(cpTot&&!f.skip?net:tot.amt)}</span>
-          {cpTot>0&&!f.skip&&<div className="text-xs text-brown num">原價 {money(tot.amt)}・折價券 −{money(cpTot)}</div>}</div>
+        <div className="text-right"><span className="text-sm text-mute mr-1">{f.comp?'招待・實收':f.skip?(f.skipRev?'跳單・計入':'跳單・不計入'):cpTot?'實收':'金額'}</span><span className={'serif text-3xl num '+(f.comp?'text-sageD':f.skip?'text-warn'+(f.skipRev?'':' line-through'):'text-brown')}>{money(f.comp?0:cpTot&&!f.skip?net:tot.amt)}</span>
+          {f.comp&&<div className="text-xs text-brown num">招待價值（原價）{money(tot.amt)}</div>}
+          {cpTot>0&&!f.skip&&!f.comp&&<div className="text-xs text-brown num">原價 {money(tot.amt)}・折價券 −{money(cpTot)}</div>}</div>
       </div>
       {locked?
         <div className="text-center text-mute text-sm py-2">此日已日結，需先解除日結才能修改</div>:
@@ -579,8 +595,8 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
           {!isNew&&f.void&&onRelease&&<button className="px-3 h-12 rounded-xl border border-warn text-warn bg-warnL/40" onClick={()=>onRelease(f)}>刪除</button>}
           {!isNew&&onToggleVoid&&<button className={'px-4 h-12 rounded-xl border '+(f.void?'border-sage text-sageD':'border-warn text-warn')} onClick={()=>onToggleVoid(f)}>{f.void?'恢復':'作廢'}</button>}
           {isNew&&mc?<div className="flex-1">
-            <div className="flex rounded-xl border border-line overflow-hidden mb-2">{[[false,'未買單','服務結束後再買單'],[true,'先買單','現在收款']].map(([v,l,d])=><button key={l} type="button" className={'flex-1 h-12 leading-tight '+(!!f.prePay===v?(v?'bg-brown text-white':'bg-sage text-white'):'bg-card')} onClick={()=>set('prePay',v)}>{l}<span className="block text-[11px] opacity-80">{d}</span></button>)}</div>
-            <button className="w-full h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(false)}>{f.prePay?'開單・先買單 '+money(net):'開單（開始服務）'}</button></div>
+            {!f.comp&&<div className="flex rounded-xl border border-line overflow-hidden mb-2">{[[false,'未買單','服務結束後再買單'],[true,'先買單','現在收款']].map(([v,l,d])=><button key={l} type="button" className={'flex-1 h-12 leading-tight '+(!!f.prePay===v?(v?'bg-brown text-white':'bg-sage text-white'):'bg-card')} onClick={()=>set('prePay',v)}>{l}<span className="block text-[11px] opacity-80">{d}</span></button>)}</div>}
+            <button className="w-full h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(false)}>{f.comp?'開單・招待（實收 $0）':f.prePay?'開單・先買單 '+money(net):'開單（開始服務）'}</button></div>
           :isNew?<>
             {!inline&&<button className="px-4 h-12 rounded-xl border border-sage text-sageD" onClick={()=>save(false)}>存檔關閉</button>}
             <button className="flex-1 h-12 rounded-xl bg-sage text-white text-lg" onClick={()=>save(true)}>儲存，下一筆 ›</button>
@@ -729,7 +745,15 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
           {priced[cur]&&priced[cur].changed&&<div className="text-xs text-brown mt-2">這位客人的品項已變更，金額依目前價目表重新計算（原 {money(origItems[cur].amt)}）</div>}
         </div>
 
-        {!mc&&<><button type="button" className={'w-full h-12 border text-left px-3 '+(f.skip?'rounded-t-xl bg-warnL border-warn text-warn':'rounded-xl mb-4 bg-card border-line')} onClick={()=>set('skip',!f.skip)}>
+        {(compOk||f.comp)&&<><button type="button" disabled={!compOk} className={'w-full h-12 border text-left px-3 disabled:opacity-70 '+(f.comp?'rounded-t-xl bg-sageL border-sage text-sageD':'rounded-xl mb-4 bg-card border-line')} onClick={()=>setF(o=>Object.assign({},o,{comp:o.comp?null:{k:'media',note:'',by:(mc&&mc.op)||''},skip:false,prePay:false}))}>
+          {f.comp?'☑':'☐'} 招待（部落客／媒體）<span className="text-xs text-mute ml-1">整張單免費・老師費用照支數算</span>
+        </button>
+        {f.comp&&<div className="mb-4 px-3 py-3 rounded-b-xl border border-t-0 border-sage bg-card space-y-2">
+          <input className="w-full h-11 px-3 rounded-xl border border-line bg-white" maxLength={100} disabled={!compOk} placeholder="招待備註（必填）：例 @xxx・IG 貼文＋限動" value={f.comp.note||''} onChange={e=>{const v=e.target.value;setF(o=>Object.assign({},o,{comp:Object.assign({},o.comp,{note:v})}))}}/>
+          <div className="text-xs text-mute leading-relaxed">實收 $0、不計營業額、不計老點、不列入評分；加購項目一起招待。老師費用照支數算（正職月底發、支援當天現結），月結標示為「媒體宣傳」，<b className="text-warn">不用另外記支出</b>。{f.comp.by?'　設定人：'+f.comp.by:''}</div>
+        </div>}</>}
+        {!f.comp&&<RefPick value={f.ref} onChange={v=>setF(o=>Object.assign({},o,{ref:v}))} blogs={mc?mc.blogs:ownerBlogs()}/>}
+        {!mc&&!f.comp&&<><button type="button" className={'w-full h-12 border text-left px-3 '+(f.skip?'rounded-t-xl bg-warnL border-warn text-warn':'rounded-xl mb-4 bg-card border-line')} onClick={()=>set('skip',!f.skip)}>
           {f.skip?'☑':'☐'} 跳單（客人未付款就離開）<span className="text-xs text-mute ml-1">整張單・老師費用照算</span>
         </button>
         {f.skip&&<div className="mb-4 px-3 py-3 rounded-b-xl border border-t-0 border-warn bg-card space-y-3">
@@ -969,6 +993,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
         amt={st.amt} cashIn={st.cash} expCash={ex.cash} nonCash={ex.total-ex.cash} sup={sup.pay} skipRev={st.skipRev} fee={st.cm-sup.cm}/>
       {(()=>{const c=dd.orders.filter(o=>!o.void&&!o.del).reduce((a,o)=>{orderItems(o).forEach(x=>{if(Number(x.cp)){a.n++;a.amt+=Number(x.cp)}});return a},{n:0,amt:0});
         return c.n>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-brown num">優惠券 {c.n} 張・已折 {money(c.amt)}<span className="text-xs text-mute ml-1">（營業額照原價，已自動記為「媒體宣傳」支出；老師費用照算）</span></div>})()}
+      {st.compN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-sageD num">招待（媒體宣傳）{st.compN} 筆・{st.compG} 位・{st.compZh} 支・老師費用 {money(st.compCm)}<span className="block text-xs text-mute">招待價值（原價）{money(st.comp)}；不計營業額，老師費用已含在老師費用／支援現結，不另外扣</span></div>}
       {st.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {st.skipN} 筆・未收 {money(st.skip)}{st.skipRev>0&&<span>（其中 {money(st.skipRev)} 計入營業額）</span>}</div>}
     </Card>
   );
@@ -1014,15 +1039,16 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
                 </div>
                 {(x.xs||[]).map((y,j)=><div key={j} className="text-xs text-brown num">↳ {(S.addons.find(a=>a.id===y.ad)||{}).name||y.ad} 算給 <span className="text-ink">{y.tc}</span> 老師・{y.zh} 支</div>)}
               </div>))}
-            {(o.t||o.void||o.skip||o.note)&&<div className="text-xs text-mute num">
+            {(o.t||o.void||o.skip||o.note||o.comp)&&<div className="text-xs text-mute num">
               {o.t&&<span className="mr-2">{o.t}</span>}
               {o.void&&!o.del&&<span className="mr-2 text-warn">已作廢</span>}
               {o.del&&<span className="mr-2 px-1.5 rounded bg-bg border border-line text-mute">已刪除（原 #{o.snDel||'-'}）</span>}
+              {o.comp&&<span className="mr-2 px-1.5 rounded bg-sage text-white">招待{o.comp.note?'・'+o.comp.note:''}</span>}
               {o.skip&&<span className="mr-2 px-1.5 rounded bg-warn text-white">跳單・{SKIP_BY[o.skipBy||'store']}{o.skipRev?'・計入':''}</span>}
               {o.note&&<span>{o.note}</span>}
             </div>}
           </div>
-          <div className={'num text-right pt-0.5 '+(o.void||(o.skip&&!o.skipRev)?'line-through ':'')+(o.skip?'text-warn':'')}>{money(orderAmt(o))}{orderCp(o).n>0&&<div className="text-[11px] text-brown">實收 {money(orderAmt(o)-orderCp(o).amt)}</div>}</div>
+          <div className={'num text-right pt-0.5 '+(o.void||o.comp||(o.skip&&!o.skipRev)?'line-through ':'')+(o.skip?'text-warn':o.comp?'text-mute':'')}>{money(orderAmt(o))}{o.comp&&<div className="text-[11px] text-sageD no-underline">招待 $0</div>}{orderCp(o).n>0&&<div className="text-[11px] text-brown">實收 {money(orderAmt(o)-orderCp(o).amt)}</div>}</div>
         </button>
         {shiftCalc.filter(x=>x.sh.after===o.id).map(x=><ShiftMarker key={x.sh.id} x={x} onClick={()=>openShift&&openShift(x.sh)}/>)}
         </React.Fragment>);})}
@@ -1154,6 +1180,116 @@ function InvMonth({ym}){
     </>}
   </>);
 }
+/* v0.1-181 老闆頁「分析」：用這台的日報資料（最近 30 天／本月／上月），作廢、刪除的訂單不算。
+   星期幾來客、時段、男女比（會員稱謂：先生＝男，小姐／女士＝女）、老點排行（不含招待）、項目與時長、老師支數、加購、會員回訪、部落客成效。 */
+const WD=['日','一','二','三','四','五','六'];
+function anaRange(k){const t=bizToday(loadSettings().cutoff);if(k==='m0')return [t.slice(0,8)+'01',t];
+  if(k==='m1'){const d=parseYmd(t.slice(0,8)+'01');d.setDate(0);const e=ymd(d);return [e.slice(0,8)+'01',e]}return [addDays(t,-29),t]}
+function anaDays(from,to){const out=[];for(let d=from;d<=to;d=addDays(d,1)){const day=getDay(loadMonth(monKey(d)),d);out.push({date:d,orders:(day.orders||[]).filter(o=>!o.void&&!o.del)})}return out}
+const cuSex=cu=>!cu?'':/先生/.test(cu.title||'')?'M':/小姐|女士/.test(cu.title||'')?'F':'';
+function Bars({rows,fmt,color,hl,unit}){   // rows:[[label,value,sub?]]；水平長條
+  const mx=Math.max(1,...rows.map(r=>r[1]));
+  return <div className="space-y-1.5">{rows.map(([l,v,sub],i)=><div key={i} className="flex items-center gap-2 text-sm">
+    <span className="w-14 shrink-0 text-right text-mute text-xs">{l}</span>
+    <div className="flex-1 h-6 rounded-md bg-bg overflow-hidden"><div className="h-full rounded-md" style={{width:(v/mx*100)+'%',background:(hl&&hl(i,l))?'#56624b':(color||'#a3ad96')}}/></div>
+    <span className="w-16 shrink-0 text-right num">{fmt?fmt(v):v}{unit||''}{sub&&<span className="block text-[10px] text-mute leading-tight">{sub}</span>}</span></div>)}</div>;
+}
+function Cols({rows,fmt,hl}){   // 直條（時段）
+  const mx=Math.max(1,...rows.map(r=>r[1]));
+  return <div className="flex items-end gap-1 pt-2">{rows.map(([l,v],i)=><div key={i} className="flex-1 flex flex-col items-center justify-end min-w-0">
+    <span className="text-[10px] num text-mute mb-0.5">{v?fmt?fmt(v):v:''}</span>
+    <div className="w-full rounded-t" style={{height:Math.max(v?3:0,Math.round(v/mx*100))+'px',background:hl&&hl(i,v)?'#56624b':'#a3ad96'}}/>
+    <span className="text-[10px] text-mute mt-1">{l}</span></div>)}</div>;
+}
+const AnaCard=({t,sub,children})=><Card className="p-3 mb-3"><div className="flex items-baseline justify-between mb-2"><div className="font-semibold text-sm">{t}</div>{sub&&<div className="text-[11px] text-mute">{sub}</div>}</div>{children}</Card>;
+function AnaPage({S}){
+  const [rk,setRk]=useState('d30');
+  const [from,to]=anaRange(rk);
+  const A=useMemo(()=>{
+    const days=anaDays(from,to),wd=Array.from({length:7},()=>({g:0,n:0,days:0})),hr={},sex={M:0,F:0,'':0},svc={},dur={},tcZh={},tcLd={},tcN={},ad={},cus={};
+    let guests=0,rev=0,ordersN=0,openDays=0,ldN=0;
+    days.forEach(D=>{const w=parseYmd(D.date).getDay();wd[w].days++;const st=statsOf(D.orders,S);if(st.guests)openDays++;rev+=st.amt;
+      D.orders.forEach(o=>{ordersN++;const h=Number(String(o.t||'').slice(0,2));
+        orderLines(o).forEach(l=>{if(l.xsOf)return;guests++;wd[w].g++;if(!isNaN(h)&&o.t){const hh=h<6?h+24:h;hr[hh]=(hr[hh]||0)+1}
+          sex[cuSex(l.cu)]++;if(l.svc){svc[l.svc]=(svc[l.svc]||0)+1;const m=gDur(l);dur[m]=(dur[m]||0)+1}
+          if(l.tc){tcN[l.tc]=(tcN[l.tc]||0)+1;if(l.ld&&!o.comp){tcLd[l.tc]=(tcLd[l.tc]||0)+1;ldN++}}
+          (l.ad||[]).forEach(a=>{ad[a]=(ad[a]||0)+1});
+          if(l.cu&&l.cu.id){const c=cus[l.cu.id]||(cus[l.cu.id]={n:0,first:D.date});c.n++}});
+        orderLines(o).forEach(l=>{if(l.tc)tcZh[l.tc]=(tcZh[l.tc]||0)+zhiOf(l,S)})})});
+    const memG=Object.values(cus).reduce((a,c)=>a+c.n,0),cuN=Object.keys(cus).length,ret=Object.values(cus).filter(c=>c.n>=2).length;
+    // 部落客：招待日、之後帶來的客人；全店日均來客 招待前 14 天 vs 後 14 天
+    const blog={};const all=anaDays(addDays(from,-14),to);
+    all.forEach(D=>D.orders.forEach(o=>{if(o.comp){const a=blogAcct(o.comp.note)||'（未寫帳號）';const b=blog[a]||(blog[a]={acct:a,d:D.date,g:0,n:0,rev:0,refs:[]});if(D.date<b.d)b.d=D.date}}));
+    const refNo={g:0,rev:0,n:0};
+    all.forEach(D=>D.orders.forEach(o=>{if(!o.ref||o.ref.k!=='blog'||o.comp)return;const st=statsOf([o],S);const b=o.ref.acct&&blog[o.ref.acct];const t=b||refNo;t.n++;t.g+=st.guests;t.rev+=st.amt}));
+    const avgG=(a,b)=>{let g=0,n=0;for(let d=a;d<=b;d=addDays(d,1)){const day=getDay(loadMonth(monKey(d)),d);const os=(day.orders||[]).filter(o=>!o.void&&!o.del);const st=statsOf(os,S);if(st.guests){g+=st.guests;n++}}return n?g/n:null};
+    Object.values(blog).forEach(b=>{b.before=avgG(addDays(b.d,-14),addDays(b.d,-1));b.after=avgG(addDays(b.d,1),addDays(b.d,14))});
+    return {days:days.length,openDays,guests,rev,ordersN,wd,hr,sex,svc,dur,tcZh,tcLd,tcN,ldN,ad,memG,cuN,ret,blog:Object.values(blog).sort((x,y)=>x.d<y.d?1:-1),refNo};
+  },[from,to,S]);
+  const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
+  const wdRows=[1,2,3,4,5,6,0].map(w=>[(w===0||w===6?'週':'週')+WD[w],A.wd[w].days?Math.round(A.wd[w].g/A.wd[w].days*10)/10:0,A.wd[w].days+' 天・共 '+A.wd[w].g]);
+  const wkd=[1,2,3,4,5].reduce((a,w)=>({g:a.g+A.wd[w].g,d:a.d+A.wd[w].days}),{g:0,d:0}),wke=[0,6].reduce((a,w)=>({g:a.g+A.wd[w].g,d:a.d+A.wd[w].days}),{g:0,d:0});
+  const hrs=Object.keys(A.hr).map(Number).sort((a,b)=>a-b),hrRows=hrs.length?Array.from({length:hrs[hrs.length-1]-hrs[0]+1},(_,i)=>{const h=hrs[0]+i;return [String(h%24).padStart(2,'0'),A.hr[h]||0]}):[];
+  const hrMax=Math.max(0,...hrRows.map(r=>r[1]));
+  const top=(o,n)=>Object.entries(o).sort((a,b)=>b[1]-a[1]).slice(0,n);
+  const sexT=A.sex.M+A.sex.F+A.sex[''];
+  const adName=id=>{const a=(S.addons||[]).find(x=>x.id===id);return a?a.name:id};
+  return (<div className="pb-8">
+    <div className="flex rounded-lg border border-line overflow-hidden text-sm bg-card mb-3">{[['d30','最近 30 天'],['m0','本月'],['m1','上個月']].map(([k,l])=><button key={k} type="button" className={'flex-1 h-9 '+(rk===k?'bg-brown text-white':'')} onClick={()=>setRk(k)}>{l}</button>)}</div>
+    <div className="text-[11px] text-mute mb-2 px-1 num">{from} ～ {to}・有營業 {A.openDays} 天・資料來自這台的日報（作廢、刪除不算）</div>
+    {!A.guests?<Card className="p-4 text-sm text-mute">這段期間還沒有訂單資料</Card>:<>
+    <div className="grid grid-cols-2 gap-2 mb-3">{[['來客數',A.guests+' 位'],['日均來客',(A.openDays?Math.round(A.guests/A.openDays*10)/10:0)+' 位'],['營業額',money(A.rev)],['客單價',money(A.guests?Math.round(A.rev/A.guests):0)]].map(([k,v])=><Card key={k} className="p-3"><div className="text-[11px] text-mute">{k}</div><div className="serif text-2xl num text-ink">{v}</div></Card>)}</div>
+
+    <AnaCard t="星期幾的來客（每天平均）" sub="週一～週五深色">
+      <Bars rows={wdRows} hl={i=>i<5} fmt={v=>v} unit=" 位"/>
+      <div className="text-xs text-mute mt-2 num">平日（一～五）每天 {wkd.d?Math.round(wkd.g/wkd.d*10)/10:0} 位・假日（六日）每天 {wke.d?Math.round(wke.g/wke.d*10)/10:0} 位</div>
+    </AnaCard>
+
+    <AnaCard t="時段分布（開始時間）" sub="最多的時段深色">
+      <Cols rows={hrRows} hl={(i,v)=>v===hrMax&&v>0}/>
+      <div className="text-[11px] text-mute mt-1">可以對照排班：客人多的時段，上牌的老師夠不夠</div>
+    </AnaCard>
+
+    <AnaCard t="男女比" sub={'依會員稱謂；非會員算「未知」'}>
+      <div className="flex h-7 rounded-lg overflow-hidden text-[11px] text-white num">{[['F','女',"#a0784f"],['M','男','#56624b'],['','未知','#cfc6b8']].map(([k,l,c])=>A.sex[k]?<div key={l} style={{width:(A.sex[k]/sexT*100)+'%',background:c}} className="flex items-center justify-center whitespace-nowrap overflow-hidden">{l} {pct(A.sex[k],sexT)}</div>:null)}</div>
+      <div className="text-xs text-mute mt-2 num">女 {A.sex.F} 位・男 {A.sex.M} 位・未知 {A.sex['']} 位{A.sex.F+A.sex.M?'；已知的人裡女生 '+pct(A.sex.F,A.sex.F+A.sex.M):''}</div>
+    </AnaCard>
+
+    <AnaCard t="老點排行" sub={'不含招待・全部老點 '+A.ldN+' 位（'+pct(A.ldN,A.guests)+'）'}>
+      {A.ldN?<Bars rows={top(A.tcLd,10).map(([tc,v])=>[tc+' 號',v,'老點率 '+pct(v,A.tcN[tc])])} unit=" 位"/>:<div className="text-sm text-mute">這段期間沒有老點</div>}
+    </AnaCard>
+
+    <AnaCard t="老師支數排行" sub="前 10 名">
+      <Bars rows={top(A.tcZh,10).map(([tc,v])=>[tc+' 號',Math.round(v*10)/10,A.tcN[tc]+' 位客人'])} unit=" 支"/>
+    </AnaCard>
+
+    <AnaCard t="項目與時長">
+      <Bars rows={top(A.svc,5).map(([k,v])=>[SVC_SHORT[k]||k,v,pct(v,A.guests)])} unit=" 位"/>
+      <div className="h-3"/>
+      <Bars rows={top(A.dur,6).sort((a,b)=>Number(a[0])-Number(b[0])).map(([k,v])=>[k+' 分',v,pct(v,A.guests)])} color="#c9b49a" unit=" 位"/>
+    </AnaCard>
+
+    <AnaCard t="加購" sub={'加購率 '+pct(Object.values(A.ad).reduce((a,b)=>a+b,0),A.guests)+'（每 100 位客人加購幾次）'}>
+      {Object.keys(A.ad).length?<Bars rows={top(A.ad,6).map(([k,v])=>[adName(k),v])} color="#c9b49a" unit=" 次"/>:<div className="text-sm text-mute">沒有加購</div>}
+    </AnaCard>
+
+    <AnaCard t="會員" sub="有選會員的客人">
+      <div className="grid grid-cols-3 gap-2 text-center">{[['會員占比',pct(A.memG,A.guests)],['來過的會員',A.cuN+' 位'],['來 2 次以上',A.ret+' 位（'+pct(A.ret,A.cuN)+'）']].map(([k,v])=><div key={k}><div className="text-[11px] text-mute">{k}</div><div className="num text-base">{v}</div></div>)}</div>
+    </AnaCard>
+
+    <AnaCard t="部落客成效" sub="招待前後 14 天的全店日均來客">
+      {!A.blog.length&&!A.refNo.g?<div className="text-sm text-mute">這段期間沒有招待部落客</div>:<>
+        {A.blog.map(b=>{const up=b.before&&b.after!=null?Math.round((b.after-b.before)/b.before*100):null;return <div key={b.acct} className="py-2 border-b border-line last:border-0 text-sm">
+          <div className="flex justify-between"><b className="font-medium">{b.acct}</b><span className="text-xs text-mute num">招待 {mdTxt(b.d)}</span></div>
+          <div className="text-xs num mt-0.5">看文章來的：<b>{b.g}</b> 位・{b.n} 筆・{money(b.rev)}</div>
+          <div className="text-xs text-mute num">日均來客 前 {b.before==null?'—':Math.round(b.before*10)/10} → 後 {b.after==null?'—':Math.round(b.after*10)/10}{up!=null&&<b className={up>0?' text-sageD':' text-warn'}>（{up>0?'+':''}{up}%）</b>}</div></div>})}
+        {A.refNo.g>0&&<div className="py-2 text-xs num">看部落客文章來、沒選帳號：<b>{A.refNo.g}</b> 位・{money(A.refNo.rev)}</div>}
+        <div className="text-[11px] text-mute mt-1">「看文章來的」要在開單或安排客人時勾選才會算到。日均來客的前後比較也會受季節、天氣、假日影響，只當參考。</div>
+      </>}
+    </AnaCard>
+    </>}
+  </div>);
+}
 /* ========== 月報 ========== */
 /* 發薪週期：上期 1～15 號（當月 20 號發薪）、下期 16 號～月底（次月 5 號發薪） */
 const PERIODS=[{id:'all',label:'整月'},{id:'h1',label:'上期'},{id:'h2',label:'下期'}];
@@ -1175,13 +1311,13 @@ const payDue=(ym,h,S)=>{const d=payDay(ym,h);return !!d&&bizToday((S||loadSettin
 
 function monthData(ym,S,p){
   const md=loadMonth(ym);const [from,to]=periodRange(ym,p||'all');
-  const rows=[];const tot={expList:[],n:0,amt:0,cash:0,expCash:0,cm:0,exp:0,zh:0,sup:0,supCm:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{}};
+  const rows=[];const tot={expList:[],n:0,amt:0,cash:0,expCash:0,cm:0,exp:0,zh:0,sup:0,supCm:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{},comp:0,compN:0,compG:0,compCm:0,compZh:0};
   for(let d=from;d<=to;d++){
     const dd=md.days[pad(d)];
     if(!dd||(!(dd.orders||[]).length&&!(dd.expenses||[]).length&&!dd.close))continue;
     const st=statsOf(dd.orders||[],S);const ex=expStatsOf(dd.expenses);
     rows.push({date:ym+'-'+pad(d),st,ex,sup:supportOf(st,S).pay,closed:!!dd.close});
-    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;const sp=supportOf(st,S);tot.sup+=sp.pay;tot.supCm+=sp.cm;tot.cash+=st.cash;tot.expCash+=ex.cash;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;
+    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;const sp=supportOf(st,S);tot.sup+=sp.pay;tot.supCm+=sp.cm;tot.cash+=st.cash;tot.expCash+=ex.cash;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;tot.comp+=st.comp;tot.compN+=st.compN;tot.compG+=st.compG;tot.compCm+=st.compCm;tot.compZh+=st.compZh;
     Object.keys(st.skipBy).forEach(k=>{tot.skipBy[k]=(tot.skipBy[k]||0)+st.skipBy[k]});st.skipList.forEach(o=>tot.skipList.push(Object.assign({date:ym+'-'+pad(d)},o)));
     Object.keys(st.rj).forEach(c=>{tot.rj[c]=(tot.rj[c]||0)+st.rj[c]});
     Object.keys(ex.byCat).forEach(c=>{tot.byCat[c]=(tot.byCat[c]||0)+ex.byCat[c]});
@@ -1239,6 +1375,7 @@ function MonthPage({S,rev,goDay,openPay,ask,toast}){
       <Card className="p-4 mb-3">
         <MoneyRows title={(per==='all'?'本月':PERIOD_LABEL[per])+'營業額'} meta={<>{data.tot.n} 單・{data.tot.zh} 支{pd&&<span className="text-brown">・{fmtPayDay(pd)} 發薪</span>}</>}
           amt={data.tot.amt} cashIn={data.tot.cash} expCash={data.tot.expCash} nonCash={data.tot.exp-data.tot.expCash} sup={data.tot.sup} skipRev={data.tot.skipRev} fee={data.tot.cm-data.tot.supCm}/>
+        {data.tot.compN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-sageD num">招待（媒體宣傳）{data.tot.compN} 筆・{data.tot.compG} 位・{data.tot.compZh} 支・老師費用 {money(data.tot.compCm)}<span className="block text-xs text-mute">招待價值（原價）{money(data.tot.comp)}；老師費用已含在老師費用／支援現結，這裡只標示為行銷成本，不另外扣</span></div>}
         {data.tot.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {data.tot.skipN} 筆・未收 {money(data.tot.skip)}{data.tot.skipRev>0&&<span>（其中 {money(data.tot.skipRev)} 計入營業額）</span>}</div>}
         {per==='all'&&<div className="mt-3 pt-3 border-t border-line grid grid-cols-2 gap-2 num">
           {['h1','h2'].map(h=>(
@@ -3287,9 +3424,9 @@ function TeacherToday({me,today,tl,zh,ld,onRated,sug}){
   const doAck=async()=>{setBusy(true);setErr('');try{await tCall({action:'zack'});setCf(false);await tbLoad()}catch(e){setErr(e.message)}setBusy(false)};
   const rows=tl.slice().sort((a,b)=>tm(a.t||'00:00')-tm(b.t||'00:00'));
   return <div className="mt-3">
-    {rows.length>0&&<div className="border-t border-line">{rows.map((l,i)=>{const can=!!l.oid;return <button key={i} type="button" disabled={!can} className="w-full flex items-center gap-2 py-2 border-b border-line text-left text-sm disabled:opacity-80" onClick={()=>setRv(l)}>
+    {rows.length>0&&<div className="border-t border-line">{rows.map((l,i)=>{const can=!!l.oid&&!l.comp;return <button key={i} type="button" disabled={!can} className="w-full flex items-center gap-2 py-2 border-b border-line text-left text-sm disabled:opacity-80" onClick={()=>setRv(l)}>
       <span className="num text-xs text-mute w-10 shrink-0">{l.t||''}</span>
-      <span className="flex-1 min-w-0">{myLabel(l)}{l.cn&&<span className="ml-1 text-xs text-mute">{l.cn}</span>}{l.ld&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>}
+      <span className="flex-1 min-w-0">{myLabel(l)}{l.cn&&<span className="ml-1 text-xs text-mute">{l.cn}</span>}{l.ld&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">老點</span>}{l.comp?<span className="ml-1 text-[10px] px-1 rounded bg-bg text-mute">招待・不評分</span>:''}
         {can&&(l.rv?<span className="block text-xs text-brown">{STARS(l.rv.s)}{(l.rv.tags||[]).length?'・'+l.rv.tags.join(' '):''}</span>:<span className="block text-xs text-sageD">點一下替這位客人評分 ›</span>)}</span>
       <span className="num text-sm shrink-0">{l.zh} 支</span></button>})}</div>}
     {rows.some(l=>l.oid)&&<div className="text-[11px] text-mute mt-1">今天的服務可以評分、記錄到營業日換日（{loadSettings().cutoff||'05:00'}）為止，之後就不能再記。</div>}
@@ -4546,7 +4683,7 @@ async function mcPull(){
 const SEAT_NAME=id=>!id?'':(id[0]==='F'?'腳位 ':'床 ')+id.slice(1);
 const oSt=o=>o.st||'paid';
 // v0.1-134 先買單後又加點：pay.amt＝已收的金額；oDue＞0 表示還有後加的沒收（到時進待買單收差額）
-const oNet=o=>orderItems(o).reduce((s,x)=>s+(x.amt||0)-Math.min(Number(x.cp)||0,x.amt||0),0);
+const oNet=o=>o.comp?0:orderItems(o).reduce((s,x)=>s+(x.amt||0)-Math.min(Number(x.cp)||0,x.amt||0),0);
 const oPaid=o=>!o.pay?0:o.pay.amt!=null?o.pay.amt:oNet(o);
 const oDue=o=>Math.max(0,oNet(o)-oPaid(o));
 // 開始後才加的（item.adds：[{t,ex,ad,amt}]）：原本的項目照原樣顯示，後加的另列一行
@@ -4816,6 +4953,7 @@ function ArrangeForm({b0,J,S,ks,by,line,plan,todayDay,nowM,onClose,onSaved,ask})
       <div className="flex flex-wrap gap-1.5 mb-2 items-center"><span className="text-xs text-mute">來源</span>{BK_SRC.map(x=><button key={x} type="button" className={'h-8 px-3 rounded-full border text-xs '+(f.src===x?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setF(p=>Object.assign({},p,{src:x,here:x==='現場'&&p.date===today}))}>{x}</button>)}</div>
       {isT&&<button type="button" className={'w-full h-10 mb-2 rounded-xl border text-left px-3 text-sm '+(f.here?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>set('here',!f.here)}>{f.here?'☑':'☐'} 客人在店裡等（老師或位子提早空出來時提示「可以提前入場」）</button>}
       <NoteBox value={f.note||''} onChange={v=>set('note',v)} placeholder="備註（例：想要力道重、頸肩）"/>
+      <RefPick value={f.ref} onChange={v=>set('ref',v)} blogs={J&&J.blogs}/>
       {err&&<div className="text-sm text-warn mb-2">✗ {err}</div>}
       <button className="w-full h-12 rounded-xl bg-sage text-white text-lg disabled:opacity-50" disabled={busy} onClick={()=>save()}>{busy?'儲存中…':f.t?(isT?'安排 '+f.t+' 入場':'預約 '+f.date.slice(5)+' '+f.t):'選好時間後安排'}</button>
       <div className="grid grid-cols-2 gap-2 mt-2"><button className="h-10 rounded-xl border border-line bg-card" onClick={onClose}>取消</button>
@@ -5001,7 +5139,7 @@ function McOrderSheet({o,S,isOwner,onClose,onAct,onEdit,ask}){
   const cpOf=(x,j)=>Math.min(Number(x.cp)||0,x.amt||0);   // v0.1-168 優惠券在開單／修改訂單時輸入序號
   const tot=its.reduce((a,x,j)=>a+(x.amt||0)-cpOf(x,j),0);
   const pre=oPaid(o),due=o.pay?Math.max(0,tot-pre):tot;   // v0.1-134 先買單後又加點：只收差額
-  const ST={serving:['服務中'+(o.pay?(oDue(o)?'・先付＋後加未付':'・已先付'):''),'text-brown'],done:[o.pay?'到時・待收後加':'到時・待買單','text-warn'],paid:['已完成','text-sageD']}[st];
+  const ST={serving:['服務中'+(o.comp?'・招待':o.pay?(oDue(o)?'・先付＋後加未付':'・已先付'):''),'text-brown'],done:[o.pay?'到時・待收後加':'到時・待買單','text-warn'],paid:[o.comp?'已完成・招待':'已完成','text-sageD']}[st];
   const end=async()=>{const now=hm(new Date());
     if(tm(now)<tm(mcEnd(o))&&!await ask({title:'服務時間未到，是否提前結束？',msg:'預計 '+mcEnd(o)+' 下鐘，現在 '+now+'。',okText:'提前結束'}))return;
     onAct('end')};
@@ -5354,7 +5492,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
     setTsel(null);toast&&toast(tc+' '+({rest:'休息'+(x&&x.back?'到 '+x.back:''),back:'回來',zx:'準下',zxoff:'取消準下',short:'短單',shortoff:'取消短單'}[k]))};
   const line=cust&&cust.mode==='line'?{ks:cust.ks}:null;
   const plan=skipId=>mcPlanCtx({J,board,seats,S,d,date,nowM,skipId});   // v0.1-114：今天的排程（給安排客人建議時間）
-  const checkin=(b,hs)=>setEd({order:null,k:Date.now(),bk:b,init:{items:b.g.map((x,i)=>({svc:x.svc,min:x.min,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,ex2:Number(x.ex2)||0,exs2:Number(x.ex2)?x.exs2||null:null,ad:x.ad||[],tc:x.tc||(hs[i]&&!/未上牌/.test(hs[i])?hs[i]:'')||(i===0?nextTc:'')||'',cu:i===0?b.cu:null}))},note:[b.note||'',(b.parts||[]).length?'加強 '+b.parts.join('、'):'',b.svyNote||''].filter(Boolean).join('、')});
+  const checkin=(b,hs)=>setEd({order:null,k:Date.now(),bk:b,init:{items:b.g.map((x,i)=>({svc:x.svc,min:x.min,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,ex2:Number(x.ex2)||0,exs2:Number(x.ex2)?x.exs2||null:null,ad:x.ad||[],tc:x.tc||(hs[i]&&!/未上牌/.test(hs[i])?hs[i]:'')||(i===0?nextTc:'')||'',cu:i===0?b.cu:null})),ref:b.ref||null},note:[b.note||'',(b.parts||[]).length?'加強 '+b.parts.join('、'):'',b.svyNote||''].filter(Boolean).join('、')});
   const seat=w=>setEd({order:null,k:Date.now(),wait:w,init:{items:Array.from({length:w.n||1},(_,i)=>Object.assign({cu:i===0?w.cu:null,tc:i===0?(nextTc||''):''},w.g&&w.g[i]?{svc:w.g[i].svc,min:w.g[i].min}:{}))}});
   const OST={serving:{label:'服務中',cls:'text-brown'},done:{label:'到時・待買單',cls:'text-warn'},paid:{label:'已完成（已買單）',cls:'text-sageD'}};
   const act=(o,k,x)=>{const t=hm(new Date()),at=Date.now();
@@ -5371,7 +5509,8 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const onSave=o=>{const at=Date.now();
     mcMutate(date,dd=>{const i=dd.orders.findIndex(x=>x.id===o.id);const prev=i>=0?dd.orders[i]:null;
       const keep=prev?{st:prev.st||'serving',endAt:prev.endAt,pay:prev.pay,by:prev.by}:Object.assign({st:'serving',by:op.name},o.prePay?{pay:{m:'cash',t:hm(new Date()),by:op.name,pre:true}}:{});   // v0.1-131 先買單：仍是服務中，到時直接變已買單
-      const n=Object.assign({},o,keep,{t:o.t||hm(new Date())});delete n.prePay;if(!prev&&n.pay&&n.pay.pre)n.pay=Object.assign({},n.pay,{amt:oNet(n)});n.end=mcEnd(Object.assign({},n,{end:null}));if(!n.endAt)delete n.endAt;if(!n.pay)delete n.pay;n.ua=at;
+      const n=Object.assign({},o,keep,{t:o.t||hm(new Date())});delete n.prePay;
+      if(n.comp){if(!n.pay||n.pay.m!=='comp')n.pay={m:'comp',amt:0,t:hm(new Date()),by:op.name,pre:true}}else{delete n.comp;if(n.pay&&n.pay.m==='comp')delete n.pay}   // v0.1-180 招待：實收 0，到時直接完成if(!prev&&n.pay&&n.pay.pre)n.pay=Object.assign({},n.pay,{amt:oNet(n)});n.end=mcEnd(Object.assign({},n,{end:null}));if(!n.endAt)delete n.endAt;if(!n.pay)delete n.pay;n.ua=at;
       if(i>=0)dd.orders[i]=n;else dd.orders.push(n);
       if(!prev&&ed&&ed.bk){n.bk=ed.bk.id;if(tm(hm(new Date()))>tm(ed.bk.t)){let mx=0;orderItems(n).forEach(x=>{mx=Math.max(mx,gDur(x))});n.end=tf(tm(ed.bk.t)+mx);n.late=tm(hm(new Date()))-tm(ed.bk.t)}}   // 遲到：時間從服務時間扣除（A6）
       if(!prev&&ed&&ed.wait){n.wait=ed.wait.id;dd.wait=(dd.wait||[]).map(w=>w.id===ed.wait.id?Object.assign({},w,{st:'seat',oid:n.id,ua:at}):w)}
@@ -5492,7 +5631,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
     <RolePage mode={mode} head={head} B={B} phone={[0,7,2,1,3,5,9,10,6,11,8,4]} wide={{top:[2],cols:[[0,7,3,9,6],[1,5,10,11,8,4]]}} xwide={{top:[2],cols:[[0,3,6],[7,1,9],[5,10,11,8,4]]}}/>
     {selO&&<McOrderSheet o={selO} S={S} isOwner={isOwner} ask={ask} onClose={()=>setSel(null)} onAct={(k,x)=>act(selO,k,x)} onEdit={()=>{setSel(null);setEd({order:selO,k:Date.now()})}}/>}
     {xe&&<ExpenseEditor key={'mx'+xe.k} S={S} exp={xe.exp} locked={!!d.close} onSave={saveExp} onDelete={delExp} onClose={()=>setXe(null)} ask={ask}/>}
-    {ed&&<OrderEditor key={'mc'+ed.k} S={S} order={ed.order} cu={ed.cu} init={ed.init} dayOrders={d.orders||[]} locked={!!d.close} mc={mcInfo} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
+    {ed&&<OrderEditor key={'mc'+ed.k} S={S} order={ed.order} cu={ed.cu} init={ed.init} dayOrders={d.orders||[]} locked={!!d.close} mc={Object.assign({},mcInfo,{op:op&&op.name,blogs:(()=>{const L=((J&&J.blogs)||[]).slice();(d.orders||[]).forEach(o=>{if(o.comp&&!o.void&&!o.del){const a=blogAcct(o.comp.note);if(a&&!L.some(x=>x.acct===a))L.unshift({acct:a,d:date})}});return L})()})} compOk={!ed.order||oSt(ed.order)==='serving'} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
     {lateFor&&<LateSheet x={lateFor==='pick'?null:lateFor} list={absent.sched} late={late} onSave={saveLate} onCancel={tc=>{cancelLate(tc);setLateFor(null)}} onClose={()=>setLateFor(null)}/>}
     {tsel&&((r,w)=>(r||w)&&<TeacherSheet log={(d.tb||[]).filter(e=>String(e.tc)===String(tsel)).sort((a,b)=>(a.at||0)-(b.at||0))} r={r} w={w} onTb={onTb?k=>doTb(tsel,k):null} onLate={w&&!w.lv?()=>{setTsel(null);setLateFor(w)}:null}
       onEnd={r&&r.serv?()=>{const o=(d.orders||[]).find(x=>x.id===r.serv.id);setTsel(null);if(o)act(o,'end')}:null} onOrder={r&&r.serv?()=>{const o=(d.orders||[]).find(x=>x.id===r.serv.id);setTsel(null);if(o)setSel(o)}:null}
@@ -5618,7 +5757,7 @@ function MainCounter({me,mode,real,member,sw,kiosk,preview}){   // preview：老
 
   // 本班金額（範例資料：今天累計已結帳 − 前面各班已交班的；支出 350 算在第一班）
   const S=loadSettings();
-  const cumPaid=live?(mcDayD.orders||[]).filter(o=>mcLiveO(o)&&(oSt(o)==='paid'||o.pay)&&!o.skip).reduce((a,o)=>a+(oSt(o)==='paid'?orderAmt(o):oPaid(o)),0)
+  const cumPaid=live?(mcDayD.orders||[]).filter(o=>mcLiveO(o)&&(oSt(o)==='paid'||o.pay)&&!o.skip&&!o.comp).reduce((a,o)=>a+(oSt(o)==='paid'?orderAmt(o):oPaid(o)),0)
     :DEMO_ORDERS.filter(o=>o.st==='paid').reduce((s,o)=>s+o.g.reduce((a,x)=>a+demoCalc(S,x).amt,0),0);
   const expTot=live?(mcDayD.expenses||[]).filter(e=>e.cash!==false).reduce((a,e)=>a+(Number(e.amt)||0),0):350;
   const prevRev=hand.reduce((s,h)=>s+(h.rev||0),0),prevExp=hand.reduce((s,h)=>s+(h.exp||0),0);
@@ -6865,6 +7004,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-181','11-07','招待：站主櫃的人都可以勾（開單時或服務中）。開單、安排客人多「看部落客文章來的」，下面可選招待過的部落客帳號（招待單備註的 @帳號），也可以不選；報到開單會帶過去。老闆頁報表新增「分析」：最近 30 天／本月／上月的來客數、日均、營業額、客單價，星期幾來客（平日深色）、時段分布、男女比（依會員稱謂）、老點排行（不含招待）、老師支數排行、項目與時長、加購、會員回訪、部落客成效（看文章來的人數、營業額、招待前後 14 天日均來客）（GAS gas-4.99）'],
+  ['v0.1-180','11-07','訂單新增「招待（部落客／媒體）」：整張單免費（多位同行一起免）、加購一起招待，備註必填；主櫃只有主管、老闆在服務中可以設定（老闆頁一律可以）。實收 0、不計營業額與應有現金，到時直接完成；老師支數、費用照算（正職月底發、支援當天現結），不另記支出；不計老點、不能評分。日報、月報多一行「招待（媒體宣傳）」：筆數、位數、支數、老師費用、招待價值（GAS gas-4.98）'],
   ['v0.1-179','11-04','主櫃「會員資料」：每頁 5 位；沒有搜尋時依會員編號排序，最新的在最上面（搜尋時一樣依手機排序）'],
   ['v0.1-178','11-04','主櫃「耗材庫存 → 盤點」：欄位改成 品項／單位／最近盤點日／數量／安全庫存（不顯示時間、誰盤的）；今日盤點顯示「5/20 項」'],
   ['v0.1-177','11-04','櫃台人員頁：「勞基法工時提醒」預設收合；新增「今日盤點（耗材）」（跟老師頁同一份當天紀錄，一天由一個人負責）。主櫃「耗材庫存 → 盤點」改成只能看：品項／單位／最近盤點數量／安全庫存數量（GAS gas-4.96：品項多一欄「盤點數量」）'],
@@ -7956,11 +8097,11 @@ function App(){
   const backupOld=!S.lastBackupAt||Date.now()-S.lastBackupAt>3*864e5;
   // v0.1-065：底部分頁改成 報表（日報／月報）｜人員｜設定
   const NAV=[{id:'rep',label:'報表',icon:'▤'},{id:'people',label:'人員',icon:'☺'},{id:'set',label:'設定',icon:'⚙'}];
-  const TITLE={day:'日報',month:'月報',people:'人員',set:'設定'};
-  const navOn=id=>id==='rep'?(tab==='day'||tab==='month'):tab===id;
+  const TITLE={day:'日報',month:'月報',ana:'分析',people:'人員',set:'設定'};
+  const navOn=id=>id==='rep'?(tab==='day'||tab==='month'||tab==='ana'):tab===id;
   const goNav=id=>setTab(id==='rep'?repLast:id);
-  const repSeg=(tab==='day'||tab==='month')&&(<div className={(wide?'px-4':'max-w-md mx-auto px-4')+' pb-2'}><div className="flex rounded-lg border border-line overflow-hidden text-sm bg-card">
-    {[['day','日報'],['month','月報']].map(([k,l])=><button key={k} className={'flex-1 h-9 '+(tab===k?'bg-sage text-white':'')} onClick={()=>{setTab(k);setRepLast(k)}}>{l}</button>)}</div></div>);
+  const repSeg=(tab==='day'||tab==='month'||tab==='ana')&&(<div className={(wide?'px-4':'max-w-md mx-auto px-4')+' pb-2'}><div className="flex rounded-lg border border-line overflow-hidden text-sm bg-card">
+    {[['day','日報'],['month','月報'],['ana','分析']].map(([k,l])=><button key={k} className={'flex-1 h-9 '+(tab===k?'bg-sage text-white':'')} onClick={()=>{setTab(k);setRepLast(k)}}>{l}</button>)}</div></div>);
 
   // 平板版：訂單／支出編輯固定在右側面板；同時只開一個
   const openOrder=o=>{setXe(null);setEd({order:o,k:0})};
@@ -7984,7 +8125,7 @@ function App(){
   const panel=wide&&tab==='day'&&(
     xe?<ExpenseEditor inline key={'x'+date+xe.k} S={S} exp={xe.exp} locked={locked} prev={xe.prev} count={xe.count}
         onSave={onSaveExp} onDelete={onDeleteExp} onClose={endXe} ask={ask}/>:
-    (ed||!locked)?<OrderEditor inline key={'o'+date+(ed?ed.k+'-'+(ed.order?ed.order.id:'new'):'auto')} S={S} order={ed?ed.order:null} dayOrders={dayData().orders} locked={locked} prev={ed&&ed.prev} count={ed&&ed.count} cu={ed&&ed.cu}
+    (ed||!locked)?<OrderEditor compOk inline key={'o'+date+(ed?ed.k+'-'+(ed.order?ed.order.id:'new'):'auto')} S={S} order={ed?ed.order:null} dayOrders={dayData().orders} locked={locked} prev={ed&&ed.prev} count={ed&&ed.count} cu={ed&&ed.cu}
         onSave={onSaveOrder} onToggleVoid={onToggleVoid} onRelease={onRelease} onClose={ed?endEd:null} ask={ask}/>:
     <div className="h-full flex flex-col items-center justify-center text-center px-8 text-mute">
       <div className="text-4xl mb-3 text-sageD">✓</div>
@@ -8012,6 +8153,7 @@ function App(){
     </header>
   );
   const otherTabs=(<>
+    {tab==='ana'&&<div className={wide?'px-4 max-w-3xl':'max-w-md mx-auto px-4'}><AnaPage S={S}/></div>}
     {tab==='month'&&<MonthPage S={S} rev={rev} ask={ask} toast={toast} goDay={d=>{setDate(d);setTab('day');setRepLast('day')}} openPay={(ym,tc,per)=>setPay({ym,tc,per})}/>}
     {tab==='people'&&<SettingsPage key="people" page="people" onCustOrder={cu=>{setDate(ymd(new Date()));setTab('day');setRepLast('day');setXe(null);setEd({order:null,k:Date.now(),cu});toast('新的訂單：'+cuLabel(cu))}} sub={pSub} setSub={setPSub} S={S} saveS={saveS} ask={ask} toast={toast} lay={lay} onImported={()=>{setS(loadSettings());bump()}}/>}
     {tab==='set'&&<SettingsPage key="set" page="set" S={S} saveS={saveS} ask={ask} toast={toast} lay={lay} onImported={()=>{setS(loadSettings());bump()}}/>}
@@ -8019,7 +8161,7 @@ function App(){
   const H='calc(100dvh - 6.25rem - env(safe-area-inset-top))';   // 扣掉頂部標題列＋日報／月報切換   // 平板版內容區高度（扣掉頂部標題列）
 
   const modals=(<>
-    {!wide&&ed&&<OrderEditor key={'o'+ed.k} S={S} order={ed.order} dayOrders={dayData().orders} locked={locked} prev={ed.prev} count={ed.count} cu={ed.cu}
+    {!wide&&ed&&<OrderEditor compOk key={'o'+ed.k} S={S} order={ed.order} dayOrders={dayData().orders} locked={locked} prev={ed.prev} count={ed.count} cu={ed.cu}
       onSave={onSaveOrder} onToggleVoid={onToggleVoid} onRelease={onRelease} onClose={endEd} ask={ask}/>}
     {!wide&&xe&&<ExpenseEditor key={'x'+xe.k} S={S} exp={xe.exp} locked={locked} prev={xe.prev} count={xe.count}
       onSave={onSaveExp} onDelete={onDeleteExp} onClose={endXe} ask={ask}/>}
