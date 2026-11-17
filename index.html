@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-190</title>
+<title>緩緩門店 v0.1-192</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-190';
+const VER='v0.1-192';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -2987,8 +2987,9 @@ function RoleBar({view,me,canSwitch,onSwitch,wide}){
 /* ---- 各身分預設畫面（範例資料，尚未運作） ---- */
 const Soon=()=><span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-brownL text-brown align-middle">即將開放</span>;
 const DemoTag=()=><span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-bg border border-line text-mute align-middle">範例</span>;
-function Sec({title,soon,demo,children,right,fold}){   // fold：預設收合，點標題展開（v0.1-084）
-  const [open,setOpen]=useState(!fold);
+function Sec({title,soon,demo,children,right,fold,open:openP}){   // fold：預設收合，點標題展開（v0.1-084）；open：v0.1-191 變成 true 時自動展開
+  const [open,setOpen]=useState(!fold||!!openP);
+  useEffect(()=>{if(openP)setOpen(true)},[openP]);
   const ds=typeof title==='string'?title:'';
   if(fold)return (<div className="mt-5" data-sec={ds}>
     <button className={'w-full flex items-center justify-between px-3 py-3 rounded-2xl border border-line bg-card text-left '+(open?'mb-2':'')} onClick={()=>setOpen(!open)} aria-expanded={open}>
@@ -3693,11 +3694,14 @@ const ADV_ST={pending:'申請中',approved:'核准待領',rejected:'已駁回',c
 const ADV_PAY={counter:'櫃台現金',env:'老闆信封'};
 const ADV_CLS={pending:'bg-brownL text-brown',approved:'bg-sageL text-sageD',delivered:'bg-warnL text-warn',issue:'bg-warnL text-warn',signed:'bg-sageL text-sageD'};
 const ADV_OPEN=['pending','approved','delivered','issue'];
+const advHasOpen=j=>!!(j&&(j.list||[]).some(r=>ADV_OPEN.includes(r.st)));
 const ADV_OFF={background:'#e2ddd3',color:'#9a948a'};   // 按鈕變灰（不能按）
 const advYmdHm=ms=>{if(!ms)return '';const d=new Date(ms);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+hm(d)};
 const advRec=r=>r.tc+'號老師預支'+r.amt+'元 經櫃台人員 '+(r.dvBy||'')+' 於'+advYmdHm(r.dvAt)+'交付老師本人，並經'+r.tc+'號老師 於 '+advYmdHm(r.sgAt)+' 點清現金'+r.amt+'元無誤確認簽收';   // v0.1-189 簽收紀錄（只寫老師編號）
 const advT=ms=>{if(!ms)return '';const d=new Date(ms);return (d.getMonth()+1)+'/'+d.getDate()+' '+hm(d)};
-const AdvChip=({st})=><span className={'shrink-0 text-[11px] px-1.5 py-0.5 rounded '+(ADV_CLS[st]||'bg-bg text-mute')}>{ADV_ST[st]||st}</span>;
+// v0.1-192 狀態文字：申請中・未核准／已核准・由櫃台現金支付／已核准・待預支現金送櫃台／待領取・預支現金已送達櫃台
+const advLbl=r=>r.st==='pending'?'申請中・未核准':r.st==='approved'?(r.pay==='env'?(r.envAt?'待領取・預支現金已送達櫃台':'已核准・待預支現金送櫃台'):'已核准・由櫃台現金支付'):(ADV_ST[r.st]||r.st);
+const AdvChip=({st,r})=>{const k=r?r.st:st;return <span className={'shrink-0 text-[11px] px-1.5 py-0.5 rounded '+(r&&k==='approved'&&r.pay==='env'&&!r.envAt?'bg-brownL text-brown':(ADV_CLS[k]||'bg-bg text-mute'))}>{r?advLbl(r):(ADV_ST[k]||k)}</span>};
 
 /* v0.1-190 預支時間表（老師頁簽收欄、老闆頁紀錄共用）：申請日、核准日、交付日（櫃台人員）、簽收日；還沒到的那一步寫「尚未…」 */
 function AdvTimes({r,signLabel}){
@@ -3705,16 +3709,17 @@ function AdvTimes({r,signLabel}){
   const rows=[['申請日',advYmdHm(r.at)]];
   if(r.st==='rejected')rows.push(['駁回日',<>{advYmdHm(r.apAt)}{r.msg&&<span className="block text-xs text-warn">{r.msg}</span>}</>]);
   else rows.push(['核准日',r.apAt?advYmdHm(r.apAt):no(r.st==='pending'?'尚未核准':'—')]);
+  if(r.pay==='env'&&r.st!=='rejected')rows.push(['現金送達櫃台',r.envAt?<>{advYmdHm(r.envAt)} <span className="whitespace-nowrap">{r.envBy}</span></>:(r.dvAt?no('—'):<span className={r.st==='approved'||r.st==='signed'?'text-warn':'text-mute'}>{r.st==='approved'||r.st==='signed'?'尚未送達':'—'}</span>)]);   // v0.1-192
   if(r.st!=='rejected'){
-    rows.push(['交付日',r.dvAt?<>{advYmdHm(r.dvAt)} <span className="whitespace-nowrap">櫃台人員：{r.dvBy}</span></>:no(['pending','approved'].includes(r.st)?'尚未交付':'—')]);
-    rows.push([signLabel||'簽收日',r.sgAt?advYmdHm(r.sgAt):<span className={r.st==='delivered'||r.st==='issue'?'text-warn':'text-mute'}>{r.st==='issue'?'回報有問題：'+(r.msg||''):['pending','approved','delivered'].includes(r.st)?'尚未簽收':'—'}</span>]);
+    rows.push(['交付日',r.dvAt?<>{advYmdHm(r.dvAt)} <span className="whitespace-nowrap">櫃台人員：{r.dvBy}</span></>:(r.st==='signed'||r.st==='issue'?<span className="text-warn">尚未交付</span>:no(['pending','approved'].includes(r.st)?'尚未交付':'—'))]);
+    rows.push([signLabel||'簽收日',r.sgAt?advYmdHm(r.sgAt):<span className={['approved','delivered','issue'].includes(r.st)?'text-warn':'text-mute'}>{r.st==='issue'?'回報有問題：'+(r.msg||''):['pending','approved','delivered'].includes(r.st)?'尚未簽收':'—'}</span>]);
   }
   return <div className="grid gap-y-1 text-[13px] num" style={{gridTemplateColumns:'auto 1fr',columnGap:12}}>{rows.map(([k,v])=><React.Fragment key={k}><span className="text-mute">{k}</span><span>{v}</span></React.Fragment>)}</div>;
 }
-function TeacherAdv(){
+function TeacherAdv({onList}){
   const [d,setD]=useState(()=>jget('adv-my',null));const [busy,setBusy]=useState('');const [err,setErr]=useState('');
   const [amt,setAmt]=useState('');const [note,setNote]=useState('');const [cf,setCf]=useState(null);const [iss,setIss]=useState('');
-  const run=async(b,k)=>{setBusy(k||b.op);setErr('');try{const j=await tCall(Object.assign({action:'adv'},b));setD(j);jset('adv-my',j);setBusy('');return j}catch(e){setErr(e.message);setBusy('');return null}};
+  const run=async(b,k)=>{setBusy(k||b.op);setErr('');try{const j=await tCall(Object.assign({action:'adv'},b));setD(j);jset('adv-my',j);onList&&onList(j);setBusy('');return j}catch(e){setErr(e.message);setBusy('');return null}};
   useEffect(()=>{run({op:'my'},'load')},[]);
   if(!d)return <div className="text-sm text-mute">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>;
   if(d.sup)return <Card className="p-3 text-sm text-mute">支援老師每天下班現結，不適用預支。</Card>;
@@ -3723,6 +3728,7 @@ function TeacherAdv(){
   const n=Math.min(Number(amt)||0,top);
   const apply=async()=>{if(await run({op:'apply',amt:n,note:note.trim()},'apply')){setAmt('');setNote('')}};
   const lock=!!open||!d.on||top<1000;
+  const canSg=!!cur&&(cur.st==='approved'||cur.st==='delivered');   // v0.1-191 核准後就能簽收（本人手機按的就算確認，以系統時間為準）
   return (<Card className="p-3">
     <div className="rounded-lg bg-bg px-3 py-2 text-sm num">
       <div className="text-xs text-mute">{c.per}</div>
@@ -3742,31 +3748,33 @@ function TeacherAdv(){
     </div>
     <div className="text-[11px] mt-1 text-center">{open?<span className="text-warn">同時只能送出 1 筆預支，上一筆簽收後才能再申請</span>:!d.on?<span className="text-mute">目前沒有開放線上預支</span>:top<1000?<span className="text-mute">目前可預支不到 1,000 元，還不能申請</span>:<span className="text-mute">送出後由老闆或主管核准；在櫃台領錢、點清後簽收，簽收當期發薪時扣回。</span>}</div>
     {cur&&<div className="mt-3 rounded-xl border border-line p-3">
-      <div className="flex items-center gap-2 mb-2"><span className="text-sm font-semibold">簽收欄</span><span className="serif text-lg num">{money(cur.amt)}</span><AdvChip st={cur.st}/>{cur.pay&&<span className="text-xs text-mute">{ADV_PAY[cur.pay]}</span>}</div>
+      <div className="flex items-center gap-2 mb-2"><span className="text-sm font-semibold">簽收欄</span><span className="serif text-lg num">{money(cur.amt)}</span><AdvChip r={cur}/>{cur.pay&&<span className="text-xs text-mute">{ADV_PAY[cur.pay]}</span>}</div>
       {cur.note&&<div className="text-xs text-mute -mt-1 mb-2">原因：{cur.note}</div>}
       <AdvTimes r={cur}/>
-      {cur.st==='approved'&&<div className="text-xs text-sageD mt-2 num">已核准，請到櫃台領取；{cur.exp} 前沒有領取會自動失效。</div>}
+      {cur.st==='approved'&&(cur.pay==='env'&&!cur.envAt?<div className="text-xs text-brown mt-2">已核准，老闆會把預支現金送到櫃台，送達後會用 LINE 通知你來領。</div>
+        :<div className="text-xs text-sageD mt-2 num">可以到櫃台領取；{cur.exp} 前沒有領取會自動失效。</div>)}
+      {(cur.st==='approved'||cur.st==='delivered')&&<div className="text-[11px] text-mute mt-1">簽收要用你自己的手機按；按了就代表你已點清現金、確認金額無誤，以系統記錄的時間為準。</div>}
       {cur.st==='signed'&&<div className="text-xs text-mute mt-2">已於櫃台點清預支金額 <span className="num">{cur.amt}</span> 元整無誤・扣在 {cur.per}</div>}
       {['expired','void','cancelled'].includes(cur.st)&&cur.msg&&<div className="text-xs text-mute mt-2">{cur.msg}</div>}
-      {cf==='issue'&&cur.st==='delivered'?<div className="mt-3">
+      {cf==='issue'&&canSg?<div className="mt-3">
           <input className="w-full h-10 px-3 rounded-lg border border-line bg-white text-sm" placeholder="哪裡不對？（例：少 1,000）" value={iss} onChange={e=>setIss(e.target.value)}/>
           <div className="grid grid-cols-2 gap-2 mt-2"><button className="h-10 rounded-xl border border-line text-sm" onClick={()=>setCf(null)}>返回</button>
             <button className="h-10 rounded-xl bg-warn text-white text-sm disabled:opacity-50" disabled={!!busy} onClick={async()=>{if(await run({op:'issue',id:cur.id,note:iss.trim()})){setCf(null);setIss('')}}}>{busy==='issue'?'送出中…':'回報有問題'}</button></div></div>
-        :cf==='sign'&&cur.st==='delivered'?<div className="mt-3 rounded-lg bg-brownL px-3 py-2 text-sm text-brown"><b>已於櫃台點清預支金額<span className="num">{cur.amt}</span>元整無誤</b><span className="block text-xs mt-0.5">簽收後於{c.per||'本期'}從薪資扣回。</span>
+        :cf==='sign'&&canSg?<div className="mt-3 rounded-lg bg-brownL px-3 py-2 text-sm text-brown"><b>已於櫃台點清預支金額<span className="num">{cur.amt}</span>元整無誤</b><span className="block text-xs mt-0.5">簽收後於{c.per||'本期'}從薪資扣回。</span>
           <div className="grid grid-cols-2 gap-2 mt-2"><button className="h-10 rounded-xl border border-line bg-card text-ink text-sm" onClick={()=>setCf(null)}>返回</button>
             <button className="h-10 rounded-xl bg-brown text-white text-sm disabled:opacity-50" disabled={!!busy} onClick={async()=>{if(await run({op:'sign',id:cur.id}))setCf(null)}}>{busy==='sign'?'簽收中…':'確認簽收'}</button></div></div>
         :ADV_OPEN.includes(cur.st)&&<>
-          <button className="w-full mt-3 h-11 rounded-xl bg-brown text-white" style={cur.st!=='delivered'?ADV_OFF:undefined} disabled={cur.st!=='delivered'} onClick={()=>setCf('sign')}>確認簽收</button>
+          <button className="w-full mt-3 h-11 rounded-xl bg-brown text-white" style={!canSg?ADV_OFF:undefined} disabled={!canSg} onClick={()=>setCf('sign')}>確認簽收</button>
           <div className="flex items-center justify-between mt-1 text-[11px] text-mute">
-            <span>{cur.st==='pending'?'核准、櫃台交付後才能簽收':cur.st==='approved'?'櫃台交付後才能簽收':cur.st==='issue'?'等老闆或主管處理後再簽收':'請在櫃台前點清現金後再簽收'}</span>
+            <span>{cur.st==='pending'?'核准後才能簽收':cur.st==='issue'?'等老闆或主管處理後再簽收':'在櫃台當面點清現金後按確認簽收'}</span>
             {cur.st==='pending'&&<button className="underline disabled:opacity-40" disabled={!!busy} onClick={()=>run({op:'cancel',id:cur.id})}>{busy==='cancel'?'取消中…':'取消申請'}</button>}
-            {cur.st==='delivered'&&<button className="underline text-warn" onClick={()=>setCf('issue')}>金額有問題</button>}
+            {canSg&&<button className="underline text-warn" onClick={()=>setCf('issue')}>金額有問題</button>}
           </div></>}
     </div>}
     {err&&<div className="text-xs text-warn mt-2">✗ {err}</div>}
     {hist.length>0&&<div className="mt-3"><div className="text-[11px] text-mute font-semibold mb-1">之前的預支</div>
       {hist.slice(0,8).map(r=><div key={r.id} className="flex items-center gap-2 py-1.5 border-t border-line text-sm">
-        <span className="num text-xs text-mute w-20 shrink-0">{advT(r.at)}</span><span className="num">{money(r.amt)}</span><AdvChip st={r.st}/>
+        <span className="num text-xs text-mute w-20 shrink-0">{advT(r.at)}</span><span className="num">{money(r.amt)}</span><AdvChip r={r}/>
         <span className="flex-1 min-w-0 text-right text-[11px] text-mute truncate">{r.st==='signed'?'扣在 '+r.per:r.msg}</span></div>)}
     </div>}
     <div className="flex justify-end mt-1"><button className="text-xs text-mute underline disabled:opacity-40" disabled={!!busy} onClick={()=>run({op:'my'},'load')}>{busy==='load'?'讀取中…':'重新整理'}</button></div>
@@ -3785,7 +3793,10 @@ function McAdv({ks,op,date,ask,toast}){
   useEffect(()=>{load();const t=setInterval(load,60000);return ()=>clearInterval(t)},[ks]);
   // 已交付的櫃台現金預支：主櫃這台沒有那筆支出時補上（例如交付時剛好斷線）
   useEffect(()=>{if(!d||MC.test)return;const ex=new Set((mcGetDay(date).expenses||[]).map(e=>e.id)),dl=new Set(mcGetDay(date).expDel||[]);
-    (d.list||[]).filter(r=>r.pay==='counter'&&r.dvAt&&r.st!=='approved'&&d.today===date&&!ex.has('adv_'+r.id)&&!dl.has('adv_'+r.id)).forEach(r=>advExpAdd(date,{id:r.id,tc:r.tc,amt:r.amt,by:r.dvBy},op.name))},[d]);
+    (d.list||[]).filter(r=>r.pay==='counter'&&r.dvAt&&d.today===date&&!ex.has('adv_'+r.id)&&!dl.has('adv_'+r.id)).forEach(r=>advExpAdd(date,{id:r.id,tc:r.tc,amt:r.amt,by:r.dvBy},op.name))},[d]);
+  const envIn=async r=>{if(MC.test){setErr('測試上線時不能操作預支（預支是真的資料）');return}
+    if(!await ask({title:'收到 '+r.tc+' 號的預支信封？',msg:'確認老闆已把 '+money(r.amt)+' 的信封送到櫃台。按了會通知老師來領。',okText:'收到信封'}))return;
+    setBusy(r.id);setErr('');try{const j=await advMcCall({op:'envin',id:r.id},ks);setD(j);jset('adv-mc',j);toast&&toast('已記錄信封送達，已通知 '+r.tc+' 號老師')}catch(e){setErr(e.message)}setBusy('')};
   const give=async r=>{
     if(MC.test){setErr('測試上線時不能交付預支（預支是真的資料）');return}
     if(!await ask({title:'交付 '+r.tc+' 號 預支 '+money(r.amt)+'？',msg:(r.pay==='counter'?'從櫃台現金支付：會自動記一筆「老師預支」現金支出，交班時從應有現金扣除。':'老闆準備的信封：不動櫃台現金。')+'\n交給老師後，請老師在櫃台前點清現金，並在老師頁按「簽收」。',okText:'櫃台已交付'}))return;
@@ -3797,17 +3808,21 @@ function McAdv({ks,op,date,ask,toast}){
   const L=(d&&d.list)||[];
   return (<Card className="overflow-hidden">
     {!d&&!err&&<div className="px-3 py-3"><Ld/></div>}
-    {d&&!L.length&&<div className="px-3 py-3 text-sm text-mute">目前沒有要交付的預支</div>}
-    {L.map((r,i)=><div key={r.id} className={'flex items-center gap-3 px-3 py-2.5 text-sm '+(i?'border-t border-line':'')}>
-      <span className={'px-2 py-0.5 rounded text-xs whitespace-nowrap '+(r.pay==='counter'?'bg-brownL text-brown':'bg-sageL text-sageD')}>{ADV_PAY[r.pay]}</span>
-      <span className="flex-1 min-w-0"><b className="num">{r.tc}</b> 號・<span className="num">{money(r.amt)}</span>
-        {r.st==='approved'?<span className="block text-[11px] text-mute num">{r.exp} 前領取</span>
+    {d&&!L.length&&<div className="px-3 py-3 text-sm text-mute">目前沒有老師申請預支</div>}
+    {L.map((r,i)=>{const envWait=r.st==='approved'&&r.pay==='env'&&!r.envAt,canGive=!r.dvAt&&(r.st==='approved'||r.st==='signed')&&!envWait;
+      return <div key={r.id} className={'flex items-center gap-3 px-3 py-2.5 text-sm '+(i?'border-t border-line':'')}>
+      <span className="flex-1 min-w-0"><span className="flex items-center gap-2 flex-wrap"><span><b className="num">{r.tc}</b> 號・<span className="num">{money(r.amt)}</span></span><AdvChip r={r}/></span>
+        {r.st==='pending'?<span className="block text-[11px] text-mute num">{advT(r.at)} 送出，等老闆或主管核准</span>
+          :envWait?<span className="block text-[11px] text-mute">老闆把信封送到櫃台後，按「收到信封」</span>
+          :!r.dvAt&&r.st==='signed'?<span className="block text-[11px] text-warn">老師已簽收，請按「櫃台已交付」補記</span>
+          :r.st==='approved'?<span className="block text-[11px] text-mute num">{r.pay==='env'?'信封 '+r.envBy+' '+hm(new Date(r.envAt))+' 送達・':''}{r.exp} 前領取</span>
           :<span className={'block text-[11px] num '+(r.st==='issue'?'text-warn':'text-sageD')}>✓ {r.dvBy} {hm(new Date(r.dvAt))} 已交付・{r.st==='signed'?'老師已簽收':r.st==='issue'?'老師回報金額有問題，請找主管':'待老師簽收'}</span>}</span>
-      {r.st==='approved'&&(r.self?<span className="text-[11px] text-mute">本人不能交付</span>
-        :<button className="h-9 px-3 rounded-full bg-brown text-white text-sm disabled:opacity-40" disabled={!!busy} onClick={()=>give(r)}>{busy===r.id?'處理中…':'櫃台已交付'}</button>)}
-    </div>)}
+      {envWait&&<button className="h-9 px-3 rounded-full border border-brown text-brown text-sm disabled:opacity-40 whitespace-nowrap" disabled={!!busy} onClick={()=>envIn(r)}>{busy===r.id?'處理中…':'收到信封'}</button>}
+      {canGive&&(r.self?<span className="text-[11px] text-mute">本人不能交付</span>
+        :<button className="h-9 px-3 rounded-full bg-brown text-white text-sm disabled:opacity-40 whitespace-nowrap" disabled={!!busy} onClick={()=>give(r)}>{busy===r.id?'處理中…':'櫃台已交付'}</button>)}
+    </div>})}
     {err&&<div className="px-3 py-2 text-xs text-warn border-t border-line">✗ {err}</div>}
-    <div className="px-3 py-1.5 text-[11px] text-mute border-t border-line">老闆或主管核准後才會出現。交錢給老師後按「櫃台已交付」，系統會記下是誰交付的。</div>
+    <div className="px-3 py-1.5 text-[11px] text-mute border-t border-line">老師送出申請後就會出現，方便確認老師的申請有沒有送出、核准了沒。交錢給老師後按「櫃台已交付」，系統會記下是誰交付的。</div>
   </Card>);
 }
 
@@ -3844,7 +3859,7 @@ function AdvAdmin({ask,toast}){
     </div>
     {!L.length&&<div className="px-3 py-3 text-sm text-mute">{all?'近兩個月沒有預支紀錄':'沒有待處理的預支'}</div>}
     {L.map((r,i)=>{const w=cntWhy(r);return <div key={r.id} className={'px-3 py-2.5 text-sm '+(i?'border-t border-line':'')}>
-      <div className="flex items-center gap-2"><b className="num">{r.tc} 號</b><span className="text-mute">預支</span><span className="serif text-lg num">{money(r.amt)}</span><AdvChip st={r.st}/></div>
+      <div className="flex items-center gap-2"><b className="num">{r.tc} 號</b><span className="text-mute">預支</span><span className="serif text-lg num">{money(r.amt)}</span><AdvChip r={r}/></div>
       {r.note&&<div className="text-xs text-mute mt-0.5">原因：{r.note}</div>}
       <div className="mt-2 rounded-lg bg-bg px-3 py-2"><AdvTimes r={r} signLabel="申請人清點無誤簽收"/>
         {r.pay&&<div className="text-[11px] text-mute mt-2 pt-1.5 border-t border-line">{ADV_PAY[r.pay]}{r.st==='signed'?'・扣在 '+r.per:''}{r.apBy?'・'+r.apBy+(r.st==='rejected'?' 駁回':' 核准'):''}</div>}</div>
@@ -3858,7 +3873,8 @@ function AdvAdmin({ask,toast}){
         {w&&<div className="text-[11px] text-mute mt-1">不能用櫃台現金：{w}</div>}
         {box(r,'rj','駁回原因（會通知老師）',t=>act(r,'reject',{msg:t},'已駁回，已通知老師'))}</>}
       {r.st==='approved'&&<div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-sageD num">{r.exp} 前領取</span>
+        {r.pay==='env'&&!r.envAt?<button className={btn+'bg-brown text-white'} disabled={!!busy} onClick={()=>act(r,'envin',{},'已記錄現金送達櫃台，已通知老師')}>預支現金已送到櫃台</button>
+          :<span className="text-sageD num">{r.exp} 前領取</span>}
         <button className="underline text-brown disabled:opacity-40" disabled={!!busy||(r.pay==='env'&&!!w)} onClick={()=>act(r,'setpay',{pay:r.pay==='counter'?'env':'counter'},'已改付款方式')}>改成{r.pay==='counter'?'老闆信封':'櫃台現金'}</button>
         <button className="underline text-warn" onClick={()=>{setRs({id:r.id,k:'void'});setTxt('')}}>作廢</button></div>}
       {(r.st==='delivered'||r.st==='issue')&&<div className="mt-1 text-xs">
@@ -3876,6 +3892,8 @@ function AdvAdmin({ask,toast}){
 
 function TeacherLive({me,mode}){
   const S=loadSettings();
+  const [advOpen,setAdvOpen]=useState(()=>advHasOpen(jget('adv-my',null)));   // v0.1-191 有進行中的預支才展開預支區塊
+  useEffect(()=>{tCall({action:'adv',op:'my'}).then(j=>{jset('adv-my',j);setAdvOpen(advHasOpen(j))}).catch(()=>{})},[]);
   const today=bizToday(S.cutoff);
   const [ym,setYm]=useState(today.slice(0,7));
   const [per,setPer]=useState(()=>Number(today.slice(8))<=15?'h1':'h2');
@@ -3991,10 +4009,10 @@ function TeacherLive({me,mode}){
     (<Sec title="老師牌況"><TeacherBoardLive me={me}/></Sec>),
     (<Sec title="未來一週老點"><WeekLd/></Sec>),   // 9：v0.1-167
     (<Sec title="今日盤點（耗材）"><TInvDay/></Sec>),   // 10：v0.1-175
-    (<Sec title="預支申請"><TeacherAdv/></Sec>),   // 11：v0.1-188
+    (<Sec title="預支申請" fold open={advOpen} right={advOpen?<span className="text-xs text-brown">有一筆預支進行中</span>:null}><TeacherAdv onList={j=>setAdvOpen(advHasOpen(j))}/></Sec>),   // 11：v0.1-188；v0.1-191 移到最下面，平常收合，有進行中的預支才展開
   ];
   const head=(<div className="mt-1">{monthNav}{status}</div>);
-  return <RolePage mode={mode} head={head} B={B} phone={[8,0,1,11,2,3,5,4,9,10,6,7]} wide={{top:[8],cols:[[0,1,11,3,5],[2,4,9,10,6,7]]}} xwide={{top:[8],cols:[[0,3,5],[1,11,6],[2,4,9,10,7]]}}/>;
+  return <RolePage mode={mode} head={head} B={B} phone={[8,0,1,2,3,5,4,9,10,6,7,11]} wide={{top:[8],cols:[[0,1,3,5],[2,4,9,10,6,7,11]]}} xwide={{top:[8],cols:[[0,3,5],[1,6],[2,4,9,10,7,11]]}}/>;
 }
 
 function TeacherHome({me,mode,real}){
@@ -7416,6 +7434,8 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-192','11-17','老師預支：主櫃「老師預支交付」老師一送出就看得到（只有編號、金額、狀態），狀態分成「申請中・未核准」「已核准・由櫃台現金支付」「已核准・待預支現金送櫃台」「待領取・預支現金已送達櫃台」。老闆信封多一步「現金送達櫃台」：老闆頁按「預支現金已送到櫃台」或主櫃按「收到信封」，會 LINE 通知老師來領；失效天數從可領取起算（GAS gas-5.09）'],
+  ['v0.1-191','11-17','老師預支：核准後老師就能按「確認簽收」（不用等櫃台按交付；本人手機按的就算確認，以系統時間為準）；櫃台之後仍要按「櫃台已交付」補記交付人（櫃台現金照樣記支出），老闆頁沒交付的顯示「尚未交付」。老師頁預支區塊移到最下面、平常收合，有進行中的預支才自動展開（GAS gas-5.08）'],
   ['v0.1-190','11-17','老師預支：老師頁送出後，金額框和送出鈕變灰，寫「同時只能送出 1 筆預支」，上一筆簽收（或取消、駁回、失效）後才亮起來；下方多「簽收欄」列出申請日、核准日、交付日（櫃台人員）、簽收日，「確認簽收」在核准且櫃台交付後才亮；可預支不足 1,000 元時顯示 $0。老闆頁每筆預支改列申請日、核准日、交付日（櫃台人員）、申請人清點無誤簽收（試算表說明欄同格式）（GAS gas-5.07）'],
   ['v0.1-189','11-17','老師預支：金額改成 −／＋ 按鈕，每次 1,000 元，＋不會超過可預支上限；簽收確認文字改為「已於櫃台點清預支金額 N 元整無誤」；老闆頁預支只顯示老師編號，已簽收的寫完整紀錄（某號老師預支 N 元 經櫃台人員 某某 於 日期時間 交付老師本人，並經某號老師 於 日期時間 點清現金 N 元無誤確認簽收）；LINE 通知也只寫老師編號（GAS gas-5.06）'],
   ['v0.1-188','11-17','老師預支（線上申請）：老師在老師頁申請（依當期支數 × 每支費用 × 比例算上限，扣掉本期已預支；沒結案前不能再申請；支援老師不適用）→ 老闆或主管在「人員 → 老師 → 老師預支」核准，選櫃台現金（低於設定金額且當天櫃台現金夠付）或老闆信封，可再改 → LINE 通知老師 → 櫃台交錢後在主櫃「老師預支交付」按「櫃台已交付」（記下是誰交付；櫃台現金自動記一筆「老師預支」現金支出，交班從應有現金扣除，公司淨利加回）→ 老師點清後在老師頁「簽收」或回報「有問題」→ 自動加到簽收當期的薪資扣項。核准後超過設定天數沒領自動失效。設定在人員 → 老師（GAS gas-5.05：工作表「老師預支」、LINE 通知）'],
