@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f4efe7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="緩緩門店">
-<title>緩緩門店 v0.1-185</title>
+<title>緩緩門店 v0.1-190</title>
 <script>
 /* 最早期記錄進入網址（LIFF／程式清掉參數之前），給 LINE 登入測試判斷開啟來源與參數傳遞用 */
 window.__entryUrl=location.href;window.__entryRef=document.referrer||'';
@@ -61,7 +61,7 @@ input[type=date][value=""]:focus::-webkit-date-and-time-value{color:inherit}
 const {useState,useEffect,useMemo,useRef}=React;
 
 /* ========== 常數 ========== */
-const VER='v0.1-185';
+const VER='v0.1-190';
 const JSPDF_URL='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const FONT='"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif';
 const P='slowve-';
@@ -105,6 +105,7 @@ const DEFAULT_SETTINGS={
   profileReview:false,            // 老師／櫃台修改個人資料是否需要審核（預設不用，存檔即生效）              // 請假是否需要老闆／主管審核（預設不用，送出即登記）                     // 線上開通：老師可選的編號 10～joinMax（最多 100）
   support:[],                     // 支援老師編號：每日下班向櫃台領現金（現結），不走月薪
   expCats:['耗材','清潔用品','水電瓦斯','房租','餐費','媒體宣傳','雜支','其他'],
+  adv:{on:true,ratio:80,cnt:10000,exp:3},   // v0.1-188 老師預支：可預支比例 %、櫃台支付上限（低於此金額；0＝不開放）、核准後幾天沒領自動失效
   expNames:[],
   device:'',
   lastBackupAt:null,
@@ -146,6 +147,7 @@ function mergeSettings(s){
   r.expCats=(Array.isArray(s.expCats)&&s.expCats.length)?s.expCats:d.expCats;
   if(!r.expCats.includes('媒體宣傳'))r.expCats=r.expCats.filter(c=>c!=='其他'&&c!=='雜支').concat(['媒體宣傳'],r.expCats.filter(c=>c==='雜支'||c==='其他'));
   r.expNames=Array.isArray(s.expNames)?s.expNames:[];
+  {const a=s.adv||{},n=(v,dv,lo,hi)=>{const x=Number(v);return Math.max(lo,Math.min(hi,v==null||v===''||isNaN(x)?dv:Math.floor(x)))};r.adv={on:a.on!==false,ratio:n(a.ratio,80,0,100),cnt:n(a.cnt,10000,0,1e7),exp:n(a.exp,3,1,30)}}   // v0.1-188
   r.maincLive=!!s.maincLive;
   r.maincTest=!!s.maincTest;
   // v0.1-123 線上預約（客人頁）：開放、當天也可以、可指定老師、取消時限（小時）、一次最多幾位、LINE 確認
@@ -216,7 +218,7 @@ function mutateDay(date,fn){
    額外品項若有「指定老師」（修腳皮＝69 號），那幾支算給指定老師，不算主項目的老師（主老師就是指定老師時才算給他自己） */
 // 加鐘每 30 分的價格：依加鐘的項目（exs；沒有就用主項目）
 const exPrice=(o,S)=>Number(((S.extra||{}).price||{})[o.exs||o.svc])||0;
-const adOwner=(a,o)=>a&&a.tc&&String(a.tc)!==String(o.tc||'')?String(a.tc):null;
+const adOwner=(a,o)=>{if(!a)return null;const t=String(((o.adTc||{})[a.id])||a.tc||'');return t&&t!==String(o.tc||'')?t:null};   // v0.1-187 adTc：這位客人的額外品項由誰做（修腳皮依老師技能挑；沒有才用設定的指定老師）
 const zhiCalc=(o,S)=>{
   let z=(o.svc&&o.min)?Math.floor(o.min/(Number(S.zhiMin)||30)):0;
   z+=((Number(o.ex)||0)+(Number(o.ex2)||0))*(Number((S.extra||{}).zh)||0);   // v0.1-145 加項（ex2）跟加鐘一樣每 30 分算支數
@@ -344,16 +346,16 @@ function statsOf(orders,S){
    現金支出＝店內現金付的雜項支出＋支援老師現結；現金結餘＝現金收入（營業額扣掉跳單未收）－現金支出；
    老師費用＝正職老師的費用（5／20 號發薪，支援老師已現結不重複算）；公司淨利＝現金結餘－老師費用（有非現金支出時再扣掉） */
 const MR_COL={amt:'#a0784f',exp:'#b5654f',cash:'#6f7d62',fee:'#7d6385',net:'#3f6478'};
-function MoneyRows({title,meta,amt,cashIn,expCash,nonCash,sup,skipRev,fee}){
-  const exp=expCash+sup,cash=cashIn-exp,net=cash-fee-(nonCash||0);   // 非現金支出（如房租轉帳）不影響現金，但公司淨利要扣
-  const expSub=sup>0?'雜項支出 ＋ 支援老師費用 '+money(sup):'雜項支出（店內現金）';
+function MoneyRows({title,meta,amt,cashIn,expCash,nonCash,sup,skipRev,fee,adv}){
+  const exp=expCash+sup,cash=cashIn-exp,net=cash-fee-(nonCash||0)+(adv||0);   // v0.1-188 老師預支會從薪資扣回，不算成本，淨利加回   // 非現金支出（如房租轉帳）不影響現金，但公司淨利要扣
+  const expSub=(sup>0?'雜項支出 ＋ 支援老師費用 '+money(sup):'雜項支出（店內現金）')+(adv>0?'（含老師預支 '+money(adv)+'）':'');
   // v0.1-052：金額為 0 的那排隱藏（營業額那排一定顯示，沒生意時才看得到 $0）
   const rows=[
     [title,meta,amt,MR_COL.amt],
     ['現金支出',expSub,exp,MR_COL.exp],
     ['現金結餘',['營業額',skipRev>0&&'跳單未收 '+money(skipRev),exp!==0&&'現金支出'].filter(Boolean).join(' − '),cash,MR_COL.cash],
     ['老師費用','正職老師・5／20 號發薪',fee,MR_COL.fee],
-    ['公司淨利',[cash!==0&&'現金結餘',fee!==0&&'老師費用',nonCash>0&&'非現金支出 '+money(nonCash)].filter(Boolean).join(' − ').replace(/^(老師費用|非現金支出)/,'− $1')||'—',net,MR_COL.net],
+    ['公司淨利',([cash!==0&&'現金結餘',fee!==0&&'老師費用',nonCash>0&&'非現金支出 '+money(nonCash)].filter(Boolean).join(' − ').replace(/^(老師費用|非現金支出)/,'− $1')||'—')+(adv>0?' ＋ 老師預支 '+money(adv):''),net,MR_COL.net],
   ].filter((r,i)=>i===0||Math.round(r[2]||0)!==0);
   return (<>{rows.map(([lab,sub,val,c],i)=>(
     <div key={lab} className={'flex items-center justify-between gap-3 '+(i===0?'':'mt-3 pt-3 border-t border-line')}>
@@ -370,8 +372,8 @@ function supportOf(st,S){
   return {list,n:list.length,zh:list.reduce((s,t)=>s+t.zh,0),cm:list.reduce((s,t)=>s+t.cm,0),pay:list.reduce((s,t)=>s+t.pay,0)};
 }
 function expStatsOf(expenses){
-  const r={total:0,cash:0,byCat:{}};
-  (expenses||[]).forEach(e=>{const a=Number(e.amt)||0;r.total+=a;if(e.cash!==false)r.cash+=a;r.byCat[e.cat]=(r.byCat[e.cat]||0)+a});
+  const r={total:0,cash:0,adv:0,byCat:{}};
+  (expenses||[]).forEach(e=>{const a=Number(e.amt)||0;r.total+=a;if(e.cash!==false)r.cash+=a;if(e.adv)r.adv+=a;r.byCat[e.cat]=(r.byCat[e.cat]||0)+a});   // v0.1-188 adv：櫃台付的老師預支（現金支出，但不是成本）
   return r;
 }
 const sortT=byT=>Object.values(byT).sort((a,b)=>String(a.tc).localeCompare(String(b.tc),'zh-Hant',{numeric:true}));
@@ -458,7 +460,7 @@ const blankItem=()=>({svc:null,min:null,promo:false,ex:0,exs:null,ex2:0,exs2:nul
 const sameItem=(a,b)=>!!a&&!!b&&a.svc===b.svc&&a.min===b.min&&!!a.promo===!!b.promo&&!!a.ld===!!b.ld
   &&(Number(a.ex)||0)===(Number(b.ex)||0)&&(Number(a.ex)?(a.exs||a.svc)===(b.exs||b.svc):true)&&(Number(a.ex2)||0)===(Number(b.ex2)||0)&&(Number(a.ex2)?a.exs2===b.exs2:true)&&!!a.emp===!!b.emp&&(Number(a.cp)||0)===(Number(b.cp)||0)
   &&[...(a.ad||[])].sort().join()===[...(b.ad||[])].sort().join()&&String(a.tc||'')===String(b.tc||'')&&JSON.stringify(a.sh?[a.sh.tc,Number(a.sh.zh)||0,a.sh.tm||'']:0)===JSON.stringify(b.sh?[b.sh.tc,Number(b.sh.zh)||0,b.sh.tm||'']:0)
-  &&String(a.tc||'')===String(b.tc||'');   // 換老師也重算（指定老師的品項歸屬可能改變）
+  &&String(a.tc||'')===String(b.tc||'')&&JSON.stringify(a.adTc||{})===JSON.stringify(b.adTc||{});   // 換老師也重算（指定老師的品項歸屬可能改變）
 // v0.1-105 mc（主櫃上線）：{tcs:[{tc,next,serv,since}]（上牌中的老師，可接的依輪班順序）, busy:{座位:{k,until}}, line:{ks}}
 //   主櫃開單：要選床位／腳位、老師從上牌中的老師選、不顯示老師抽成、沒有跳單
 /* v0.1-131 備註：快速按鈕（指定女生／指定男生）＋之前輸入過的備註（這台記住的＋會員 LINE 預約的備註），點一下加入、再點一下拿掉 */
@@ -515,6 +517,11 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
   const setIt=fn=>setF(p=>{const items=p.items.map((x,i)=>i===cur?Object.assign({},x,fn(x)):x);return Object.assign({},p,{items})});
   // v0.1-138 油壓只有女老師：選油壓時，老師是男老師就換成可接的女老師（頭班優先）
   const cant=(tc,svc)=>!!(mc&&mc.tea&&tc&&!canDo(mc.tea[String(tc)],svc));   // v0.1-141 老師技能
+  const cantX=(tc,x)=>!!(mc&&mc.tea&&tc&&!canDoX(mc.tea[String(tc)],x));   // v0.1-186 單做刮痧／拔罐看技能
+  const xjCan=tc=>!!(mc&&mc.tea&&mc.tea[String(tc)]&&canAd(Object.assign({tc:String(tc)},mc.tea[String(tc)]),['xiujiao']));
+  const xjList=()=>mc?mc.tcs.filter(t=>xjCan(t.tc)):[];
+  const xjPick=main=>{if(main&&xjCan(main))return String(main);const L=xjList(),h=L.find(t=>!t.serv&&!t.rest)||L[0];return h?h.tc:String(((S.addons||[]).find(a=>a.id==='xiujiao')||{}).tc||'')};
+  const soloHead=(x,excl)=>mc&&mc.tcs.find(t=>!t.serv&&!t.rest&&!cantX(t.tc,x)&&!(excl||[]).includes(t.tc));
   const skHead=(svc,excl)=>mc&&(mc.tcs.find(t=>t.next&&!cant(t.tc,svc)&&!(excl||[]).includes(t.tc))||mc.tcs.find(t=>!t.serv&&!t.rest&&!cant(t.tc,svc)&&!(excl||[]).includes(t.tc)));
   useEffect(()=>{if(!mc||!isNew)return;setF(p=>{let ch=false;const taken=p.items.map(y=>String(y.tc));
     const items=p.items.map(x=>{if(!cant(x.tc,x.svc))return x;ch=true;const h=skHead(x.svc,taken);if(h)taken.push(h.tc);return Object.assign({},x,{tc:h?h.tc:''})});return ch?Object.assign({},p,{items}):p})},[]);
@@ -524,7 +531,10 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
   // v0.1-145：點主項目那一列的加鐘＝加鐘；點別的項目那一列＝加項（另一種項目，例：油壓 120＋加鐘 60＋腳底 60）
   const addEx=svc=>setIt(x=>!x.svc||svc===x.svc?{ex:(Number(x.ex)||0)+1,exs:svc}:x.exs2===svc?{ex2:(Number(x.ex2)||0)+1}:{ex2:1,exs2:svc});
   const pickPromo=P=>setIt(x=>x.promo&&x.svc===P.svc?{svc:null,min:null,promo:false}:{svc:P.svc,min:P.min,promo:true});
-  const togAd=id=>setIt(x=>({ad:x.ad.includes(id)?x.ad.filter(y=>y!==id):[...x.ad,id]}));
+  const togAd=id=>setIt(x=>{const ad=x.ad.includes(id)?x.ad.filter(y=>y!==id):[...x.ad,id],n=Object.assign({},x,{ad}),o={ad};
+    if(mc&&soloAd(n)&&ad.some(a=>AD_SK.some(k=>k[0]===a))&&(!String(x.tc||'').trim()||cantX(x.tc,n))){const h=soloHead(n,f.items.filter((y,i)=>i!==cur).map(y=>String(y.tc)));o.tc=h?h.tc:''}
+    if(id==='xiujiao'&&!x.ad.includes(id)&&!soloAd(n)){o.adTc=Object.assign({},x.adTc,{xiujiao:xjPick(x.tc)})}   // v0.1-187 修腳皮：主老師會就自己做，不會就依牌位找會的老師，都沒有才用設定的指定老師
+    return o});   // v0.1-186 單做刮痧／拔罐：照牌位順序帶第一位會做的老師
   const addRj=c=>{c=String(c||'').trim();if(!c)return;setIt(x=>({rj:(x.rj||[]).includes(c)?x.rj:[...(x.rj||[]),c]}));setRjIn('')};
   const delRj=c=>setIt(x=>({rj:(x.rj||[]).filter(y=>y!==c)}));
   const addGuest=()=>{setF(p=>Object.assign({},p,{items:[...p.items,blankItem()]}));setCur(f.items.length);setRjIn('')};
@@ -561,6 +571,7 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
         if(ti&&ti.short&&du>=90){setCur(i);await ask({title:who+tc+' 喊了短單',msg:'短單不能排 90 分鐘以上的項目（A11）。',okOnly:true});return}
         if(ti&&ti.zx&&ti.out&&st0+du>tm(ti.out)){setCur(i);await ask({title:who+tc+' 喊了準下',msg:'服務結束 '+tf(st0+du)+' 會超過預定下牌 '+ti.out+'（A10）。',okOnly:true});return}
         if(ti&&ti.hold&&ti.hold.bid!==mc.bkId&&st0+du+10>tm(ti.hold.t)&&!await ask({title:who+tc+' '+ti.hold.t+' 有老點',msg:'這位客人做到 '+tf(st0+du)+'，加上 10 分鐘緩衝會超過老點預約的時間（A5）。確定要排嗎？',okText:'仍要排',danger:true})){setCur(i);return}}
+      if(soloAd(x)&&cantX(tc,x)){setCur(i);await ask({title:who+tc+' 號沒有做'+adSkName(x.ad),msg:'請換一位會做'+adSkName(x.ad)+'的老師（技能在老師頁「修改我的資料」或人員資料設定）。',okOnly:true});return}
       if(cant(tc,x.svc)){setCur(i);await ask({title:who+tc+' 號沒有做'+SVC_NAME(x.svc),msg:'請換一位會做'+SVC_NAME(x.svc)+'的老師（老師技能在人員資料設定）。',okOnly:true});return}
       if(x.sh&&String(x.sh.tc)===tc){setCur(i);await ask({title:who+'請選救援老師',msg:tc+' 是被打槍的老師，救援要換另一位（通常是排牌頭班）。',okOnly:true});return}
     }
@@ -581,14 +592,14 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
       const sameX2=!Number(o.ex2)||o.exs2===x.exs2,dEx2=sameX2?(Number(x.ex2)||0)-(Number(o.ex2)||0):-1;
       if(dEx<0||dEx2<0||lost)return [];const A=(o.adds||[]).slice();const d=priced[i].amt-(o.amt||0);
       if((dEx>0||dEx2>0||dAd.length)&&d>0)A.push(Object.assign({t:tNow,ex:Math.max(0,dEx),ad:dAd,amt:d},dEx2>0?{ex2:dEx2,exs2:x.exs2}:{}));return A};
-    const items=f.items.map((x,i)=>{const A=addsOf(x,i);return Object.assign({svc:x.svc,min:x.min,promo:!!x.promo,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,ex2:x.exs2&&x.exs2!==x.svc?Number(x.ex2)||0:0,exs2:x.exs2&&x.exs2!==x.svc&&Number(x.ex2)?x.exs2:null,emp:!!x.emp,cp:Number(x.cp)||0,cpc:Number(x.cp)?(x.cpc||''):'',cpn:Number(x.cp)?(x.cpn||''):'',ad:[...x.ad],tc:String(x.tc).trim(),cu:x.cu||null,ld:!!x.ld,rj:x.sh&&!(x.rj||[]).includes(String(x.sh.tc))?[...(x.rj||[]),String(x.sh.tc)]:[...(x.rj||[])],seat:x.seat||'',amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh,wkd:priced[i].wkd||0},(priced[i].xs||[]).length?{xs:priced[i].xs}:{},A.length?{adds:A}:{},x.sh?{sh:Object.assign({tc:String(x.sh.tc),zh:Number(x.sh.zh)||0,t:x.sh.t||''},x.sh.tm?{tm:x.sh.tm}:{})}:{},mc&&!isNew&&!origItems[i]?{lateT:tNow}:x.lateT?{lateT:x.lateT}:{})});
+    const items=f.items.map((x,i)=>{const A=addsOf(x,i);return Object.assign({svc:x.svc,min:x.min,promo:!!x.promo,ex:Number(x.ex)||0,exs:Number(x.ex)?(x.exs||x.svc):null,ex2:x.exs2&&x.exs2!==x.svc?Number(x.ex2)||0:0,exs2:x.exs2&&x.exs2!==x.svc&&Number(x.ex2)?x.exs2:null,emp:!!x.emp,cp:Number(x.cp)||0,cpc:Number(x.cp)?(x.cpc||''):'',cpn:Number(x.cp)?(x.cpn||''):'',ad:[...x.ad],tc:String(x.tc).trim(),adTc:x.adTc&&Object.keys(x.adTc).some(k=>x.ad.includes(k))?Object.fromEntries(Object.entries(x.adTc).filter(([k])=>x.ad.includes(k))):undefined,cu:x.cu||null,ld:!!x.ld,rj:x.sh&&!(x.rj||[]).includes(String(x.sh.tc))?[...(x.rj||[]),String(x.sh.tc)]:[...(x.rj||[])],seat:x.seat||'',amt:priced[i].amt,cm:priced[i].cm,zh:priced[i].zh,wkd:priced[i].wkd||0},(priced[i].xs||[]).length?{xs:priced[i].xs}:{},A.length?{adds:A}:{},x.sh?{sh:Object.assign({tc:String(x.sh.tc),zh:Number(x.sh.zh)||0,t:x.sh.t||''},x.sh.tm?{tm:x.sh.tm}:{})}:{},mc&&!isNew&&!origItems[i]?{lateT:tNow}:x.lateT?{lateT:x.lateT}:{},mc&&!isNew&&origItems[i]&&soloAd(origItems[i])&&x.svc?{mainT:tNow}:x.mainT&&x.svc?{mainT:x.mainT}:{})});   // v0.1-186 單做刮痧後加做主項目：從加的時間起跳排
     const keepMc={};['st','end','endAt','pay','by'].forEach(k=>{if(f[k]!=null)keepMc[k]=f[k]});   // v0.1-105：主櫃的狀態欄位，老闆修正時保留
     if(mc)noteRemember(f.note);
     onSave(Object.assign(keepMc,isNew&&mc&&f.prePay?{prePay:true}:{},f.del?{del:true,snDel:f.snDel,delAt:f.delAt}:{},{id:f.id,sn,t:f.t||'',note:f.note||'',void:!!f.void,skip:!!f.skip,skipRev:!!f.skipRev,skipBy:f.skipBy||'store',skipNote:f.skipNote||'',items,ca:f.ca||now,ua:now},{comp:f.comp?{k:'media',note:String(f.comp.note||'').trim(),by:f.comp.by||(mc&&mc.op)||''}:null,ref:!f.comp&&f.ref&&f.ref.k==='blog'?{k:'blog',acct:f.ref.acct||''}:null}),!!next);
   };
 
   const cellCls=on=>'h-14 rounded-xl border text-base num transition-colors '+(on?'bg-sage border-sage text-white shadow-inner':'bg-card border-line active:bg-sageL');
-  const recent=(mc?mc.tcs.map(t=>t.tc):S.teachers.slice(0,12)).filter(t=>!(it&&cant(t,it.svc)));
+  const recent=(mc?mc.tcs.map(t=>t.tc):S.teachers.slice(0,12)).filter(t=>!(it&&(cant(t,it.svc)||(soloAd(it)&&cantX(t,it)))));
   const usedTc=f.items.map((x,i)=>i!==cur?String(x.tc):null).filter(Boolean);
 
   const footer=(
@@ -732,6 +743,17 @@ function OrderEditor({S,order,dayOrders,locked,onSave,onToggleVoid,onRelease,onC
                 <span>{on?'☑':'☐'} {a.name}{a.solo&&!it.svc&&<span className="ml-1 text-[10px] px-1 rounded bg-brownL text-brown align-middle">可單點</span>}{Number(a.zh)>0&&<span className="text-xs text-mute ml-1">{a.tc?<span className="text-brown">→{a.tc} 老師 {a.zh}支</span>:'+'+a.zh+'支'}</span>}</span><span className="num text-sm">{a.id==='eoil'?'+':''}{a.price}</span>
               </button>);})}
           </div>
+          {it.ad.includes('xiujiao')&&!soloAd(it)&&(()=>{const cur0=String((it.adTc||{}).xiujiao||((S.addons||[]).find(a=>a.id==='xiujiao')||{}).tc||''),L=mc?xjList():[],own=cur0&&cur0!==String(it.tc||'');return <div className="-mt-2 mb-4 px-3 py-2 rounded-xl bg-brownL/50 text-xs">
+            <div className="text-brown font-semibold mb-1">修腳皮由誰做：<span className="num">{cur0||'—'}</span>{cur0&&!own?'（主老師自己做）':own?'（支數算給 '+cur0+'）':''}</div>
+            {mc&&(L.length?<div className="flex flex-wrap gap-1.5">{L.map(t=><button key={t.tc} type="button" className={'h-8 px-2.5 rounded-full border num '+(cur0===t.tc?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setIt(x=>({adTc:Object.assign({},x.adTc,{xiujiao:t.tc})}))}>{t.tc}{t.serv?<span className="text-[10px] opacity-80"> {t.serv.end}回</span>:t.rest?<span className="text-[10px] opacity-80"> 休息</span>:''}</button>)}</div>:<div className="text-mute">目前上牌的老師都沒有勾「修腳皮」技能，用設定的指定老師</div>)}
+            {!mc&&<input className="mt-1 w-24 h-8 px-2 rounded-lg border border-line bg-white num" inputMode="numeric" placeholder="老師編號" value={(it.adTc||{}).xiujiao||''} onChange={e=>{const v=e.target.value.replace(/\D/g,'');setIt(x=>({adTc:Object.assign({},x.adTc,{xiujiao:v})}))}}/>}
+            <div className="text-[10px] text-mute mt-1">先找有「修腳皮」技能的老師（主老師會就自己做），都沒有才用設定的指定老師。</div>
+          </div>})()}
+          {mc&&soloAd(it)&&it.ad.some(a=>AD_SK.some(k=>k[0]===a))&&(()=>{const L=mc.tcs.filter(t=>!cantX(t.tc,it));return <div className="-mt-2 mb-4 px-3 py-2 rounded-xl bg-brownL/50 text-xs">
+            <div className="text-brown font-semibold mb-1">會做{adSkName(it.ad)}的上牌老師（依牌位順序）</div>
+            {L.length?<div className="flex flex-wrap gap-1.5">{L.map(t=><button key={t.tc} type="button" className={'h-8 px-2.5 rounded-full border num '+(String(it.tc)===t.tc?'bg-sage border-sage text-white':'bg-card border-line')} onClick={()=>setIt(()=>({tc:t.tc}))}>{t.tc}{t.serv?<span className="text-[10px] opacity-80"> {t.serv.end}回</span>:t.rest?<span className="text-[10px] opacity-80"> 休息</span>:''}</button>)}</div>:<div className="text-mute">目前上牌的老師都沒有設定這個技能（老師頁「修改我的資料」→ 技能）</div>}
+            <div className="text-[10px] text-mute mt-1">單做刮痧、拔罐不跳排：在上牌區原地翻紅，做完原地翻白，順位不變。</div>
+          </div>})()}
 
           <button type="button" className={'w-full h-11 rounded-xl border mb-4 text-left px-3 '+(it.emp?'bg-sageL border-sage text-sageD':'bg-card border-line')} onClick={()=>setIt(x=>({emp:!x.emp}))}>
             {it.emp?'☑':'☐'} 員工按摩（{Math.round((Number(S.empRate)||1)*10)} 折）<span className="text-xs text-mute ml-1">老師費用照算</span>
@@ -1009,7 +1031,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
   const summary=(
     <Card className="p-4 mb-3">
       <MoneyRows title="營業額" meta={<>{st.n} 單{st.guests>st.n&&<span>・{st.guests} 位</span>}・{st.zh} 支{closed&&<span className="ml-2 px-2 py-0.5 rounded-full bg-sageL text-sageD">已日結</span>}</>}
-        amt={st.amt} cashIn={st.cash} expCash={ex.cash} nonCash={ex.total-ex.cash} sup={sup.pay} skipRev={st.skipRev} fee={st.cm-sup.cm}/>
+        amt={st.amt} cashIn={st.cash} expCash={ex.cash} nonCash={ex.total-ex.cash} sup={sup.pay} skipRev={st.skipRev} fee={st.cm-sup.cm} adv={ex.adv}/>
       {(()=>{const c=dd.orders.filter(o=>!o.void&&!o.del).reduce((a,o)=>{orderItems(o).forEach(x=>{if(Number(x.cp)){a.n++;a.amt+=Number(x.cp)}});return a},{n:0,amt:0});
         return c.n>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-brown num">優惠券 {c.n} 張・已折 {money(c.amt)}<span className="text-xs text-mute ml-1">（營業額照原價，已自動記為「媒體宣傳」支出；老師費用照算）</span></div>})()}
       {st.compN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-sageD num">招待（媒體宣傳）{st.compN} 筆・{st.compG} 位・{st.compZh} 支・老師費用 {money(st.compCm)}<span className="block text-xs text-mute">招待價值（原價）{money(st.comp)}；不計營業額，老師費用已含在老師費用／支援現結，不另外扣</span></div>}
@@ -1088,7 +1110,7 @@ function DayPage({S,date,setDate,rev,openEditor,openExp,openClose,onUnlock,part,
           <span className="px-2 py-0.5 rounded bg-brownL text-brown text-xs whitespace-nowrap">{e.cat}</span>
           <div className="flex-1 min-w-0 truncate">{e.name||<span className="text-mute">（未填名稱）</span>}
             {e.cash===false&&<span className="ml-2 text-xs text-mute">非現金</span>}
-            {e.cpo&&<span className="ml-2 text-[10px] px-1 rounded bg-sageL text-sageD">自動</span>}
+            {(e.cpo||e.adv)&&<span className="ml-2 text-[10px] px-1 rounded bg-sageL text-sageD">自動</span>}
             {e.note&&<span className="ml-2 text-xs text-mute">・{e.note}</span>}</div>
           <div className="num text-warn">-{money(e.amt)}</div>
         </button>))}
@@ -1501,13 +1523,13 @@ const payDue=(ym,h,S)=>{const d=payDay(ym,h);return !!d&&bizToday((S||loadSettin
 
 function monthData(ym,S,p){
   const md=loadMonth(ym);const [from,to]=periodRange(ym,p||'all');
-  const rows=[];const tot={expList:[],n:0,amt:0,cash:0,expCash:0,cm:0,exp:0,zh:0,sup:0,supCm:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{},comp:0,compN:0,compG:0,compCm:0,compZh:0};
+  const rows=[];const tot={adv:0,expList:[],n:0,amt:0,cash:0,expCash:0,cm:0,exp:0,zh:0,sup:0,supCm:0,skip:0,skipN:0,skipRev:0,skipBy:{store:0,counter:0,teacher:0},skipList:[],byT:{},byCat:{},rj:{},comp:0,compN:0,compG:0,compCm:0,compZh:0};
   for(let d=from;d<=to;d++){
     const dd=md.days[pad(d)];
     if(!dd||(!(dd.orders||[]).length&&!(dd.expenses||[]).length&&!dd.close))continue;
     const st=statsOf(dd.orders||[],S);const ex=expStatsOf(dd.expenses);
     rows.push({date:ym+'-'+pad(d),st,ex,sup:supportOf(st,S).pay,closed:!!dd.close});
-    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;const sp=supportOf(st,S);tot.sup+=sp.pay;tot.supCm+=sp.cm;tot.cash+=st.cash;tot.expCash+=ex.cash;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;tot.comp+=st.comp;tot.compN+=st.compN;tot.compG+=st.compG;tot.compCm+=st.compCm;tot.compZh+=st.compZh;
+    tot.n+=st.n;tot.amt+=st.amt;tot.cm+=st.cm;tot.exp+=ex.total;tot.zh+=st.zh;const sp=supportOf(st,S);tot.sup+=sp.pay;tot.supCm+=sp.cm;tot.cash+=st.cash;tot.expCash+=ex.cash;tot.adv+=ex.adv;tot.skip+=st.skip;tot.skipN+=st.skipN;tot.skipRev+=st.skipRev;tot.comp+=st.comp;tot.compN+=st.compN;tot.compG+=st.compG;tot.compCm+=st.compCm;tot.compZh+=st.compZh;
     Object.keys(st.skipBy).forEach(k=>{tot.skipBy[k]=(tot.skipBy[k]||0)+st.skipBy[k]});st.skipList.forEach(o=>tot.skipList.push(Object.assign({date:ym+'-'+pad(d)},o)));
     Object.keys(st.rj).forEach(c=>{tot.rj[c]=(tot.rj[c]||0)+st.rj[c]});
     Object.keys(ex.byCat).forEach(c=>{tot.byCat[c]=(tot.byCat[c]||0)+ex.byCat[c]});
@@ -1564,7 +1586,7 @@ function MonthPage({S,rev,goDay,goAna,openPay,ask,toast}){
 
       <Card className="p-4 mb-3">
         <MoneyRows title={(per==='all'?'本月':PERIOD_LABEL[per])+'營業額'} meta={<>{data.tot.n} 單・{data.tot.zh} 支{pd&&<span className="text-brown">・{fmtPayDay(pd)} 發薪</span>}</>}
-          amt={data.tot.amt} cashIn={data.tot.cash} expCash={data.tot.expCash} nonCash={data.tot.exp-data.tot.expCash} sup={data.tot.sup} skipRev={data.tot.skipRev} fee={data.tot.cm-data.tot.supCm}/>
+          amt={data.tot.amt} cashIn={data.tot.cash} expCash={data.tot.expCash} nonCash={data.tot.exp-data.tot.expCash} sup={data.tot.sup} skipRev={data.tot.skipRev} fee={data.tot.cm-data.tot.supCm} adv={data.tot.adv}/>
         {data.tot.compN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-sageD num">招待（媒體宣傳）{data.tot.compN} 筆・{data.tot.compG} 位・{data.tot.compZh} 支・老師費用 {money(data.tot.compCm)}<span className="block text-xs text-mute">招待價值（原價）{money(data.tot.comp)}；老師費用已含在老師費用／支援現結，這裡只標示為行銷成本，不另外扣</span></div>}
         {data.tot.skipN>0&&<div className="mt-3 pt-2 border-t border-line text-sm text-warn num">跳單 {data.tot.skipN} 筆・未收 {money(data.tot.skip)}{data.tot.skipRev>0&&<span>（其中 {money(data.tot.skipRev)} 計入營業額）</span>}</div>}
         {per==='all'&&<div className="mt-3 pt-3 border-t border-line grid grid-cols-2 gap-2 num">
@@ -3109,11 +3131,12 @@ function ProfilePanel({me,kind,onData,data,managed,onResp}){   // managed：資�
 // v0.1-141 老師技能（可預約的項目）選擇：沒設定時依性別預設（女：指壓、油壓、腳底；男：指壓、腳底）
 function SkillPick({value,gender,onChange}){
   const set=Array.isArray(value)&&value.length,eff=skOf(set?value:null,gender);
-  const tog=k=>{const n=eff.includes(k)?eff.filter(x=>x!==k):eff.concat([k]);if(n.length)onChange(SK_LIST.map(x=>x[0]).filter(x=>n.includes(x)))};
-  return <div><div className="flex gap-2">{SK_LIST.map(([k,l])=><button key={k} type="button" className={'flex-1 h-10 rounded-lg border text-sm '+(eff.includes(k)?'bg-sage border-sage text-white':'bg-card border-line text-mute')} onClick={()=>tog(k)}>{eff.includes(k)?'✓ ':''}{l}</button>)}</div>
+  const tog=k=>{const n=eff.includes(k)?eff.filter(x=>x!==k):eff.concat([k]);if(n.some(x=>SK_LIST.some(y=>y[0]===x)))onChange(SK_ALL.map(x=>x[0]).filter(x=>n.includes(x)))};
+  const btn=([k,l])=><button key={k} type="button" className={'flex-1 h-10 rounded-lg border text-sm '+(eff.includes(k)?'bg-sage border-sage text-white':'bg-card border-line text-mute')} onClick={()=>tog(k)}>{eff.includes(k)?'✓ ':''}{l}</button>;
+  return <div><div className="flex gap-2">{SK_LIST.map(btn)}</div><div className="flex gap-2 mt-2">{AD_SK.map(btn)}<span className="flex-1"/></div>
     <div className="text-[11px] text-mute mt-1">{set?<>已自訂・<button type="button" className="underline" onClick={()=>onChange('')}>恢復預設</button></>:'預設：指壓、腳底都會，油壓只有女老師'}（會員、主櫃只會把這些項目排給這位老師）</div></div>;
 }
-const skTxt=(sk,g)=>skOf(Array.isArray(sk)&&sk.length?sk:null,g).map(SVC_NAME).join('、');
+const skTxt=(sk,g)=>skOf(Array.isArray(sk)&&sk.length?sk:null,g).map(SVC_NAME).join('、');   // v0.1-186 含刮痧、拔罐
 // v0.1-140 老闆、主管在人員頁修改工作人員資料（GAS profset，立即生效）；老師可設定正職／兼職
 function ProfEditor({P,teacher,onCancel,onSaved}){
   const [f,setF]=useState({name:P.name||'',in:P.in||'',out:P.out||'',gender:P.gender||'',phone:P.phone||'',city:P.city||'',addr:P.addr||'',support:!!P.support,skills:Array.isArray(P.skills)?P.skills:''});
@@ -3562,7 +3585,7 @@ function TeacherBoardLive({me}){
   const up=bd.avail.concat(bd.rest,bd.rescue||[]).filter(r=>!r.shotW).sort((a,b)=>a.rot-b.rot),sv=bd.redZone;
   const C='w-[4.3rem] min-h-[3.4rem] flex flex-col items-center justify-center rounded-lg px-1 py-1 text-center leading-tight ',T10='text-[10px] num leading-tight';
   const card=(r,cls,sub)=><div key={r.tc} className={C+cls}><b className="num text-lg leading-none">{r.tc}</b>{sub}</div>;
-  const upC=r=>r.serv?card(r,'border-2 bg-red-200 border-red-600 text-red-900',<><span className="text-[10px] font-semibold bg-red-600 text-white rounded px-1 my-0.5">{r.serv.xl?'超長':'救援'}</span><span className={T10}>{r.serv.end}回</span></>)
+  const upC=r=>r.serv?card(r,'border-2 bg-red-200 border-red-600 text-red-900',<><span className="text-[10px] font-semibold bg-red-600 text-white rounded px-1 my-0.5">{r.serv.xl?'超長':r.serv.solo?'單項':'救援'}</span><span className={T10}>{r.serv.end}回</span></>)
     :r.rest?card(r,'border bg-green-200 border-green-500 text-green-900',<span className={T10}>休息 {r.rest.t} 起</span>)
     :card(r,'border bg-white border-neutral-300',<span className={T10}>第 {r.rot} 位</span>);
   const G=(l,n,cls,list)=><div className="mb-2"><div className={'text-[11px] font-semibold mb-1 '+cls}>{l} {n}</div><div className="flex flex-wrap gap-1.5">{list.length?list:<div className={C+'border-[1.5px] border-dashed border-neutral-300'}/>}</div></div>;
@@ -3661,6 +3684,196 @@ function RateSheet({l,today,onClose,onSaved,sug}){
       <button className="w-full h-10 text-sm text-mute" onClick={onClose}>取消</button>
     </div></div>;
 }
+/* ========== v0.1-188 老師預支（線上申請，GAS gas-5.05 action adv／advlist／advop） ==========
+   老師申請 → 老闆或主管核准（選付款方式：櫃台現金／老闆信封，可再改）→ LINE 通知老師
+   → 櫃台交錢後在主櫃按「櫃台已交付」（櫃台現金會自動記一筆「老師預支」現金支出 id＝adv_ＩＤ，交班時從應有現金扣除）
+   → 老師點清後在老師頁按「簽收」→ 自動從簽收當期的薪資扣回（老闆頁讀到時寫進薪資加扣項，src＝adv:ＩＤ）。
+   櫃台支付的預支算現金支出，但不是成本：公司淨利會加回來（expStatsOf 的 adv）。 */
+const ADV_ST={pending:'申請中',approved:'核准待領',rejected:'已駁回',cancelled:'已取消',expired:'逾期失效',delivered:'已交付・待簽收',signed:'已簽收',issue:'金額有問題',void:'已作廢'};
+const ADV_PAY={counter:'櫃台現金',env:'老闆信封'};
+const ADV_CLS={pending:'bg-brownL text-brown',approved:'bg-sageL text-sageD',delivered:'bg-warnL text-warn',issue:'bg-warnL text-warn',signed:'bg-sageL text-sageD'};
+const ADV_OPEN=['pending','approved','delivered','issue'];
+const ADV_OFF={background:'#e2ddd3',color:'#9a948a'};   // 按鈕變灰（不能按）
+const advYmdHm=ms=>{if(!ms)return '';const d=new Date(ms);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+hm(d)};
+const advRec=r=>r.tc+'號老師預支'+r.amt+'元 經櫃台人員 '+(r.dvBy||'')+' 於'+advYmdHm(r.dvAt)+'交付老師本人，並經'+r.tc+'號老師 於 '+advYmdHm(r.sgAt)+' 點清現金'+r.amt+'元無誤確認簽收';   // v0.1-189 簽收紀錄（只寫老師編號）
+const advT=ms=>{if(!ms)return '';const d=new Date(ms);return (d.getMonth()+1)+'/'+d.getDate()+' '+hm(d)};
+const AdvChip=({st})=><span className={'shrink-0 text-[11px] px-1.5 py-0.5 rounded '+(ADV_CLS[st]||'bg-bg text-mute')}>{ADV_ST[st]||st}</span>;
+
+/* v0.1-190 預支時間表（老師頁簽收欄、老闆頁紀錄共用）：申請日、核准日、交付日（櫃台人員）、簽收日；還沒到的那一步寫「尚未…」 */
+function AdvTimes({r,signLabel}){
+  const no=t=><span className="text-mute">{t}</span>;
+  const rows=[['申請日',advYmdHm(r.at)]];
+  if(r.st==='rejected')rows.push(['駁回日',<>{advYmdHm(r.apAt)}{r.msg&&<span className="block text-xs text-warn">{r.msg}</span>}</>]);
+  else rows.push(['核准日',r.apAt?advYmdHm(r.apAt):no(r.st==='pending'?'尚未核准':'—')]);
+  if(r.st!=='rejected'){
+    rows.push(['交付日',r.dvAt?<>{advYmdHm(r.dvAt)} <span className="whitespace-nowrap">櫃台人員：{r.dvBy}</span></>:no(['pending','approved'].includes(r.st)?'尚未交付':'—')]);
+    rows.push([signLabel||'簽收日',r.sgAt?advYmdHm(r.sgAt):<span className={r.st==='delivered'||r.st==='issue'?'text-warn':'text-mute'}>{r.st==='issue'?'回報有問題：'+(r.msg||''):['pending','approved','delivered'].includes(r.st)?'尚未簽收':'—'}</span>]);
+  }
+  return <div className="grid gap-y-1 text-[13px] num" style={{gridTemplateColumns:'auto 1fr',columnGap:12}}>{rows.map(([k,v])=><React.Fragment key={k}><span className="text-mute">{k}</span><span>{v}</span></React.Fragment>)}</div>;
+}
+function TeacherAdv(){
+  const [d,setD]=useState(()=>jget('adv-my',null));const [busy,setBusy]=useState('');const [err,setErr]=useState('');
+  const [amt,setAmt]=useState('');const [note,setNote]=useState('');const [cf,setCf]=useState(null);const [iss,setIss]=useState('');
+  const run=async(b,k)=>{setBusy(k||b.op);setErr('');try{const j=await tCall(Object.assign({action:'adv'},b));setD(j);jset('adv-my',j);setBusy('');return j}catch(e){setErr(e.message);setBusy('');return null}};
+  useEffect(()=>{run({op:'my'},'load')},[]);
+  if(!d)return <div className="text-sm text-mute">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</div>;
+  if(d.sup)return <Card className="p-3 text-sm text-mute">支援老師每天下班現結，不適用預支。</Card>;
+  const c=d.cap||{},left=(c.left||0)<1000?0:(c.left||0),top=Math.floor(left/1000)*1000;   // v0.1-190 不足 1,000 顯示 0
+  const L=d.list||[],open=L.find(r=>ADV_OPEN.includes(r.st)),cur=open||L[0]||null,hist=L.filter(r=>r!==cur);
+  const n=Math.min(Number(amt)||0,top);
+  const apply=async()=>{if(await run({op:'apply',amt:n,note:note.trim()},'apply')){setAmt('');setNote('')}};
+  const lock=!!open||!d.on||top<1000;
+  return (<Card className="p-3">
+    <div className="rounded-lg bg-bg px-3 py-2 text-sm num">
+      <div className="text-xs text-mute">{c.per}</div>
+      <div className="mt-0.5">已做 <b>{c.zh}</b> 支 × {money(c.per30)} × {c.ratio}% ＝ 上限 {money(c.lim)}</div>
+      {c.used>0&&<div className="text-xs text-mute">本期已預支 {money(c.used)}</div>}
+      <div className="flex items-baseline justify-between mt-1 pt-1 border-t border-line"><span className="text-mute text-xs">目前可預支</span><span className="serif text-2xl text-brown">{money(left)}</span></div>
+    </div>
+    <div className={'mt-3 '+(lock?'opacity-60':'')}>
+      <div className="flex items-center gap-2">
+        <button type="button" aria-label="減少 1,000" className="w-12 h-12 rounded-xl border border-line bg-card text-2xl leading-none disabled:opacity-30" disabled={lock||n<=0} onClick={()=>setAmt(String(Math.max(0,n-1000)))}>−</button>
+        <div className="flex-1 h-12 rounded-xl border border-line bg-white flex items-center justify-center serif text-2xl num">{money(n)}</div>
+        <button type="button" aria-label="增加 1,000" className="w-12 h-12 rounded-xl border border-line bg-card text-2xl leading-none disabled:opacity-30" disabled={lock||n+1000>top} onClick={()=>setAmt(String(Math.min(top,n+1000)))}>＋</button>
+      </div>
+      <div className="text-[11px] text-mute mt-1 text-center num">每按一下 1,000 元・最多 {money(top)}</div>
+      <input className="w-full mt-2 h-11 px-3 rounded-xl border border-line bg-white text-sm disabled:bg-bg" disabled={lock} placeholder="原因（選填）" maxLength={60} value={note} onChange={e=>setNote(e.target.value)}/>
+      <button className="w-full mt-2 h-11 rounded-xl bg-sage text-white" style={lock||!n?ADV_OFF:undefined} disabled={lock||!!busy||!n} onClick={apply}>{busy==='apply'?'送出中…':'送出預支申請'+(n?' '+money(n):'')}</button>
+    </div>
+    <div className="text-[11px] mt-1 text-center">{open?<span className="text-warn">同時只能送出 1 筆預支，上一筆簽收後才能再申請</span>:!d.on?<span className="text-mute">目前沒有開放線上預支</span>:top<1000?<span className="text-mute">目前可預支不到 1,000 元，還不能申請</span>:<span className="text-mute">送出後由老闆或主管核准；在櫃台領錢、點清後簽收，簽收當期發薪時扣回。</span>}</div>
+    {cur&&<div className="mt-3 rounded-xl border border-line p-3">
+      <div className="flex items-center gap-2 mb-2"><span className="text-sm font-semibold">簽收欄</span><span className="serif text-lg num">{money(cur.amt)}</span><AdvChip st={cur.st}/>{cur.pay&&<span className="text-xs text-mute">{ADV_PAY[cur.pay]}</span>}</div>
+      {cur.note&&<div className="text-xs text-mute -mt-1 mb-2">原因：{cur.note}</div>}
+      <AdvTimes r={cur}/>
+      {cur.st==='approved'&&<div className="text-xs text-sageD mt-2 num">已核准，請到櫃台領取；{cur.exp} 前沒有領取會自動失效。</div>}
+      {cur.st==='signed'&&<div className="text-xs text-mute mt-2">已於櫃台點清預支金額 <span className="num">{cur.amt}</span> 元整無誤・扣在 {cur.per}</div>}
+      {['expired','void','cancelled'].includes(cur.st)&&cur.msg&&<div className="text-xs text-mute mt-2">{cur.msg}</div>}
+      {cf==='issue'&&cur.st==='delivered'?<div className="mt-3">
+          <input className="w-full h-10 px-3 rounded-lg border border-line bg-white text-sm" placeholder="哪裡不對？（例：少 1,000）" value={iss} onChange={e=>setIss(e.target.value)}/>
+          <div className="grid grid-cols-2 gap-2 mt-2"><button className="h-10 rounded-xl border border-line text-sm" onClick={()=>setCf(null)}>返回</button>
+            <button className="h-10 rounded-xl bg-warn text-white text-sm disabled:opacity-50" disabled={!!busy} onClick={async()=>{if(await run({op:'issue',id:cur.id,note:iss.trim()})){setCf(null);setIss('')}}}>{busy==='issue'?'送出中…':'回報有問題'}</button></div></div>
+        :cf==='sign'&&cur.st==='delivered'?<div className="mt-3 rounded-lg bg-brownL px-3 py-2 text-sm text-brown"><b>已於櫃台點清預支金額<span className="num">{cur.amt}</span>元整無誤</b><span className="block text-xs mt-0.5">簽收後於{c.per||'本期'}從薪資扣回。</span>
+          <div className="grid grid-cols-2 gap-2 mt-2"><button className="h-10 rounded-xl border border-line bg-card text-ink text-sm" onClick={()=>setCf(null)}>返回</button>
+            <button className="h-10 rounded-xl bg-brown text-white text-sm disabled:opacity-50" disabled={!!busy} onClick={async()=>{if(await run({op:'sign',id:cur.id}))setCf(null)}}>{busy==='sign'?'簽收中…':'確認簽收'}</button></div></div>
+        :ADV_OPEN.includes(cur.st)&&<>
+          <button className="w-full mt-3 h-11 rounded-xl bg-brown text-white" style={cur.st!=='delivered'?ADV_OFF:undefined} disabled={cur.st!=='delivered'} onClick={()=>setCf('sign')}>確認簽收</button>
+          <div className="flex items-center justify-between mt-1 text-[11px] text-mute">
+            <span>{cur.st==='pending'?'核准、櫃台交付後才能簽收':cur.st==='approved'?'櫃台交付後才能簽收':cur.st==='issue'?'等老闆或主管處理後再簽收':'請在櫃台前點清現金後再簽收'}</span>
+            {cur.st==='pending'&&<button className="underline disabled:opacity-40" disabled={!!busy} onClick={()=>run({op:'cancel',id:cur.id})}>{busy==='cancel'?'取消中…':'取消申請'}</button>}
+            {cur.st==='delivered'&&<button className="underline text-warn" onClick={()=>setCf('issue')}>金額有問題</button>}
+          </div></>}
+    </div>}
+    {err&&<div className="text-xs text-warn mt-2">✗ {err}</div>}
+    {hist.length>0&&<div className="mt-3"><div className="text-[11px] text-mute font-semibold mb-1">之前的預支</div>
+      {hist.slice(0,8).map(r=><div key={r.id} className="flex items-center gap-2 py-1.5 border-t border-line text-sm">
+        <span className="num text-xs text-mute w-20 shrink-0">{advT(r.at)}</span><span className="num">{money(r.amt)}</span><AdvChip st={r.st}/>
+        <span className="flex-1 min-w-0 text-right text-[11px] text-mute truncate">{r.st==='signed'?'扣在 '+r.per:r.msg}</span></div>)}
+    </div>}
+    <div className="flex justify-end mt-1"><button className="text-xs text-mute underline disabled:opacity-40" disabled={!!busy} onClick={()=>run({op:'my'},'load')}>{busy==='load'?'讀取中…':'重新整理'}</button></div>
+  </Card>);
+}
+
+/* 主櫃：待交付的預支（只看得到編號、金額、付款方式）。按「櫃台已交付」；櫃台現金那種同時記一筆現金支出 */
+async function advMcCall(b,ks){const tk=window.liff&&window.liff.getIDToken&&window.liff.getIDToken();if(!tk)throw new Error('取不到主櫃的 LINE 身分，請重新開啟');
+  const k=ks!=null?ks:(MC.auth&&MC.auth.ks);return cloud.call(Object.assign({action:'adv',idToken:tk},k?{ks:k}:{},b),30000)}
+function advExpAdd(date,x,by){const id='adv_'+x.id,now=Date.now();
+  mcMutate(date,dd=>{if(!(dd.expenses||[]).some(e=>e.id===id))dd.expenses=(dd.expenses||[]).concat([{id,cat:'老師預支',name:'預支 '+x.tc+' 號',amt:x.amt,cash:true,adv:x.id,note:'線上預支・'+x.by+' 交付',by,ca:now,ua:now}]);
+    dd.log=(dd.log||[]).concat([{act:'mc-adv',at:now,by,amt:x.amt}]);return dd})}
+function McAdv({ks,op,date,ask,toast}){
+  const [d,setD]=useState(()=>jget('adv-mc',null));const [busy,setBusy]=useState('');const [err,setErr]=useState('');
+  const load=async()=>{try{const j=await advMcCall({op:'cq'},ks);setD(j);jset('adv-mc',j);setErr('')}catch(e){setErr(e.message)}};
+  useEffect(()=>{load();const t=setInterval(load,60000);return ()=>clearInterval(t)},[ks]);
+  // 已交付的櫃台現金預支：主櫃這台沒有那筆支出時補上（例如交付時剛好斷線）
+  useEffect(()=>{if(!d||MC.test)return;const ex=new Set((mcGetDay(date).expenses||[]).map(e=>e.id)),dl=new Set(mcGetDay(date).expDel||[]);
+    (d.list||[]).filter(r=>r.pay==='counter'&&r.dvAt&&r.st!=='approved'&&d.today===date&&!ex.has('adv_'+r.id)&&!dl.has('adv_'+r.id)).forEach(r=>advExpAdd(date,{id:r.id,tc:r.tc,amt:r.amt,by:r.dvBy},op.name))},[d]);
+  const give=async r=>{
+    if(MC.test){setErr('測試上線時不能交付預支（預支是真的資料）');return}
+    if(!await ask({title:'交付 '+r.tc+' 號 預支 '+money(r.amt)+'？',msg:(r.pay==='counter'?'從櫃台現金支付：會自動記一筆「老師預支」現金支出，交班時從應有現金扣除。':'老闆準備的信封：不動櫃台現金。')+'\n交給老師後，請老師在櫃台前點清現金，並在老師頁按「簽收」。',okText:'櫃台已交付'}))return;
+    setBusy(r.id);setErr('');
+    try{const j=await advMcCall({op:'deliver',id:r.id},ks);setD(j);jset('adv-mc',j);
+      if(j.done&&j.done.pay==='counter')advExpAdd(date,j.done,op.name);
+      toast&&toast((op.name||'櫃台')+' 已交付 '+r.tc+' 號 預支 '+money(r.amt))}catch(e){setErr(e.message)}
+    setBusy('')};
+  const L=(d&&d.list)||[];
+  return (<Card className="overflow-hidden">
+    {!d&&!err&&<div className="px-3 py-3"><Ld/></div>}
+    {d&&!L.length&&<div className="px-3 py-3 text-sm text-mute">目前沒有要交付的預支</div>}
+    {L.map((r,i)=><div key={r.id} className={'flex items-center gap-3 px-3 py-2.5 text-sm '+(i?'border-t border-line':'')}>
+      <span className={'px-2 py-0.5 rounded text-xs whitespace-nowrap '+(r.pay==='counter'?'bg-brownL text-brown':'bg-sageL text-sageD')}>{ADV_PAY[r.pay]}</span>
+      <span className="flex-1 min-w-0"><b className="num">{r.tc}</b> 號・<span className="num">{money(r.amt)}</span>
+        {r.st==='approved'?<span className="block text-[11px] text-mute num">{r.exp} 前領取</span>
+          :<span className={'block text-[11px] num '+(r.st==='issue'?'text-warn':'text-sageD')}>✓ {r.dvBy} {hm(new Date(r.dvAt))} 已交付・{r.st==='signed'?'老師已簽收':r.st==='issue'?'老師回報金額有問題，請找主管':'待老師簽收'}</span>}</span>
+      {r.st==='approved'&&(r.self?<span className="text-[11px] text-mute">本人不能交付</span>
+        :<button className="h-9 px-3 rounded-full bg-brown text-white text-sm disabled:opacity-40" disabled={!!busy} onClick={()=>give(r)}>{busy===r.id?'處理中…':'櫃台已交付'}</button>)}
+    </div>)}
+    {err&&<div className="px-3 py-2 text-xs text-warn border-t border-line">✗ {err}</div>}
+    <div className="px-3 py-1.5 text-[11px] text-mute border-t border-line">老闆或主管核准後才會出現。交錢給老師後按「櫃台已交付」，系統會記下是誰交付的。</div>
+  </Card>);
+}
+
+/* 老闆頁（人員 → 老師）：核准、駁回、改付款方式、處理問題、作廢；讀到已簽收的就寫進薪資加扣項 */
+function advSyncAdj(list){
+  let n=0;(list||[]).filter(r=>r.st==='signed'&&r.ym&&r.p).forEach(r=>{const src='adv:'+r.id,tc=String(r.tc);
+    const P=((loadMonth(r.ym).pay||{})[tc])||{};if((P.adj||[]).some(x=>x.src===src))return;
+    const dt=new Date(r.sgAt);n++;
+    mutateMonth(r.ym,md=>{md.pay=md.pay||{};const Q=md.pay[tc]||{};md.pay[tc]=Object.assign({},Q,{adj:(Q.adj||[]).concat([{name:'預支 '+(dt.getMonth()+1)+'/'+dt.getDate(),amt:-(Number(r.amt)||0),p:r.p,src}])})})});
+  return n;
+}
+function AdvAdmin({ask,toast}){
+  const [d,setD]=useState(()=>jget('adv-adm',null));const [busy,setBusy]=useState('');const [err,setErr]=useState('');
+  const [all,setAll]=useState(false);const [rs,setRs]=useState(null);const [txt,setTxt]=useState('');
+  const run=async(b,k,msg)=>{setBusy(k||'load');setErr('');
+    try{const j=await cloud.call(b,30000);setD(j);jset('adv-adm',j);
+      const s=syncGet();s.advN=(j.list||[]).filter(r=>r.st==='pending'||r.st==='issue').length;syncSet(s);
+      const n=advSyncAdj(j.list);cloud.emit();if(n&&toast)toast('已把 '+n+' 筆簽收的預支加到薪資扣項');else if(msg&&toast)toast(msg);setBusy('');return j}
+    catch(e){setErr(e.message);setBusy('');return null}};
+  const act=(r,op,x,msg)=>run(Object.assign({action:'advop',id:r.id,op},x||{}),r.id+op,msg);
+  useEffect(()=>{if(cloudOn())run({action:'advlist'})},[]);
+  if(!cloudOn())return <Card className="p-3 text-sm text-mute">雲端同步開啟後才能使用線上預支。</Card>;
+  if(!d)return <Card className="p-3 text-sm">{err?<span className="text-warn">✗ {err}</span>:<Ld/>}</Card>;
+  const cfg=d.cfg||{},L=(d.list||[]).filter(r=>all||ADV_OPEN.includes(r.st));
+  const cntWhy=r=>!cfg.cnt?'設定不開放櫃台支付':r.amt>=cfg.cnt?money(cfg.cnt)+' 以上要用信封':d.cash<r.amt?'櫃台現金約 '+money(Math.max(0,d.cash))+'，不夠':'';
+  const approve=async(r,pay)=>{if(await ask({title:'核准 '+r.tc+' 號老師 預支 '+money(r.amt)+'？',msg:'付款方式：'+ADV_PAY[pay]+(pay==='counter'?'\n由櫃台從今天的現金支付，交付時自動記一筆現金支出。':'\n請準備信封放在櫃台，由櫃台交給老師。')+'\n核准後會用 LINE 通知老師，'+cfg.exp+' 天內沒有領取會自動失效。',okText:'核准'}))act(r,'approve',{pay},'已核准，已通知老師')};
+  const box=(r,k,ph,go)=>rs&&rs.id===r.id&&rs.k===k&&<div className="mt-2 flex gap-2"><input className="flex-1 min-w-0 h-9 px-2 rounded-lg border border-line bg-white text-sm" placeholder={ph} value={txt} onChange={e=>setTxt(e.target.value)}/>
+    <button className="h-9 px-3 rounded-lg border border-line text-sm" onClick={()=>setRs(null)}>返回</button><button className="h-9 px-3 rounded-lg bg-warn text-white text-sm disabled:opacity-40" disabled={!!busy} onClick={()=>{go(txt.trim());setRs(null);setTxt('')}}>送出</button></div>;
+  const btn='h-9 px-3 rounded-full text-sm disabled:opacity-40 ';
+  return (<Card className="overflow-hidden">
+    <div className="px-3 py-2 flex items-center gap-2 text-xs border-b border-line bg-bg">
+      <span className="flex-1 text-mute num">今天櫃台現金約 {money(Math.max(0,d.cash||0))}・櫃台支付{cfg.cnt?'：低於 '+money(cfg.cnt):'：不開放'}・上限 {cfg.ratio}%</span>
+      <div className="flex rounded-lg border border-line overflow-hidden">{[[false,'待處理'],[true,'全部']].map(([k,l])=><button key={l} className={'px-2 h-7 '+(all===k?'bg-sage text-white':'bg-card')} onClick={()=>setAll(k)}>{l}</button>)}</div>
+    </div>
+    {!L.length&&<div className="px-3 py-3 text-sm text-mute">{all?'近兩個月沒有預支紀錄':'沒有待處理的預支'}</div>}
+    {L.map((r,i)=>{const w=cntWhy(r);return <div key={r.id} className={'px-3 py-2.5 text-sm '+(i?'border-t border-line':'')}>
+      <div className="flex items-center gap-2"><b className="num">{r.tc} 號</b><span className="text-mute">預支</span><span className="serif text-lg num">{money(r.amt)}</span><AdvChip st={r.st}/></div>
+      {r.note&&<div className="text-xs text-mute mt-0.5">原因：{r.note}</div>}
+      <div className="mt-2 rounded-lg bg-bg px-3 py-2"><AdvTimes r={r} signLabel="申請人清點無誤簽收"/>
+        {r.pay&&<div className="text-[11px] text-mute mt-2 pt-1.5 border-t border-line">{ADV_PAY[r.pay]}{r.st==='signed'?'・扣在 '+r.per:''}{r.apBy?'・'+r.apBy+(r.st==='rejected'?' 駁回':' 核准'):''}</div>}</div>
+      {r.st==='pending'&&<>
+        {r.cap&&<div className="text-xs text-mute num mt-0.5">{r.cap.per}：{r.cap.zh} 支・上限 {money(r.cap.lim)}・已預支 {money(r.cap.used)}{r.amt>r.cap.left&&<span className="text-warn">・超過可預支 {money(r.cap.left)}</span>}</div>}
+        <div className="flex flex-wrap gap-2 mt-2">
+          <button className={btn+'bg-brown text-white'} disabled={!!busy||!!w} onClick={()=>approve(r,'counter')}>核准・櫃台現金</button>
+          <button className={btn+'bg-sage text-white'} disabled={!!busy} onClick={()=>approve(r,'env')}>核准・老闆信封</button>
+          <button className={btn+'border border-warn text-warn'} disabled={!!busy} onClick={()=>{setRs({id:r.id,k:'rj'});setTxt('')}}>駁回</button>
+        </div>
+        {w&&<div className="text-[11px] text-mute mt-1">不能用櫃台現金：{w}</div>}
+        {box(r,'rj','駁回原因（會通知老師）',t=>act(r,'reject',{msg:t},'已駁回，已通知老師'))}</>}
+      {r.st==='approved'&&<div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-sageD num">{r.exp} 前領取</span>
+        <button className="underline text-brown disabled:opacity-40" disabled={!!busy||(r.pay==='env'&&!!w)} onClick={()=>act(r,'setpay',{pay:r.pay==='counter'?'env':'counter'},'已改付款方式')}>改成{r.pay==='counter'?'老闆信封':'櫃台現金'}</button>
+        <button className="underline text-warn" onClick={()=>{setRs({id:r.id,k:'void'});setTxt('')}}>作廢</button></div>}
+      {(r.st==='delivered'||r.st==='issue')&&<div className="mt-1 text-xs">
+        <div className="flex flex-wrap gap-2 mt-1">
+          {r.st==='issue'&&<button className={btn+'bg-brown text-white'} disabled={!!busy} onClick={()=>{setRs({id:r.id,k:'redo'});setTxt('')}}>已處理，請老師重新簽收</button>}
+          <button className="underline text-warn" onClick={()=>{setRs({id:r.id,k:'void'});setTxt('')}}>作廢</button></div></div>}
+      {['expired','void','cancelled'].includes(r.st)&&r.msg&&<div className="mt-1 text-xs text-mute">{r.msg}</div>}
+      {box(r,'redo','處理說明（例：已補 1,000）',t=>act(r,'redo',{msg:t},'已請老師重新簽收'))}
+      {box(r,'void','作廢原因',t=>act(r,'void',{msg:t},'已作廢'+(r.pay==='counter'&&r.dvAt?'；櫃台那筆支出請到日報刪除':'')))}
+    </div>})}
+    {err&&<div className="px-3 py-2 text-xs text-warn border-t border-line">✗ {err}</div>}
+    <div className="px-3 py-1.5 flex items-center border-t border-line text-[11px] text-mute"><span className="flex-1">簽收後會自動加到該期的薪資扣項。</span><button className="underline disabled:opacity-40" disabled={!!busy} onClick={()=>run({action:'advlist'})}>{busy==='load'?'讀取中…':'重新整理'}</button></div>
+  </Card>);
+}
+
 function TeacherLive({me,mode}){
   const S=loadSettings();
   const today=bizToday(S.cutoff);
@@ -3778,9 +3991,10 @@ function TeacherLive({me,mode}){
     (<Sec title="老師牌況"><TeacherBoardLive me={me}/></Sec>),
     (<Sec title="未來一週老點"><WeekLd/></Sec>),   // 9：v0.1-167
     (<Sec title="今日盤點（耗材）"><TInvDay/></Sec>),   // 10：v0.1-175
+    (<Sec title="預支申請"><TeacherAdv/></Sec>),   // 11：v0.1-188
   ];
   const head=(<div className="mt-1">{monthNav}{status}</div>);
-  return <RolePage mode={mode} head={head} B={B} phone={[8,0,1,2,3,5,4,9,10,6,7]} wide={{top:[8],cols:[[0,1,3,5],[2,4,9,10,6,7]]}} xwide={{top:[8],cols:[[0,3,5],[1,6],[2,4,9,10,7]]}}/>;
+  return <RolePage mode={mode} head={head} B={B} phone={[8,0,1,11,2,3,5,4,9,10,6,7]} wide={{top:[8],cols:[[0,1,11,3,5],[2,4,9,10,6,7]]}} xwide={{top:[8],cols:[[0,3,5],[1,11,6],[2,4,9,10,7]]}}/>;
 }
 
 function TeacherHome({me,mode,real}){
@@ -4902,12 +5116,12 @@ function mcBoard(d,shifts){
   /* v0.1-158 超長單：一位客人服務超過 2 小時（含加鐘、加項）。開始 2 小時後，紅牌移到上牌區（白牌）最後面排隊；做完原地翻白，不再移到後面 */
   (d.orders||[]).filter(mcLiveO).forEach(o=>orderItems(o).forEach(x=>{const tc=String(x.tc||'');if(!tc)return;
     const r=T[tc]||(T[tc]={tc,zh:0,n:0,on:false});r.zh+=Number(x.zh)||0;r.n++;
-    const s0=tm(o.t||'00:00'),x2=s0+120,xl=!fixed&&!x.sh&&gDur(x)>120;
+    const s0=tm(o.t||'00:00'),x2=s0+120,xl=!fixed&&!x.sh&&gDur(x)>120,solo=soloAd(x);   // v0.1-186 單做額外品項：不跳排（上牌區原地翻紅，做完原地翻白）
     const sinceTo=(m,w)=>{if(r.on&&m>=tm(r.since||'06:00')){r.since=tf(m);r.sinceAt=o.ua||0;r.sinceWhy=tf(m)+' '+w}};
-    if(fixed&&!x.sh&&o.t)sinceTo(s0,'#'+o.sn+' 開始做事（原地拉牌）');   // v0.1-171 原地拉牌：開始做事就排到那個時間；先開始的回牌時在前
-    if(oSt(o)==='serving'){r.serv={id:o.id,sn:o.sn,end:mcEnd(o),start:o.t,label:(SVC_SHORT[x.svc]||'')+(x.min||''),rescue:!!x.sh,xl:xl&&nowM>=x2,xl0:xl,x2:tf(x2)};if(r.serv.xl)sinceTo(x2,'#'+o.sn+' 超長單滿 2 小時')}
+    if(fixed&&!x.sh&&!solo&&o.t)sinceTo(x.mainT&&tm(x.mainT)>s0?tm(x.mainT):s0,'#'+o.sn+(x.mainT?' 加做主項目（原地拉牌）':' 開始做事（原地拉牌）'));   // v0.1-171 原地拉牌：開始做事就排到那個時間；先開始的回牌時在前
+    if(oSt(o)==='serving'){r.serv={id:o.id,sn:o.sn,end:mcEnd(o),start:o.t,label:(SVC_SHORT[x.svc]||'')+(x.min||''),rescue:!!x.sh||solo,solo,xl:xl&&nowM>=x2,xl0:xl,x2:tf(x2)};if(r.serv.xl)sinceTo(x2,'#'+o.sn+' 超長單滿 2 小時')}
     else if(xl&&o.endAt&&tm(o.endAt)>x2)sinceTo(x2,'#'+o.sn+' 超長單滿 2 小時（做完原地翻白）');   // 超長單做完：維持 2 小時那時排進去的位置
-    else if(!fixed&&o.endAt&&r.on&&!x.sh&&tm(o.endAt)>=tm(r.since||'06:00')){r.since=o.endAt;r.sinceAt=o.ua||0;r.sinceWhy=o.endAt+' #'+o.sn+' 到時回牌'}   // v0.1-135 救援牌做完不移位置（仍是頭班）
+    else if(!fixed&&o.endAt&&r.on&&!x.sh&&!solo&&tm(o.endAt)>=tm(r.since||'06:00')){r.since=o.endAt;r.sinceAt=o.ua||0;r.sinceWhy=o.endAt+' #'+o.sn+' 到時回牌'}   // v0.1-135 救援牌做完不移位置（仍是頭班）
     if(x.sh&&fixed){const s=T[String(x.sh.tc)];if(s&&s.on&&o.t&&tm(o.t)>=tm(s.since||'06:00')){s.since=o.t;s.sinceAt=o.ua||0;s.sinceWhy=o.t+' #'+o.sn+' 開始做事（被打槍・原地翻白）'}}   // v0.1-172 原地拉牌：被打槍不動牌，照開始做事的時間原地翻白；救援牌也不動
     if(x.sh&&!fixed){const s=T[String(x.sh.tc)];if(s&&s.on&&x.sh.t&&tm(x.sh.t)>=tm(s.since||'06:00')){s.since=x.sh.t;s.sinceAt=o.ua||0;s.sinceWhy=x.sh.t+' #'+o.sn+' 被打槍'}}}));   // 被打槍的：從打槍的時間排到後面
   const list=Object.values(T);
@@ -4975,10 +5189,16 @@ async function bkCall(b,ks){
 // v0.1-139 兼職（支援）老師：用那天填的可上班時間（t.av）當班表；沒填＝那天不在
 // v0.1-141 老師技能（可預約的項目）：沒設定＝指壓、腳底都會，油壓只有女老師（性別沒填也算會）
 const SK_LIST=[['dry','指壓'],['oil','油壓'],['foot','腳底']];
+/* v0.1-186 額外品項技能：刮痧、拔罐（單做時只排給有這個技能的老師；沒設定＝不會） */
+const AD_SK=[['guasha','刮痧'],['bagua','拔罐'],['xiujiao','修腳皮']];   // v0.1-187 加修腳皮const SK_ALL=SK_LIST.concat(AD_SK);
+const soloAd=x=>!!x&&!x.svc&&(x.ad||[]).length>0;   // 單做額外品項（沒有主項目）
+const canAd=(t,ads)=>!t||(ads||[]).filter(id=>AD_SK.some(k=>k[0]===id)).every(id=>(Array.isArray(t.sk)&&t.sk.includes(id))||String(((loadSettings().addons||[]).find(a=>a.id===id)||{}).tc||'')===String(t.tc));   // 設定裡的指定老師（修腳皮＝69）也算會
+const canDoX=(t,x)=>x&&x.svc?canDo(t,x.svc):soloAd(x)?canAd(t,x.ad):true;
+const adSkName=ads=>(ads||[]).map(id=>(AD_SK.find(k=>k[0]===id)||[])[1]).filter(Boolean).join('、');
 const skDef=g=>g==='M'?['dry','foot']:['dry','oil','foot'];
 const skOf=(sk,g)=>Array.isArray(sk)?sk:skDef(g);
 const canDo=(t,svc)=>!t||!SK_LIST.some(k=>k[0]===svc)||!Array.isArray(t.sk)||t.sk.includes(svc);
-const SVC_NAME=k=>(SK_LIST.find(x=>x[0]===k)||[k,k])[1];
+const SVC_NAME=k=>(SK_ALL.find(x=>x[0]===k)||[k,k])[1];
 const shOn=(t,date)=>{if(!t.support)return t.shift;const a=(t.av||[]).find(x=>x.from<=date&&x.to>=date);return a?a.t1+'-'+a.t2:''};
 function teaOk(t,date,s,e,lv){const sh=shiftOf(shOn(t,date));if(!sh)return false;const a=tm(sh.in);let b=tm(sh.out);if(b<=a)b+=1440;if(s<a||e>b)return false;
   return !(lv||[]).some(L=>L.tc===t.tc&&L.from<=date&&L.to>=date&&(L.all||!(e<=tm(L.t1)||s>=tm(L.t2))))}
@@ -5044,7 +5264,7 @@ function mcPlanCtx({J,board,seats,S,d,date,nowM,skipId}){
   const ecM=J&&J.ec&&J.ec.date===date?tm(J.ec.t):9999;const endOf=sh=>Math.min(ecM,endOf0(sh));   // v0.1-152 提早閉店：服務要在閉店前做完
   const addLv=(x,tc)=>lv.filter(L=>L.tc===tc&&!L.all).forEach(L=>x.busy.push([tm(L.t1),tm(L.t2)]));
   board.list.forEach(r=>{if(!r.on)return;const sh=shiftOf((tea[r.tc]||{}).shift);
-    const x=T[r.tc]={tc:r.tc,g:(tea[r.tc]||{}).g||'',sk:(tea[r.tc]||{}).sk,from:r.rest?Math.max(nowM,r.rest.back?tm(r.rest.back):nowM+15):nowM,to:r.zx&&r.out?endOf({in:'06:00',out:r.out}):endOf(sh),short:r.short,busy:[]};
+    const x=T[r.tc]={tc:r.tc,rot:r.rot,g:(tea[r.tc]||{}).g||'',sk:(tea[r.tc]||{}).sk,from:r.rest?Math.max(nowM,r.rest.back?tm(r.rest.back):nowM+15):nowM,to:r.zx&&r.out?endOf({in:'06:00',out:r.out}):endOf(sh),short:r.short,busy:[]};
     if(r.serv)x.busy.push([nowM,tm(r.serv.end)]);addLv(x,r.tc)});
   const gone=new Set(board.list.filter(r=>r.offT||r.on).map(r=>r.tc));
   Object.values(tea).forEach(t=>{if(t.test||gone.has(t.tc)||T[t.tc])return;const sh=shiftOf(shOn(t,date));if(!sh)return;
@@ -5062,11 +5282,11 @@ const freeOn=(busy,a,b)=>busy.every(([x,y])=>y<=a||x>=b);
 // 在 st 開始，替每位客人找老師＋座位；loose＝排不下也盡量排（已經答應的預約）
 function mcFit(ctx,g,st,soft,loose){
   const usedT=new Set(),usedS=new Set(),out=[];
-  const nCan=svc=>ctx.T.filter(t=>canDo(t,svc)).length;const ord=g.map((x,i)=>i).sort((a,b)=>nCan(g[a].svc)-nCan(g[b].svc));   // v0.1-141 會做的人少的項目先排
+  const nCan=x=>ctx.T.filter(t=>canDoX(t,x)).length;const ord=g.map((x,i)=>i).sort((a,b)=>nCan(g[a])-nCan(g[b]));   // v0.1-141 會做的人少的項目先排
   for(const gi of ord){const x=g[gi];const du=gDur(x)||60,fx=comboFoot(x)?Number(x.ex2)*30:0;
     const segs=seatSegs(x,du);   // v0.1-148 身體＋腳底：床位只到身體做完，腳位只要腳底那段
-    const okT=t=>!usedT.has(t.tc)&&canDo(t,x.svc)&&st>=t.from&&st+du<=t.to&&!(t.short&&du>=90)&&freeOn(t.busy,st,st+du+(soft?0:10));
-    let t=x.tc?ctx.T.find(y=>y.tc===String(x.tc)&&okT(y)):ctx.T.find(okT);
+    const okT=t=>!usedT.has(t.tc)&&canDoX(t,x)&&st>=t.from&&st+du<=t.to&&!(t.short&&du>=90)&&freeOn(t.busy,st,st+du+(soft?0:10));
+    let t=x.tc?ctx.T.find(y=>y.tc===String(x.tc)&&okT(y)):soloAd(x)?ctx.T.filter(okT).sort((a,b)=>(a.rot||99)-(b.rot||99))[0]:ctx.T.find(okT);   // v0.1-186 單做刮痧／拔罐：依牌位順序
     const ss=segs.map(([k,a,b])=>ctx.SE.find(z=>z.id[0]===k&&!usedS.has(z.id)&&freeOn(z.busy,st+a,st+b+ctx.cl)));
     if((!t||ss.some(z=>!z))&&!loose)return null;
     if(t)usedT.add(t.tc);ss.forEach(z=>z&&usedS.add(z.id));out[gi]={t,ss:ss.filter(Boolean),seg:segs.map(([k,a,b],j)=>ss[j]?{z:ss[j],a:st+a,b:st+b}:null).filter(Boolean),du}}
@@ -5290,7 +5510,7 @@ function TeacherSheet({r,w,onAct,onTb,onLate,onEnd,onOrder,onTmpLv,onClose,log})
   const [back,setBack]=useState('');
   const opts=[15,30,60].map(m=>tf(tm(hm(new Date()))+m));
   const on=!!(r&&r.on),tc=(r||w).tc,offT=r&&!r.on&&r.offT;
-  const head=on?(r.rest?'休息中':r.serv?(r.serv.rescue?'救援中（做完仍是頭班）':r.serv.xl?'超長單服務中（已排進上牌區，做完原地翻白）':r.serv.xl0?'超長單服務中（'+r.serv.x2+' 排進上牌區最後）':'服務中'):r.shotW?'被打槍・原地翻白（照順位接客）':'上牌'):offT?'已下牌':w&&w.lv?(w.tmp?'臨時請假':'今天請假'):'未上牌';
+  const head=on?(r.rest?'休息中':r.serv?(r.serv.solo?'單做額外品項（不跳排，做完原地翻白）':r.serv.rescue?'救援中（做完仍是頭班）':r.serv.xl?'超長單服務中（已排進上牌區，做完原地翻白）':r.serv.xl0?'超長單服務中（'+r.serv.x2+' 排進上牌區最後）':'服務中'):r.shotW?'被打槍・原地翻白（照順位接客）':'上牌'):offT?'已下牌':w&&w.lv?(w.tmp?'臨時請假':'今天請假'):'未上牌';
   const sub=on?[r.serv?'#'+r.serv.sn+' '+r.serv.label+'・'+r.serv.start+' 起・預計 '+r.serv.end+' 回':'',r.onT?r.onT+' 上牌':'',r.out?'預定 '+r.out+' 下牌':'',r.rot?'輪班第 '+r.rot+' 位'+(r.sinceWhy?'（排隊依據：'+r.sinceWhy+'）':''):'',r.ack?'✓ '+r.ack.t+' 已確認支數（'+(r.ack.zh||0)+' 支・老點 '+(r.ack.ld||0)+'）':'']
     :offT?[offT+' 下牌',r.ack?'✓ '+r.ack.t+' 老師已確認今日支數（'+(r.ack.zh||0)+' 支・老點 '+(r.ack.ld||0)+'）':'老師還沒按今日支數確認']
     :w?[w.in?'班表 '+w.in+'～'+w.out:(w.support?'支援老師':'沒有排上牌時間'),w.eta?'預計 '+w.eta+' 到'+(w.note?'（'+w.note+'）':''):'',w.miss>0?'未到未電・逾 '+lateTxt(w.miss):'',w.lv?(w.kindL||'請假')+(w.tmp?(w.filed?'・已補假單':'・櫃台登記，待補假單'):''):'',w.lvTxt?'請假 '+w.lvTxt:'']:[];
@@ -5715,7 +5935,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const CARD='w-[4.3rem] min-h-[3.4rem] flex flex-col items-center justify-center rounded-lg px-1 py-1 text-center leading-tight ';
   const T10='text-[10px] num leading-tight';
   const upCard=r=>{const p=press[r.tc],l=lao[r.tc],pos=r.tc===nextTc?'下一位':'第 '+r.rot+' 位';
-    if(r.serv)return [CARD+'border-2 bg-red-200 border-red-600 text-red-900',<><span className="text-[10px] leading-tight font-semibold bg-red-600 text-white rounded px-1 my-0.5">{r.serv.xl?'超長':'救援'}</span><span className={T10}>{r.serv.end}回</span><span className={T10}>{pos}</span></>];   // v0.1-135 救援牌：上牌區原地翻紅
+    if(r.serv)return [CARD+'border-2 bg-red-200 border-red-600 text-red-900',<><span className="text-[10px] leading-tight font-semibold bg-red-600 text-white rounded px-1 my-0.5">{r.serv.xl?'超長':r.serv.solo?'單項':'救援'}</span><span className={T10}>{r.serv.end}回</span><span className={T10}>{pos}</span></>];   // v0.1-135 救援牌：上牌區原地翻紅
     if(r.rest)return [CARD+'border bg-green-200 border-green-500 text-green-900',<><span className={T10}>休息</span><span className={T10}>{r.rest.t} 起</span></>];
     const zs=(r.zx||r.short)&&<span className="text-[10px] leading-tight">{r.zx?'準下':''}{r.zx&&r.short?'・':''}{r.short?'短單':''}</span>;
     if(l)return [CARD+'border bg-orange-200 border-orange-500 text-orange-900',<><span className={T10}>{pos}</span><span className={T10+' font-bold'}>老點 {l.t}</span>{zs}</>];
@@ -5791,12 +6011,12 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
     (<Sec title="費用支出" right={!d.close&&<button className="h-8 px-3 rounded-full border border-brown text-brown text-sm bg-card" onClick={()=>setXe({exp:null,k:Date.now()})}>＋ 新增支出</button>}>
         <Card className="overflow-hidden">
           {!exps.length&&<div className="px-3 py-3 text-sm text-mute">今天還沒有支出</div>}
-          {exps.map((e,i)=><button key={e.id} type="button" disabled={!!e.cpo||!!d.close} className={'w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>setXe({exp:e,k:Date.now()})}>
+          {exps.map((e,i)=><button key={e.id} type="button" disabled={!!e.cpo||!!e.adv||!!d.close} className={'w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm active:bg-sageL '+(i?'border-t border-line':'')} onClick={()=>setXe({exp:e,k:Date.now()})}>
             <span className="px-2 py-0.5 rounded bg-brownL text-brown text-xs whitespace-nowrap">{e.cat}</span>
-            <span className="flex-1 min-w-0 truncate">{e.name||<span className="text-mute">（未填名稱）</span>}{e.cash===false&&<span className="ml-1 text-xs text-mute">非現金</span>}{e.cpo&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">自動</span>}{e.by&&<span className="ml-1 text-[11px] text-mute">{e.by}</span>}</span>
+            <span className="flex-1 min-w-0 truncate">{e.name||<span className="text-mute">（未填名稱）</span>}{e.cash===false&&<span className="ml-1 text-xs text-mute">非現金</span>}{(e.cpo||e.adv)&&<span className="ml-1 text-[10px] px-1 rounded bg-sageL text-sageD">自動</span>}{e.by&&<span className="ml-1 text-[11px] text-mute">{e.by}</span>}</span>
             <span className="num text-warn">-{money(e.amt)}</span></button>)}
         </Card>
-        <div className="text-[11px] text-mute mt-1 px-1">現金支出 <span className="num">{money(exps.filter(e=>e.cash!==false).reduce((a,e)=>a+(Number(e.amt)||0),0))}</span>，交班時從應有現金扣除。IG 折價券買單時自動記入（不能在這裡改）。</div>
+        <div className="text-[11px] text-mute mt-1 px-1">現金支出 <span className="num">{money(exps.filter(e=>e.cash!==false).reduce((a,e)=>a+(Number(e.amt)||0),0))}</span>，交班時從應有現金扣除。IG 折價券買單、老師預支交付時自動記入（不能在這裡改）。</div>
       </Sec>),
     (<Sec title="支援費用現結" right={<span className="text-xs text-mute num">{sup.n?sup.n+' 人・'+sup.zh+' 支':''}</span>}>
         <Card className="overflow-hidden">
@@ -5811,6 +6031,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
         <div className="text-[11px] text-mute mt-1 px-1">支援老師下班時從櫃台現金支付（還在服務中的支數也算進去）；付了就記在今天，交班時從應有現金扣除。</div>
       </Sec>),
     (<Sec fold title="耗材庫存"><Card className="p-3"><InvBox mode="mc" ks={cust&&cust.ks} toast={toast} ask={ask}/></Card></Sec>),   // v0.1-174
+    (<Sec title="老師預支交付"><McAdv ks={cust&&cust.ks} op={op} date={date} ask={ask} toast={toast}/></Sec>),   // 12：v0.1-188
   ];
   const sync=(()=>{const s=mcSt();return MC.err?<span className="text-warn">✗ {MC.err}</span>:MC.busy?<span>同步中…</span>:s.dirty?<span className="text-warn">有修改尚未上傳</span>:MC.at?<span>✓ 已同步 {hm(new Date(MC.at))}</span>:<span>讀取中…</span>})();
   const clearTest=async()=>{if(!await ask({title:'清除測試資料？',msg:'這台主櫃今天的測試訂單、上下牌、測試的交接事項都會清掉（會員資料不受影響）。',okText:'清除',danger:true}))return;jset(MCT(date),null);jset('mc-test-hn',[]);__hn=[];HN_SUBS.forEach(f=>f([]));MC.emit();toast&&toast('已清除測試資料')};
@@ -5819,7 +6040,7 @@ function MaincLive({mode,desk,cust,op,isOwner,ask,toast,board,date,ks,tea,onTb})
   const selO=sel&&orders.find(o=>o.id===sel);
   return <>
     <McJump/>
-    <RolePage mode={mode} head={head} B={B} phone={[0,7,2,1,3,5,9,10,6,11,8,4]} wide={{top:[2],cols:[[0,7,3,9,6],[1,5,10,11,8,4]]}} xwide={{top:[2],cols:[[0,3,6],[7,1,9],[5,10,11,8,4]]}}/>
+    <RolePage mode={mode} head={head} B={B} phone={[0,7,2,1,3,5,9,10,12,6,11,8,4]} wide={{top:[2],cols:[[0,7,3,9,6],[1,5,10,12,11,8,4]]}} xwide={{top:[2],cols:[[0,3,6],[7,1,9],[5,10,12,11,8,4]]}}/>
     {selO&&<McOrderSheet o={selO} S={S} isOwner={isOwner} ask={ask} onClose={()=>setSel(null)} onAct={(k,x)=>act(selO,k,x)} onEdit={()=>{setSel(null);setEd({order:selO,k:Date.now()})}}/>}
     {xe&&<ExpenseEditor key={'mx'+xe.k} S={S} exp={xe.exp} locked={!!d.close} onSave={saveExp} onDelete={delExp} onClose={()=>setXe(null)} ask={ask}/>}
     {ed&&<OrderEditor key={'mc'+ed.k} date={date} S={S} order={ed.order} cu={ed.cu} init={ed.init} dayOrders={d.orders||[]} locked={!!d.close} mc={Object.assign({},mcInfo,{op:op&&op.name,blogs:(()=>{const L=((J&&J.blogs)||[]).slice();(d.orders||[]).forEach(o=>{if(o.comp&&!o.void&&!o.del){const a=blogAcct(o.comp.note);if(a&&!L.some(x=>x.acct===a))L.unshift({acct:a,d:date})}});return L})()})} compOk={!ed.order||oSt(ed.order)==='serving'} onSave={onSave} onClose={()=>setEd(null)} ask={ask}/>}
@@ -7195,6 +7416,11 @@ function LineGate(){
 
 /* ========== 版本紀錄 ========== */
 const CHANGELOG=[
+  ['v0.1-190','11-17','老師預支：老師頁送出後，金額框和送出鈕變灰，寫「同時只能送出 1 筆預支」，上一筆簽收（或取消、駁回、失效）後才亮起來；下方多「簽收欄」列出申請日、核准日、交付日（櫃台人員）、簽收日，「確認簽收」在核准且櫃台交付後才亮；可預支不足 1,000 元時顯示 $0。老闆頁每筆預支改列申請日、核准日、交付日（櫃台人員）、申請人清點無誤簽收（試算表說明欄同格式）（GAS gas-5.07）'],
+  ['v0.1-189','11-17','老師預支：金額改成 −／＋ 按鈕，每次 1,000 元，＋不會超過可預支上限；簽收確認文字改為「已於櫃台點清預支金額 N 元整無誤」；老闆頁預支只顯示老師編號，已簽收的寫完整紀錄（某號老師預支 N 元 經櫃台人員 某某 於 日期時間 交付老師本人，並經某號老師 於 日期時間 點清現金 N 元無誤確認簽收）；LINE 通知也只寫老師編號（GAS gas-5.06）'],
+  ['v0.1-188','11-17','老師預支（線上申請）：老師在老師頁申請（依當期支數 × 每支費用 × 比例算上限，扣掉本期已預支；沒結案前不能再申請；支援老師不適用）→ 老闆或主管在「人員 → 老師 → 老師預支」核准，選櫃台現金（低於設定金額且當天櫃台現金夠付）或老闆信封，可再改 → LINE 通知老師 → 櫃台交錢後在主櫃「老師預支交付」按「櫃台已交付」（記下是誰交付；櫃台現金自動記一筆「老師預支」現金支出，交班從應有現金扣除，公司淨利加回）→ 老師點清後在老師頁「簽收」或回報「有問題」→ 自動加到簽收當期的薪資扣項。核准後超過設定天數沒領自動失效。設定在人員 → 老師（GAS gas-5.05：工作表「老師預支」、LINE 通知）'],
+  ['v0.1-187','11-16','老師技能多「修腳皮」。開單點修腳皮：主老師會就自己做；不會就依牌位找會修腳皮的上牌老師（優先空著的），支數算給他；都沒有才用老闆頁設定的指定老師（69）。可以在開單畫面換人。單做修腳皮也照技能、依牌位排，設定的指定老師也算會（GAS gas-5.04：技能可存修腳皮）'],
+  ['v0.1-186','11-16','單做刮痧、拔罐（沒有主項目）：老師技能多「刮痧」「拔罐」（老師頁修改我的資料、人員資料）；開單時點刮痧或拔罐，列出會做的上牌老師（依牌位順序），自動帶第一位空著的；安排客人也只排給會做的老師、照牌位順序。牌位不跳排：在上牌區原地翻紅（標「單項」），做完原地翻白、順位不變；回牌排隊、原地拉牌都適用。之後加做主項目就改照一般單跳排，原地拉牌從加做的時間起算（GAS gas-5.03：技能可存刮痧、拔罐）'],
   ['v0.1-185','11-09','五六日活動：週五、六、日全天，身體（指壓／油壓）滿 60 分＋腳底滿 60 分折 $200，每多一組再折一次（身 120＋腳 120 折 $400）。開單在「平日限定」下面多兩個快捷鍵（指壓／油壓 1h＋腳底 1h），自己點 60 分＋腳底加項也會自動折；員工按摩、平日限定不折；老師支數、費用照算。老闆頁設定可開關、改金額、改星期；店家介紹頁價目表顯示活動價。折價券改成只能用在指壓 90 分（GAS gas-5.02：公開設定加 wkd）'],
   ['v0.1-184','11-07','客滿沒接到：主櫃預約上方顯示今天幾組・幾位（點開看時間、人數、來源）；日報、月報各一張卡（月報含上月比較、最常客滿的星期幾與時段，可跳到分析）。上下牌準時：日報列出今天晚上牌、早下牌、沒下牌、排班沒上牌的老師；月報統計每位老師的次數與分鐘（比對正職上下牌時間、兼職可上班時間，請假不算，誤差 10 分）。分析新增「人力與需求」（每個鐘頭平均上牌、服務中、使用率，對照沒接到的人數，平日／假日，最常不夠用與閒置的時段）與「老師上牌效率」（GAS gas-5.01 action tbsched）'],
   ['v0.1-183','11-07','分析新增「客滿沒接到的客人」：主櫃安排客人按「客人沒接受（記一筆）」的紀錄，看沒接到幾組、幾位、占想來客人的比例、平均每天，依星期幾、時段（對照有接到的人數）、來源分布，做為排班與老師人數的參考（GAS gas-5.00 action bkdecl）'],
@@ -7678,11 +7904,20 @@ function SettingsPage({S,saveS,ask,toast,onImported,lay,page,sub,setSub,onCustOr
           </React.Fragment>))}
         </div>
         <div className="text-xs text-mute mt-2">「指定老師」有填時，這個品項的支數固定算給該老師（例：修腳皮 → 69 號），不算給主項目的老師；空白＝算給主項目的老師。</div>
-        <div className="text-xs text-mute mt-1">「可單點」打勾的品項，客人可以不搭主項目、單獨點（例：只刮痧）；金額、支數照這裡的設定算給服務的老師。沒打勾的品項必須搭配主項目。</div>
+        <div className="text-xs text-mute mt-1">「可單點」打勾的品項，客人可以不搭主項目、單獨點（例：只刮痧）；金額、支數照這裡的設定算給服務的老師。沒打勾的品項必須搭配主項目。「指定老師」：修腳皮會先找有「修腳皮」技能的老師（老師頁修改我的資料），都沒有才用這裡的指定老師。</div>
       </Card>
 
       </>}
       {T_&&<>
+      <div className={sec}>老師預支（線上申請）</div>
+      <AdvAdmin ask={ask} toast={toast}/>
+      <Card className="p-3 mt-2 space-y-2 text-sm">
+        <button type="button" className={'w-full rounded-xl border px-3 py-2.5 text-left '+(dr.adv.on?'bg-sageL border-sage':'bg-card border-line')} onClick={()=>up(n=>{n.adv.on=!n.adv.on})}>{dr.adv.on?'☑':'☐'} 開放老師在老師頁申請預支<span className="block text-xs text-mute mt-0.5">支援老師（現結）不適用</span></button>
+        <div className="flex items-center gap-2"><div className="flex-1">可預支比例（%）<div className="text-xs text-mute">上限＝當期支數 × 每支費用 × 比例 － 本期已預支；100＝可預支目前支數的全部費用</div></div><NumIn className="w-20" value={String(dr.adv.ratio)} onChange={v=>up(n=>{n.adv.ratio=Math.min(100,num(v))})}/></div>
+        <div className="flex items-center gap-2"><div className="flex-1">櫃台支付上限<div className="text-xs text-mute">低於此金額、且當天櫃台現金夠付時才能由櫃台支付；0＝不開放櫃台支付</div></div><NumIn className="w-24" value={String(dr.adv.cnt)} onChange={v=>up(n=>{n.adv.cnt=num(v)})}/></div>
+        <div className="flex items-center gap-2"><div className="flex-1">核准後幾天沒領取自動失效</div><NumIn className="w-20" value={String(dr.adv.exp)} onChange={v=>up(n=>{n.adv.exp=Math.max(1,num(v)||3)})}/></div>
+        <div className="text-xs text-mute num">例：已做 100 支 × {money(dr.comm.per30)} × {dr.adv.ratio}% ＝ 最多預支 {money(Math.floor(100*dr.comm.per30*dr.adv.ratio/100))}。改完按下方「儲存設定」。</div>
+      </Card>
       <div className={sec}>老師抽成</div>
       <Card className="p-3 space-y-2 text-sm">
         <div className="flex items-center gap-2"><div className="flex-1">幾分鐘算 1 支</div><NumIn className="w-24" value={String(dr.zhiMin)} onChange={v=>up(n=>{n.zhiMin=num(v)||30})}/></div>
@@ -7901,7 +8136,7 @@ const ckey=c=>c.type==='day'?'d:'+c.date:c.type==='pay'?'p:'+c.ym:'s';
 const cloud={
   busy:false,timer:null,subs:new Set(),pend:[],dataVer:0,
   emit(){const st=this.state();this.subs.forEach(f=>{try{f(st)}catch(_e){}})},
-  state(){const s=syncGet();const c=cloudCfg();return {url:!!c.url,who:tokValid(c)?c.who:null,tokExp:c.tokExp,keyMode:!!c.key,on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,joinN:s.joinN||0,leaveN:s.leaveN||0,profN:s.profN||0,fixN:s.fixN||0,pend:this.pend.slice(),dataVer:this.dataVer}},
+  state(){const s=syncGet();const c=cloudCfg();return {url:!!c.url,who:tokValid(c)?c.who:null,tokExp:c.tokExp,keyMode:!!c.key,on:cloudOn(),busy:this.busy,n:Object.keys(s.dirty||{}).length,pushAt:s.pushAt,pullAt:s.pullAt,err:s.err,joinN:s.joinN||0,leaveN:s.leaveN||0,advN:s.advN||0,profN:s.profN||0,fixN:s.fixN||0,pend:this.pend.slice(),dataVer:this.dataVer}},
   mark(k){const s=syncGet();s.dirty[k]=Date.now();if(k==='s')s.sUa=Date.now();syncSet(s);this.emit();this.soon()},
   soon(ms){if(!cloudOn())return;clearTimeout(this.timer);this.timer=setTimeout(()=>this.push(),ms==null?3000:ms)},
   // 呼叫 GAS：同一台裝置一次只送一個請求（排隊），遇到暫時性錯誤（HTTP 404／5xx、網路中斷、回傳不是 JSON）自動重試 2 次
@@ -8049,7 +8284,7 @@ const cloud={
       (j.days||[]).forEach(x=>handle('d:'+x.date,x));
       (j.pay||[]).forEach(x=>handle('p:'+x.ym,x));
       if(j.settings)handle('s',j.settings);
-      const s=syncGet();s.cursor=j.at||Date.now();s.pullAt=Date.now();s.err='';if(j.joinN!=null)s.joinN=j.joinN;if(j.leaveN!=null)s.leaveN=j.leaveN;if(j.profN!=null)s.profN=j.profN;if(j.fixN!=null)s.fixN=j.fixN;syncSet(s);
+      const s=syncGet();s.cursor=j.at||Date.now();s.pullAt=Date.now();s.err='';if(j.joinN!=null)s.joinN=j.joinN;if(j.leaveN!=null)s.leaveN=j.leaveN;if(j.advN!=null)s.advN=j.advN;if(j.profN!=null)s.profN=j.profN;if(j.fixN!=null)s.fixN=j.fixN;syncSet(s);
       this.busy=false;this.emit();
       return {nd,np,ns,nc,total:(j.days||[]).length};
     }catch(e){const s=syncGet();s.err=String(e.message||e);syncSet(s);this.busy=false;this.emit();throw e}
@@ -8349,6 +8584,7 @@ function App(){
       {cst.on&&cst.joinN>0&&!(tab==='people'&&pSub==='join')&&<button className="w-full h-9 bg-brownL text-brown text-sm" onClick={()=>{setTab('people');setPSub('join')}}>有 {cst.joinN} 筆新的應徵履歷 ›</button>}
       {cst.on&&cst.profN>0&&tab!=='people'&&<button className="w-full h-9 bg-brownL text-brown text-sm border-t border-white/60" onClick={()=>{setTab('people');setPSub('teacher')}}>有 {cst.profN} 筆人員資料修改待審核 ›</button>}
       {cst.on&&cst.fixN>0&&!(tab==='people'&&pSub==='counter')&&<button className="w-full h-9 bg-brownL text-brown text-sm border-t border-white/60" onClick={()=>{setTab('people');setPSub('counter')}}>有 {cst.fixN} 筆補打卡待審核（人員 → 櫃台）›</button>}
+      {cst.on&&cst.advN>0&&!(tab==='people'&&pSub==='teacher')&&<button className="w-full h-9 bg-brownL text-brown text-sm border-t border-white/60" onClick={()=>{setTab('people');setPSub('teacher')}}>有 {cst.advN} 筆老師預支待處理（人員 → 老師）›</button>}
       {cst.on&&cst.leaveN>0&&tab!=='people'&&<button className="w-full h-9 bg-brownL text-brown text-sm border-t border-white/60" onClick={()=>{setTab('people');setPSub('teacher')}}>有 {cst.leaveN} 筆請假待審核 ›</button>}
     </header>
   );
