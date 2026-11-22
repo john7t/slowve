@@ -15,6 +15,7 @@
     {"uid":"Ua9377d7fd1474232b1b968a7d4c27189","name":"王玉珍","roles":["teacher"],"shift":"14:00-02:00","tc":"02"},
     {"uid":"U758c43a83e70891d7fef1e990c091b49","name":"林小姐","roles":["guest"]},
     {"uid":"U7e78282568c50c0880cad2cf36f502f6","name":"許先生","roles":["guest"]},
-    {"uid":"U5c2a85dbeb3567f3204ea26ed142945e","name":"謝先生","roles":["guest"]}
+    {"uid":"U5c2a85dbeb3567f3204ea26ed142945e","name":"謝先生","roles":["guest"]},
+    {"uid":"Ua8eff24e653dccb8650aa25a164de38c","name":"盧先生","roles":["guest"]}
   ]
 }
