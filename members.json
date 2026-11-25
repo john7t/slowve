@@ -53,6 +53,7 @@
     {"uid":"Ue30566343623b93b481d95a398f6c845","name":"張小姐","roles":["guest"]},
     {"uid":"Udf5cd9b15568be7581fffd34363d7714","name":"潔怡小姐","roles":["guest"]},
     {"uid":"U9d10700be11e7c67ed64ddee66f12bdf","name":"邱小姐","roles":["guest"]},
-    {"uid":"U8d2dddff2006f7c34dc6f4ba48d88316","name":"吳小姐","roles":["guest"]}
+    {"uid":"U8d2dddff2006f7c34dc6f4ba48d88316","name":"吳小姐","roles":["guest"]},
+    {"uid":"U190a887dea2d9a6a60e6f89a2831e68f","name":"游小姐","roles":["guest"]}
   ]
 }
