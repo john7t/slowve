@@ -78,6 +78,7 @@
     {"uid":"U4ca6bd3790bf965e166b1a2005324db7","name":"張小姐","roles":["guest"]},
     {"uid":"U896ece705e75af820c643e41583604f4","name":"翁先生","roles":["guest"]},
     {"uid":"U6f0ac839aec4b7b384b2f3d85c7b135c","name":"劉先生","roles":["guest"]},
-    {"uid":"Ud5763a68463f3f271b51a6d9d3211d0c","name":"洪小姐","roles":["guest"]}
+    {"uid":"Ud5763a68463f3f271b51a6d9d3211d0c","name":"洪小姐","roles":["guest"]},
+    {"uid":"Ua6011741acd0af6245389cf60d14c58b","name":"高小姐","roles":["guest"]}
   ]
 }
