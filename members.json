@@ -105,6 +105,7 @@
     {"uid":"U34dfeba6eedfe523ef7ddd129c8310ec","name":"陸小姐","roles":["guest"]},
     {"uid":"Uc416c6880aec1b823a0a47dbe0b8c9fa","name":"高小姐","roles":["guest"]},
     {"uid":"U1916d60c832ec058aa07f888ce9e46fa","name":"王小姐","roles":["guest"]},
-    {"uid":"U74c48c8b76fe92b1573cc723f369c1ee","roles":["applicant"],"apply":"teacher","stage":"applied"}
+    {"uid":"U74c48c8b76fe92b1573cc723f369c1ee","roles":["applicant"],"apply":"teacher","stage":"applied"},
+    {"uid":"Ue15993f7a5f8c285ee230505a3edb58c","name":"賴小姐","roles":["guest"]}
   ]
 }
