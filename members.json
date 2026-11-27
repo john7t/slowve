@@ -120,6 +120,7 @@
     {"uid":"U2c8f50cc89b5c86348ca756eeb649b13","name":"李小姐","roles":["guest"]},
     {"uid":"U38cee56f89a6b522ed69a96acd49c06c","name":"蔡先生","roles":["guest"]},
     {"uid":"U366884aa2e1fd14c18f75265e886985d","name":"張小姐","roles":["guest"]},
-    {"uid":"U94b8e3b2b73609c34535a16e80b21969","name":"羅小姐","roles":["guest"]}
+    {"uid":"U94b8e3b2b73609c34535a16e80b21969","name":"羅小姐","roles":["guest"]},
+    {"uid":"U59c1b25adf958e76fedea6e791d6ecad","name":"李小姐","roles":["guest"]}
   ]
 }
