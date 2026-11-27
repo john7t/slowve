@@ -2,7 +2,7 @@
   "members": [
     {"uid":"Ufc92e41f1f51906f9388a2cf3105c5cf","name":"122","roles":["teacher","counter","guest"],"tc":"122","admin":"manager","shift":"02:00-03:00"},
     {"uid":"U46ddda7096889852bbcb8aaf66e02d9c","name":"158 Ally～☺️歡迎私訊預約","roles":["teacher","counter","guest"],"tc":"77","admin":"owner","shift":"14:00-02:00"},
-    {"uid":"U6dc94958428943f3499d82a5972bc946","name":"穎","roles":["teacher","counter","guest"],"tc":"258","admin":"manager","shift":"10:00-21:00"},
+    {"uid":"U6dc94958428943f3499d82a5972bc946","name":"穎","roles":["teacher","counter","guest"],"tc":"258","admin":"manager","shift":"09:00-16:40"},
     {"uid":"U客人…","name":"王小姐","roles":["guest"]},
     {"uid":"U86122b1dde18d801e39dd3b2ebddc31e","name":"許維仁","roles":["teacher"],"shift":"11:00-02:00","tc":"07","tcHist":[{"tc":"69","to":"2026-10-31"}]},
     {"uid":"Ud864ac1fb447fcc839cee7e9940fb6de","name":"甘苦人富","roles":["teacher"],"shift":"10:00-22:00","tc":"10"},
