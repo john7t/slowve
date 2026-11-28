@@ -128,6 +128,7 @@
     {"uid":"U31d648cf989e9d140326099e3719e6a9","name":"沈小姐","roles":["guest"]},
     {"uid":"U59301220f0db4fad9b9ea33daf1d20e3","name":"簡小姐","roles":["guest"]},
     {"uid":"Ud9758add1533ad5418f4d35e318b34cd","name":"程小姐","roles":["guest"]},
-    {"uid":"U8b20edd610e0dc60a70d9c65365ad308","name":"孫小姐","roles":["guest"]}
+    {"uid":"U8b20edd610e0dc60a70d9c65365ad308","name":"孫小姐","roles":["guest"]},
+    {"uid":"Udf6e1400ccf31a456260e2911ab28a4f","name":"陳先生","roles":["guest"]}
   ]
 }
